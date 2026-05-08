@@ -1,0 +1,22 @@
+name: Sync with Upstream
+
+on:
+  schedule:
+    - cron: '0 2 * * *'     # 每天 UTC 2点同步
+  workflow_dispatch:        # 允许手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream tags and branches
+        run: |
+          git remote add upstream https://github.com/ColinIanKing/stress-ng.git
+          git fetch upstream --tags --prune
+          git push origin --force --prune 'refs/remotes/upstream/*:refs/heads/*'
+          git push origin --force --tags

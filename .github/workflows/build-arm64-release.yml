@@ -1,0 +1,61 @@
+name: Build ARM64 on New Tag & Release
+
+on:
+  push:
+    tags:
+      - 'V*'           # 匹配上游的 Tag 格式（如 V0.18.00）
+  workflow_dispatch:   # 手动触发（可选择 Tag）
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 必须！允许创建 Release 和上传 Assets
+
+    steps:
+      - name: Checkout code with Tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}   # 检出当前触发的 Tag
+
+      - name: Install cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu make
+
+      - name: Build static ARM64 binary
+        run: |
+          make clean
+          STATIC=1 \
+          CC=aarch64-linux-gnu-gcc \
+          CXX=aarch64-linux-gnu-g++ \
+          CFLAGS="-march=armv8-a -O2" \
+          make -j2
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(./stress-ng --version | head -n1 | awk '{print $3}' || echo ${{ github.ref_name }})
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-ng-${{ steps.version.outputs.version }}-aarch64-static
+          path: stress-ng
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: stress-ng ${{ steps.version.outputs.version }} (aarch64 static)
+          body: |
+            Automated ARM64 build for tag **${{ github.ref_name }}**
+            
+            **Binary**: statically linked for aarch64 (ARMv8)
+            Built on: ${{ github.event.repository.updated_at }}
+          files: stress-ng
+          draft: false
+          prerelease: false

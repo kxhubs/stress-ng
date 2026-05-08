@@ -1,0 +1,57 @@
+name: Build ARM64 on New Tag & Release
+
+on:
+  push:
+    tags:
+      - 'V*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+          ref: ${{ github.ref }}
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu make
+
+      - name: Build static aarch64
+        run: |
+          make clean
+          STATIC=1 \
+          CC=aarch64-linux-gnu-gcc \
+          CXX=aarch64-linux-gnu-g++ \
+          CFLAGS="-march=armv8-a -O2" \
+          make -j2
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(./stress-ng --version | head -n1 | awk '{print $2}' || echo ${{ github.ref_name }})
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-ng-${{ steps.version.outputs.version }}-aarch64-static
+          path: stress-ng
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: stress-ng ${{ steps.version.outputs.version }} (ARM64 static)
+          body: |
+            Automated ARMv8 (aarch64) static build for tag **${{ github.ref_name }}**
+            Built with GitHub Actions.
+          files: stress-ng

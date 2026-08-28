@@ -61,6 +61,48 @@
 #define	shim_strdup(str)		strdup((str))
 #endif
 
+#if defined(HAVE_BUILTIN_STRCHR)
+#define shim_strchr(str, c)		__builtin_strchr((str), (c))
+#else
+#define shim_strchr(str, c)		strchr((str), (c))
+#endif
+
+#if defined(HAVE_BUILTIN_STRCMP)
+#define shim_strcmp(s1, s2)		__builtin_strcmp((s1), (s2))
+#else
+#define shim_strcmp(s1, s2)		strcmp((s1), (s2))
+#endif
+
+#if defined(HAVE_BUILTIN_STRCSPN)
+#define shim_strcspn(s, reject)		__builtin_strcspn((s), (reject))
+#else
+#define shim_strcspn(s, reject)		strcspn((s), (reject))
+#endif
+
+#if defined(HAVE_BUILTIN_STRLEN)
+#define shim_strlen(str)		__builtin_strlen((str))
+#else
+#define shim_strlen(str)		strlen((str))
+#endif
+
+#if defined(HAVE_BUILTIN_STRNCMP)
+#define shim_strncmp(s1, s2, n)		__builtin_strncmp((s1), (s2), (n))
+#else
+#define shim_strncmp(s1, s2, n)		strncmp((s1), (s2), (n))
+#endif
+
+#if defined(HAVE_BUILTIN_STRRCHR)
+#define shim_strrchr(str, c)		__builtin_strrchr((str), (c))
+#else
+#define shim_strrchr(str, c)		strrchr((str), (c))
+#endif
+
+#if defined(HAVE_BUILTIN_STRSTR)
+#define shim_strstr(haystack, needle)	__builtin_strstr((haystack), (needle))
+#else
+#define shim_strstr(haystack, needle)	strstr((haystack), (needle))
+#endif
+
 #if defined(HAVE_BUILTIN_COMPLEX)
 #define shim_cmplxf(r, i)		__builtin_complex((float)(r), (float)(i))
 #define shim_cmplx(r, i)		__builtin_complex((double)(r), (double)(i))
@@ -90,16 +132,6 @@
 #define shim_cabsl(x)		cabsl((x))
 #else
 #define shim_cabsl(x)		((long double)cabs((double complex)(x)))
-#endif
-#endif
-
-#if defined(HAVE_BUILTIN_LGAMMAL)
-#define shim_lgammal(x)		__builtin_lgammal((x))
-#else
-#if defined(HAVE_LGAMMAL)
-#define shim_lgammal(x)		lgammal((x))
-#else
-#define shim_lgammal(x)		((long double)lgamma((double)(x)))
 #endif
 #endif
 
@@ -912,6 +944,50 @@
 #define shim_roundl(x)		roundl((x))
 #else
 #define shim_roundl(x)		((long double)shim_round((double)(x)))
+#endif
+#endif
+
+#if defined(HAVE_BUILTIN_LGAMMA)
+#define shim_lgamma(x)		__builtin_lgamma((x))
+#else
+#define shim_lgamma(x)		lgamma((x))
+#endif
+
+#if defined(HAVE_BUILTIN_LGAMMAF)
+#define shim_lgammaf(x)		__builtin_lgammaf((x))
+#else
+#define shim_lgammaf(x)		lgammaf((x))
+#endif
+
+#if defined(HAVE_BUILTIN_LGAMMAL)
+#define shim_lgammal(x)		__builtin_lgammal((x))
+#else
+#if defined(HAVE_LGAMMAL)
+#define shim_lgammal(x)		lgammal((x))
+#else
+#define shim_lgammal(x)		((long double)lgamma((double)(x)))
+#endif
+#endif
+
+#if defined(HAVE_BUILTIN_TGAMMA)
+#define shim_tgamma(x)		__builtin_tgamma((x))
+#else
+#define shim_tgamma(x)		tgamma((x))
+#endif
+
+#if defined(HAVE_BUILTIN_TGAMMAF)
+#define shim_tgammaf(x)		__builtin_tgammaf((x))
+#else
+#define shim_tgammaf(x)		tgammaf((x))
+#endif
+
+#if defined(HAVE_BUILTIN_TGAMMAL)
+#define shim_tgammal(x)		__builtin_tgammal((x))
+#else
+#if defined(HAVE_TGAMMAL)
+#define shim_tgammal(x)		tgammal((x))
+#else
+#define shim_tgammal(x)		((long double)tgamma((double)(x)))
 #endif
 #endif
 

@@ -51,9 +51,11 @@ static int stress_nice(stress_args_t *args)
 	int rc = EXIT_SUCCESS;
 #if defined(HAVE_SETPRIORITY)
 	/* Make an assumption on priority range */
-	int max_prio = 20, min_prio = -20;
+	int max_prio = 20;
+	int min_prio = -20;
 
-#if defined(RLIMIT_NICE)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_NICE)
 	{
 		struct rlimit rlim;
 
@@ -209,11 +211,33 @@ static int stress_nice(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("fork"),
+#if defined(HAVE_GETPRIORITY)
+	STRESS_EX_SYSCALL("getpriority"),
+#endif
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_NICE)
+	STRESS_EX_SYSCALL("getrlimit"),
+#endif
+	STRESS_EX_SYSCALL("nice"),
+#if defined(HAVE_SETPRIORITY)
+	STRESS_EX_SYSCALL("setpriority"),
+#endif
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_nice_info = {
 	.stressor = stress_nice,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

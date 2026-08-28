@@ -555,8 +555,23 @@ static int stress_logmath(stress_args_t *args)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_logmath_method, "logmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_logmath_method },
+	{ OPT_logmath_method, "logmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_logmath_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-division"),
+#if defined(HAVE_COMPLEX_H)
+	STRESS_EX_FEATURE("fp-complex"),
+#endif
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_logmath_info = {
@@ -565,7 +580,8 @@ const stressor_info_t stress_logmath_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_logmath_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_logmath_methods),
+	.exercises = exercises,
 };
 
 #else
@@ -587,7 +603,7 @@ const stressor_info_t stress_logmath_info = {
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
 };
 
 #endif

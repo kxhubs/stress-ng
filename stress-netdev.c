@@ -85,7 +85,8 @@ static void stress_netdev_check(
  */
 static int stress_netdev(stress_args_t *args)
 {
-	int fd, rc = EXIT_SUCCESS;
+	int fd;
+	int rc = EXIT_SUCCESS;
 
 	if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		pr_fail("%s: socket failed, errno=%d (%s)\n",
@@ -99,7 +100,8 @@ static int stress_netdev(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		int i, n;
+		int i;
+		int n;
 		struct ifconf ifc;
 
 		/* Get list of transport layer addresses */
@@ -124,7 +126,7 @@ static int stress_netdev(stress_args_t *args)
 		/* Allocate buffer for the addresses */
 		ifc.ifc_buf = (char *)malloc((size_t)ifc.ifc_len);
 		if (UNLIKELY(!ifc.ifc_buf)) {
-			pr_fail("%s: failed to allocate %zu byte interface buffer%s\n",
+			pr_fail("%s: allocate %zu byte interface buffer failed%s\n",
 				args->name, (size_t)ifc.ifc_len,
 				stress_memory_free_get());
 			rc = EXIT_NO_RESOURCE;
@@ -270,11 +272,21 @@ static int stress_netdev(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_netdev_info = {
 	.stressor = stress_netdev,
 	.classifier = CLASS_NETWORK,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_netdev_info = {

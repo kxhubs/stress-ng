@@ -24,8 +24,8 @@
 #include "core-out-of-memory.h"
 
 #define MIN_PAGES			(3)	/* Min number to move */
-#define DEFAULT_PAGE_MOVE_BYTES		(4 * MB)
-#define MIN_PAGE_MOVE_BYTES		(64 * KB)
+#define DEFAULT_PAGE_MOVE_BYTES		(4 * STRESS_MB)
+#define MIN_PAGE_MOVE_BYTES		(64 * STRESS_KB)
 #define MAX_PAGE_MOVE_BYTES		(MAX_MEM_LIMIT)
 
 #define PAGE0				(0x1)
@@ -86,9 +86,14 @@ static int stress_pagemove_child(stress_args_t *args, void *context)
 {
 	const size_t page_size = args->page_size;
 	size_t page_num;
-	uint8_t *buf, *buf_end, *unmapped_page = NULL, *ptr;
+	uint8_t *buf;
+	uint8_t *buf_end;
+	uint8_t *unmapped_page = NULL;
+	uint8_t *ptr;
 	int rc = EXIT_FAILURE;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 	int metrics_count = 0;
 	stress_pagemove_info_t *info = (stress_pagemove_info_t *)context;
 #if defined(HAVE_LINUX_MEMPOLICY_H)
@@ -101,7 +106,7 @@ static int stress_pagemove_child(stress_args_t *args, void *context)
 		MAP_PRIVATE | MAP_ANONYMOUS,
 		-1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, info->sz + page_size, stress_memory_free_get(),
 			errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -111,7 +116,7 @@ static int stress_pagemove_child(stress_args_t *args, void *context)
 	buf_end = buf + info->sz;
 	unmapped_page = buf_end;
 	if (stress_munmap_force((void *)unmapped_page, page_size) < 0) {
-		pr_inf_skip("%s: failed to munmap %zu bytes, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: munmap %zu bytes failed, errno=%d (%s), skipping stressor\n",
 			args->name, page_size, errno, strerror(errno));
 		(void)munmap(buf, info->sz + page_size);
 		return EXIT_NO_RESOURCE;
@@ -176,7 +181,9 @@ static int stress_pagemove_child(stress_args_t *args, void *context)
 		 *    buf + page_size = tmp
 		 */
 		for (ptr = buf; ptr < buf_end - page_size; ptr += page_size) {
-			void *remap_addr1, *remap_addr2, *remap_addr3;
+			void *remap_addr1;
+			void *remap_addr2;
+			void *remap_addr3;
 
 			if (LIKELY(metrics_count > 0)) {
 				/* faster non-metrics mremaps */
@@ -220,7 +227,8 @@ static int stress_pagemove_child(stress_args_t *args, void *context)
 					(void)shim_mlock(remap_addr3, page_size);
 			} else {
 				/* slower metrics mremaps */
-				double t1, t2;
+				double t1;
+				double t2;
 
 				t1 = stress_time_now();
 				remap_addr1 = mremap((void *)ptr, page_size, page_size,
@@ -303,10 +311,7 @@ fail:
 #endif
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 
 	rate = (duration > 0.0) ? count / duration : 0.0;
@@ -385,12 +390,27 @@ static int stress_pagemove(stress_args_t *args)
 	return stress_oomable_child(args, &info, stress_pagemove_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("maple-tree-write"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("tlb"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("mprotect"),
+	STRESS_EX_SYSCALL("mremap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pagemove_info = {
 	.stressor = stress_pagemove,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_pagemove_info = {

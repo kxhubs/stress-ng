@@ -80,12 +80,11 @@ static int stress_affinity_supported(const char *name)
 		pr_inf_skip("%s stressor cannot get CPU affinity, skipping the stressor\n", name);
 		return -1;
 	}
-	if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
-		if (errno == EPERM) {
-			pr_inf_skip("%s stressor cannot set CPU affinity, "
-			       "process lacks privilege, skipping the stressor\n", name);
-			return -1;
-		}
+	if ((sched_setaffinity(0, sizeof(mask), &mask) < 0) &&
+	    (errno == EPERM)) {
+		pr_inf_skip("%s stressor cannot set CPU affinity, process "
+			"lacks privilege, skipping the stressor\n", name);
+		return -1;
 	}
 	return 0;
 }
@@ -126,9 +125,12 @@ static inline void stress_affinity_spin_delay(
 static void stress_affinity_child(
 	stress_args_t *args,
 	stress_affinity_info_t *info,
+	stress_pid_t *s_pids,
+	const size_t affinity_procs,
 	const bool pin_controller)
 {
-	uint32_t cpu = args->instance, last_cpu = cpu;
+	uint32_t cpu = args->instance;
+	uint32_t last_cpu = cpu;
 	cpu_set_t mask0;
 	bool stress_continue_affinity = true;
 	const bool taskset_random = g_opt_flags & OPT_FLAGS_TASKSET_RANDOM;
@@ -174,12 +176,14 @@ static void stress_affinity_child(
 			}
 			pr_fail("%s: failed to move to CPU %" PRIu32 ", errno=%d (%s)\n",
 				args->name, cpu, errno, strerror(errno));
+
 			(void)shim_sched_yield();
 		} else {
+			size_t i;
 			cpu_set_t getmask;
 
 			/* Now get and check */
-			CPU_ZERO(&mask);
+			CPU_ZERO(&getmask);
 			if (sched_getaffinity(0, sizeof(getmask), &getmask) == 0) {
 				if ((g_opt_flags & OPT_FLAGS_VERIFY) &&
 				    (!(g_opt_flags & OPT_FLAGS_AGGRESSIVE)) &&
@@ -187,6 +191,15 @@ static void stress_affinity_child(
 				    (!CPU_ISSET(cpu, &getmask)))
 					pr_fail("%s: failed to move to CPU %" PRIu32 "\n",
 						args->name, cpu);
+			}
+			if (s_pids && info->affinity_pin) {
+				CPU_ZERO(&mask);
+				CPU_SET(cpu, &mask);
+
+				for (i = 1; i < affinity_procs; i++) {
+					if (s_pids[i].pid > 1)
+						(void)sched_setaffinity(s_pids[i].pid, sizeof(mask), &mask);
+				}
 			}
 		}
 		if (g_opt_flags & OPT_FLAGS_AGGRESSIVE) {
@@ -313,7 +326,7 @@ static int stress_affinity(stress_args_t *args)
 			stress_sync_start_wait_s_pid(&s_pids[i]);
 			stress_proc_state_set(args->name, STRESS_STATE_RUN);
 			stress_make_it_fail_set();
-			stress_affinity_child(args, info, false);
+			stress_affinity_child(args, info, NULL, affinity_procs, false);
 			_exit(EXIT_SUCCESS);
 		} else if (s_pids[i].pid > 0) {
 			stress_sync_start_s_pid_list_add(&s_pids_head, &s_pids[i]);
@@ -325,7 +338,7 @@ static int stress_affinity(stress_args_t *args)
 	stress_sync_start_cont_list(s_pids_head);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-	stress_affinity_child(args, info, true);
+	stress_affinity_child(args, info, s_pids, affinity_procs, true);
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 	/*
@@ -342,6 +355,17 @@ static int stress_affinity(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("load-average"),
+
+	STRESS_EX_SYSCALL("sched_getaffinity"),
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_affinity_info = {
 	.stressor = stress_affinity,
 	.classifier = CLASS_SCHEDULER,
@@ -349,6 +373,7 @@ const stressor_info_t stress_affinity_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_affinity_info = {

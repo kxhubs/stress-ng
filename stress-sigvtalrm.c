@@ -22,7 +22,7 @@
 static const stress_help_t help[] = {
 	{ NULL,	"sigvtalrm N",		"start N workers exercising SIGVTALRM signals" },
 	{ NULL,	"sigvtalrm-ops N",	"stop after N SIGVTALRM signals" },
-	{ NULL, NULL,		NULL }
+	{ NULL, NULL,			NULL }
 };
 
 #if defined(HAVE_GETITIMER) &&	\
@@ -60,7 +60,7 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_sigvtalrm_handler(int sig)
 		if (stress_continue(s_args))
 			return;
 	}
-	
+
 	/* Cancel timer if we detect no more runs */
 	(void)shim_memset(&timer, 0, sizeof(timer));
 	(void)setitimer(ITIMER_VIRTUAL, &timer, NULL);
@@ -129,11 +129,26 @@ static int stress_sigvtalrm(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("syscall-rate"),
+	STRESS_EX_FEATURE("timer"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("getitimer"),
+	STRESS_EX_SYSCALL("setitimer"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigvtalrm_info = {
 	.stressor = stress_sigvtalrm,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

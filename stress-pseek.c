@@ -24,13 +24,13 @@
 #include "core-pthread.h"
 #include "core-target-clones.h"
 
-#define MIN_PSEEKIO_BYTES	(1 * MB)
+#define MIN_PSEEKIO_BYTES	(1 * STRESS_MB)
 #define MAX_PSEEKIO_BYTES	(MAX_FILE_LIMIT)
-#define DEFAULT_PSEEKIO_BYTES	(1 * GB)
+#define DEFAULT_PSEEKIO_BYTES	(1 * STRESS_GB)
 
 #define MIN_PSEEKIO_IO_SIZE	(1)
-#define MAX_PSEEKIO_IO_SIZE	(1 * MB)
-#define DEFAULT_PSEEKIO_IO_SIZE	(1024)
+#define MAX_PSEEKIO_IO_SIZE	(1 * STRESS_MB)
+#define DEFAULT_PSEEKIO_IO_SIZE	(1 * STRESS_KB)
 
 #define MIN_PSEEKIO_PROCS	(2)
 #define MAX_PSEEKIO_PROCS	(16)
@@ -115,7 +115,7 @@ static void OPTIMIZE3 TARGET_CLONES pseek_fill_buf(
  */
 static ssize_t stress_pseek_write_offset(
 	stress_args_t *args,
-	stress_peekio_info_t *info,
+	const stress_peekio_info_t *info,
 	stress_peekio_proc_t *proc,
 	const off_t offset)
 {
@@ -184,7 +184,7 @@ retry:
  */
 static ssize_t stress_pseek_read_offset(
 	stress_args_t *args,
-	stress_peekio_info_t *info,
+	const stress_peekio_info_t *info,
 	stress_peekio_proc_t *proc,
 	const off_t offset)
 {
@@ -225,7 +225,9 @@ retry:
 
 	/* successful read */
 	if (ret == (ssize_t)info->pseek_io_size) {
-		register size_t j, baddata = 0, sz = (size_t)ret;
+		register size_t j;
+		register size_t baddata = 0;
+		register size_t sz = (size_t)ret;
 
 		proc->reads_duration += stress_time_now() - t;
 		proc->reads += (double)ret;
@@ -267,16 +269,16 @@ PRAGMA_UNROLL_N(4)
 static void stress_peekio_exercise(stress_peekio_proc_t *proc)
 {
 	stress_args_t *args = proc->args;
-	stress_peekio_info_t *info = proc->info;
+	const stress_peekio_info_t *info = proc->info;
 
 	for (;;) {
 		off_t offset;
 
 		if (info->pseek_rand) {
-			offset = (size_t)proc->proc_num * info->pseek_io_size * PSEEKIO_CHUNK_SCALE;
+			offset = proc->proc_num * info->pseek_io_size * PSEEKIO_CHUNK_SCALE;
 			offset += info->pseek_io_size * (size_t)stress_mwc8modn(PSEEKIO_CHUNK_SCALE - 1);
 		} else {
-			offset = (size_t)proc->proc_num * info->pseek_io_size * PSEEKIO_CHUNK_SCALE;
+			offset = proc->proc_num * info->pseek_io_size * PSEEKIO_CHUNK_SCALE;
 		}
 		if (UNLIKELY(!stress_continue(args)))
 			break;
@@ -319,7 +321,7 @@ static int stress_pseek_spawn(stress_args_t *args, stress_peekio_proc_t *proc)
 			pthread_create(&proc->pthread, NULL,
 				stress_peekio_pthread, proc);
 		if (proc->pthread_ret != 0) {
-			pr_inf("%s: failed to create pthread, errno=%d (%s)\n",
+			pr_inf("%s: create pthread failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			return -1;
 		}
@@ -328,7 +330,7 @@ static int stress_pseek_spawn(stress_args_t *args, stress_peekio_proc_t *proc)
 #endif
 	pid = fork();
 	if (pid < 0) {
-		pr_inf("%s: failed to fork process, errno=%d (%s)\n",
+		pr_inf("%s: fork failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return -1;
 	} else if (pid == 0) {
@@ -346,12 +348,13 @@ static int stress_pseek_spawn(stress_args_t *args, stress_peekio_proc_t *proc)
 
 static void stress_pseek_kill(
 	stress_args_t *args,
-	stress_peekio_proc_t *proc)
+	const stress_peekio_proc_t *proc)
 {
 #if defined(HAVE_LIB_PTHREAD)
 	if (proc->proc_num & 1) {
 		if (proc->pthread_ret == 0) {
 			(void)pthread_cancel(proc->pthread);
+			(void)pthread_join(proc->pthread, NULL);
 		}
 		return;
 	}
@@ -373,18 +376,21 @@ static int stress_pseek(stress_args_t *args)
 	size_t pseek_bytes;
 	static stress_peekio_info_t info;
 
-	size_t i, file_size;
+	size_t i;
+	size_t file_size;
 	size_t pseek_procs = DEFAULT_PSEEKIO_PROCS;
 	stress_peekio_proc_t *procs;
 	const size_t procs_size = sizeof(*procs) * pseek_procs;
-	double total_writes = 0.0, total_reads = 0.0;
-	double total_writes_duration = 0.0, total_reads_duration = 0.0;
+	double total_writes = 0.0;
+	double total_reads = 0.0;
+	double total_writes_duration = 0.0;
+	double total_reads_duration = 0.0;
 	double rate;
 
 	procs = (stress_peekio_proc_t *)stress_mmap_populate(NULL, procs_size, PROT_READ | PROT_WRITE,
 					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (procs == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte procs array%s, "
+		pr_inf_skip("%s: mmap %zu byte procs array failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, procs_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -442,7 +448,7 @@ static int stress_pseek(stress_args_t *args)
 		if (procs[i].buf == MAP_FAILED) {
 			size_t j;
 
-			pr_inf_skip("%s: failed to mmap buffer of %" PRIu64 " bytes%s, "
+			pr_inf_skip("%s: mmap buffer of %" PRIu64 " bytes%s failed, "
 				"errno=%d (%s), skipping stressor\n",
 				args->name, info.pseek_io_size,
 				stress_memory_free_get(), errno, strerror(errno));
@@ -466,7 +472,7 @@ static int stress_pseek(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 
 	if ((info.fd = open(filename, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR)) < 0) {
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_unlink;
 	}
@@ -522,10 +528,10 @@ static int stress_pseek(stress_args_t *args)
 
 	rate = (total_writes_duration > 0.0) ? total_writes / total_writes_duration : 0.0;
 	stress_metrics_set(args, "MB/sec write rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (total_reads_duration > 0.0) ? total_reads / total_reads_duration : 0.0;
 	stress_metrics_set(args, "MB/sec read rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	(void)close(info.fd);
 tidy_unlink:
@@ -546,10 +552,26 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pseek_info = {
 	.stressor = stress_pseek,
 	.classifier = CLASS_IO | CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

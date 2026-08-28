@@ -18,12 +18,13 @@
  */
 #include "stress-ng.h"
 #include "core-mmap.h"
+#include "core-pragma.h"
 #include "core-shim.h"
 #include "core-sort.h"
 
-#define MIN_FIBSEARCH_SIZE	(1 * KB)
-#define MAX_FIBSEARCH_SIZE	(64 * MB)
-#define DEFAULT_FIBSEARCH_SIZE	(64 * KB)
+#define MIN_FIBSEARCH_SIZE	(1 * STRESS_KB)
+#define MAX_FIBSEARCH_SIZE	(64 * STRESS_MB)
+#define DEFAULT_FIBSEARCH_SIZE	(64 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"fibsearch N",	  	"start N workers that exercise a Fibonacci search" },
@@ -46,6 +47,7 @@ static void OPTIMIZE3 * fibsearch(
 	register void *ptr;
 	register ssize_t offset = -1;
 
+PRAGMA_UNROLL
 	while (fib0 < nmemb) {
 		fib2 = fib1;
 		fib1 = fib0;
@@ -87,10 +89,17 @@ static void OPTIMIZE3 * fibsearch(
  */
 static int OPTIMIZE3 stress_fibsearch(stress_args_t *args)
 {
-	int32_t *data, *ptr;
-	size_t n, n8, i, data_size;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t n8;
+	size_t i;
+	size_t data_size;
 	uint64_t fibsearch_size = DEFAULT_FIBSEARCH_SIZE;
-	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
+	double rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double sorted = 0.0;
 	int rc = EXIT_SUCCESS;
 
 	if (!stress_setting_get("fibsearch-size", &fibsearch_size)) {
@@ -126,7 +135,7 @@ static int OPTIMIZE3 stress_fibsearch(stress_args_t *args)
 		stress_sort_compare_reset();
 		t = stress_time_now();
 		for (ptr = data, i = 0; i < n; i++, ptr++) {
-			int32_t *result;
+			const int32_t *result;
 
 			result = (int32_t *)fibsearch(ptr, data, n, sizeof(*ptr), stress_sort_cmp_fwd_int32);
 			if (g_opt_flags & OPT_FLAGS_VERIFY) {
@@ -169,10 +178,22 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fibsearch_info = {
 	.stressor = stress_fibsearch,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

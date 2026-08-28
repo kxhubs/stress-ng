@@ -173,8 +173,8 @@ static void OPTIMIZE3 sort_swap(void *p1, void *p2, register size_t size)
 	do {
 		register uint8_t tmp;
 
-		tmp = *(u8p1);
-		*(u8p1++) = *(u8p2);
+		tmp = *u8p1;
+		*(u8p1++) = *u8p2;
 		*(u8p2++) = tmp;
 	} while (--size);
 }
@@ -209,7 +209,8 @@ static void OPTIMIZE3 sort_copy1(void *p1, void *p2, register const size_t size)
 
 static void OPTIMIZE3 sort_copy(void *p1, void *p2, register size_t size)
 {
-	register uint8_t *u8p1, *u8p2;
+	register uint8_t *u8p1;
+	register const uint8_t *u8p2;
 
 	u8p1 = (uint8_t *)p1;
 	u8p2 = (uint8_t *)p2;
@@ -223,34 +224,34 @@ stress_sort_swap_func_t stress_sort_swap_func(const size_t size)
 {
 	switch (size) {
 	case 8:
-		return sort_swap8;
+		return &sort_swap8;
 	case 4:
-		return sort_swap4;
+		return &sort_swap4;
 	case 2:
-		return sort_swap2;
+		return &sort_swap2;
 	case 1:
-		return sort_swap1;
+		return &sort_swap1;
 	default:
 		break;
 	}
-	return sort_swap;
+	return &sort_swap;
 }
 
 stress_sort_copy_func_t stress_sort_copy_func(const size_t size)
 {
 	switch (size) {
 	case 8:
-		return sort_copy8;
+		return &sort_copy8;
 	case 4:
-		return sort_copy4;
+		return &sort_copy4;
 	case 2:
-		return sort_copy2;
+		return &sort_copy2;
 	case 1:
-		return sort_copy1;
+		return &sort_copy1;
 	default:
 		break;
 	}
-	return sort_copy;
+	return &sort_copy;
 }
 
 static inline size_t qsort_bm_minimum(const size_t x, const size_t y)
@@ -274,8 +275,8 @@ static inline void ALWAYS_INLINE qsort_bm_swap(
 	uint8_t *b,
 	size_t n)
 {
-	register uint8_t * RESTRICT pi = (uint8_t *)a;
-	register uint8_t * RESTRICT pj = (uint8_t *)b;
+	register uint8_t * RESTRICT pi = a;
+	register uint8_t * RESTRICT pj = b;
 
 PRAGMA_UNROLL_N(4)
 	do {
@@ -298,7 +299,13 @@ void TARGET_CLONES OPTIMIZE3 qsort_bm(
 	int (*cmp)(const void *, const void*))
 {
 	register uint8_t *a = (uint8_t *)base;
-	uint8_t *pa, *pb, *pc, *pd, *pm, *pn, *pv;
+	uint8_t *pa;
+	uint8_t *pb;
+	uint8_t *pc;
+	uint8_t *pd;
+	uint8_t *pm;
+	uint8_t *pn;
+	uint8_t *pv;
 	size_t s;
 
 	if (n < THRESH) {

@@ -59,7 +59,8 @@ static const uint32_t boot_magic[] = {
  */
 static inline void NORETURN no_return_reboot_clone_func(void *arg)
 {
-	size_t i, j = stress_mwc8modn(SIZEOF_ARRAY(boot_magic));
+	size_t i;
+	size_t j = stress_mwc8modn(SIZEOF_ARRAY(boot_magic));
 
 	(void)arg;
 
@@ -99,7 +100,7 @@ static int stress_reboot(stress_args_t *args)
 
 	stack = (char *)malloc(CLONE_STACK_SIZE);
 	if (!stack) {
-		pr_inf_skip("%s: cannot allocate %zu byte stack%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu byte stack failed%s, skipping stressor\n",
 			args->name, (size_t)CLONE_STACK_SIZE,
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -136,7 +137,7 @@ static int stress_reboot(stress_args_t *args)
 			/* don't worry about failure */
 		}
 #endif
-		ret = shim_reboot(0, 0, (int)SHIM_LINUX_REBOOT_CMD_RESTART, 0);
+		ret = shim_reboot(0, 0, (int)SHIM_LINUX_REBOOT_CMD_RESTART, NULL);
 		if (ret < 0) {
 			if (reboot_capable) {
 				if (errno == EPERM) {
@@ -158,7 +159,7 @@ static int stress_reboot(stress_args_t *args)
 			}
 		}
 
-		ret = shim_reboot(0, 0, (int)SHIM_LINUX_REBOOT_CMD_SW_SUSPEND, 0);
+		ret = shim_reboot(0, 0, (int)SHIM_LINUX_REBOOT_CMD_SW_SUSPEND, NULL);
 		if (ret < 0) {
 			if (reboot_capable) {
 				if (errno == EPERM) {
@@ -209,11 +210,17 @@ static int stress_reboot(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("reboot"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_reboot_info = {
 	.stressor = stress_reboot,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

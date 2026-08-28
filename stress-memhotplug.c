@@ -49,7 +49,8 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(__linux__)
+#if defined(__linux__) &&	\
+    defined(HAVE_SIGLONGJMP)
 static const char sys_memory_path[] = "/sys/devices/system/memory";
 
 static volatile bool do_jmp = false;
@@ -239,7 +240,8 @@ static int stress_memhotplug(stress_args_t *args)
 	const struct dirent *d;
 	stress_mem_info_t *mem_info;
 	size_t i;
-	NOCLOBBER size_t n = 0, max;
+	CLOBBERED size_t n = 0;
+	CLOBBERED size_t max;
 	stress_memhotplug_metrics_t metrics;
 	struct sigaction old_action;
 	double rate;
@@ -257,14 +259,14 @@ static int stress_memhotplug(stress_args_t *args)
 	dir = opendir(sys_memory_path);
 	if (!dir) {
 		if (stress_instance_zero(args))
-			pr_inf_skip("%s: %s not accessible, skipping stressor\n",
+			pr_inf_skip("%s: '%s' not accessible, skipping stressor\n",
 				args->name, sys_memory_path);
 		return EXIT_NOT_IMPLEMENTED;
 	}
 
 	/* Figure out number of potential hotplug memory regions */
 	while ((d = readdir(dir)) != NULL) {
-		if ((strncmp(d->d_name, "memory", 6) == 0) &&
+		if ((shim_strncmp(d->d_name, "memory", 6) == 0) &&
 		     stress_memhotplug_removable(d->d_name))
 			n++;
 	}
@@ -279,7 +281,7 @@ static int stress_memhotplug(stress_args_t *args)
 
 	mem_info = (stress_mem_info_t *)calloc(n, sizeof(*mem_info));
 	if (!mem_info) {
-		pr_inf_skip("%s: failed to allocate %zu mem_info structs%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu mem_info structs failed%s, skipping stressor\n",
 			args->name, n, stress_memory_free_get());
 		(void)closedir(dir);
 		return EXIT_NO_RESOURCE;
@@ -287,7 +289,7 @@ static int stress_memhotplug(stress_args_t *args)
 
 	max = 0;
 	while ((max < n) && ((d = readdir(dir)) != NULL)) {
-		if ((strncmp(d->d_name, "memory", 6) == 0) &&
+		if ((shim_strncmp(d->d_name, "memory", 6) == 0) &&
 		     stress_memhotplug_removable(d->d_name)) {
 			mem_info[max].name = shim_strdup(d->d_name);
 			mem_info[max].timeout = false;
@@ -341,11 +343,11 @@ finish:
 			args->name, segv_count);
 	}
 
-	rate = (metrics.offline_count > 0.0) ? (double)metrics.offline_duration / metrics.offline_count : 0.0;
+	rate = (metrics.offline_count > 0.0) ? metrics.offline_duration / metrics.offline_count : 0.0;
 	if (rate > 0.0)
 		stress_metrics_set(args, "millisecs per offline action",
 			rate * STRESS_DBL_MILLISECOND, STRESS_METRIC_HARMONIC_MEAN);
-	rate = (metrics.online_count > 0.0) ? (double)metrics.online_duration / metrics.online_count : 0.0;
+	rate = (metrics.online_count > 0.0) ? metrics.online_duration / metrics.online_count : 0.0;
 	if (rate > 0.0)
 		stress_metrics_set(args, "millisecs per online action",
 			rate * STRESS_DBL_MILLISECOND, STRESS_METRIC_HARMONIC_MEAN);
@@ -359,12 +361,21 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hotplug"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_memhotplug_info = {
 	.stressor = stress_memhotplug,
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.supported = stress_memhotplug_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_memhotplug_info = {
@@ -372,6 +383,6 @@ const stressor_info_t stress_memhotplug_info = {
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "only supported on Linux"
+	.unimplemented_reason = "built without siglongjmp() and only supported on Linux"
 };
 #endif

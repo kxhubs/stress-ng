@@ -389,9 +389,10 @@ do {				\
 #endif
 
 /*
- * making local static fixes clobbering warnings
+ * making auto variables volatile to stop clobbering warnings
  */
-#define NOCLOBBER static
+#define CLOBBERED	volatile
+#define UNCLOBBER(ptr) 	((void *)(uintptr_t)(ptr))
 
 #define STRESS_PROCS_MAX	(8192)		/* Max number of processes per stressor */
 
@@ -475,6 +476,25 @@ typedef enum {
 	VERIFY_ALWAYS   = 0x02,		/* verification always enabled */
 } stress_verify_t;
 
+typedef enum {
+	STRESS_EX_TYPE_BEGIN   = 0x00,
+	STRESS_EX_TYPE_FEATURE = 0x00,
+	STRESS_EX_TYPE_LIBRARY = 0x01,
+	STRESS_EX_TYPE_SYSCALL = 0x02,
+	STRESS_EX_TYPE_END =     0x03,
+} stress_exercise_type_t;
+
+/* Used as an array to indicate what the stressor exercises */
+typedef struct stress_exercises {
+	stress_exercise_type_t type;
+	const char *name;
+} stress_exercises_t;
+
+#define STRESS_EX_FEATURE(name)	{ STRESS_EX_TYPE_FEATURE, name }
+#define STRESS_EX_LIBRARY(name)	{ STRESS_EX_TYPE_LIBRARY, name }
+#define STRESS_EX_SYSCALL(name)	{ STRESS_EX_TYPE_SYSCALL, name }
+#define STRESS_EX_END		{ STRESS_EX_TYPE_END, NULL }
+
 /* Per stressor information, as defined in every stressor source */
 typedef struct stressor_info {
 	int (*stressor)(stress_args_t *args);	/* stressor function */
@@ -485,6 +505,7 @@ typedef struct stressor_info {
 	void (*limit_set)(uint64_t max);/* set limits */
 	const stress_opt_t *opts;	/* new option settings */
 	const stress_help_t *help;	/* stressor help options */
+	const stress_exercises_t *exercises; /* list of what is exercised */
 	const stress_class_t classifier;/* stressor class */
 	const stress_verify_t verify;	/* verification mode */
 	const char *unimplemented_reason;	/* unsupported reason message */
@@ -520,15 +541,15 @@ STRESSORS(STRESSOR_INFO)
 /* use syscall if we can, fallback to vfork otherwise */
 #define shim_vfork()		g_shared->vfork()
 
-extern const char stress_config[];
+extern const char * const stress_config[];
 
 /* Memory size constants */
-#define KB			(1ULL << 10)
-#define	MB			(1ULL << 20)
-#define GB			(1ULL << 30)
-#define TB			(1ULL << 40)
-#define PB			(1ULL << 50)
-#define EB			(1ULL << 60)
+#define STRESS_KB		(1ULL << 10)
+#define STRESS_MB		(1ULL << 20)
+#define STRESS_GB		(1ULL << 30)
+#define STRESS_TB		(1ULL << 40)
+#define STRESS_PB		(1ULL << 50)
+#define STRESS_EB		(1ULL << 60)
 
 #define ONE_BILLIONTH		(1.0E-9)
 #define ONE_MILLIONTH		(1.0E-6)
@@ -565,7 +586,7 @@ extern const char stress_config[];
 #define PAGE_MAPPED		(0x01)
 #define PAGE_MAPPED_FAIL	(0x02)
 
-#if defined(HAVE_COMPILER_GCC_OR_MUSL) || defined(HAVE_COMPILER_CLANG)
+#if defined(HAVE_TYPEOF)
 #define TYPEOF_CAST(a)	(typeof(a))
 #else
 #define	TYPEOF_CAST(a)
@@ -595,6 +616,12 @@ typedef struct {
 	double residency[STRESS_CSTATES_MAX];
 } stress_cstate_stats_t;
 
+/* Per stressor instance I/O read/write stats */
+typedef struct {
+	uint64_t read_bytes;		/* bytes read */
+	uint64_t write_bytes;		/* bytes written */
+} stress_io_stats_t;
+
 /* Per stressor statistics and accounting info */
 typedef struct stress_stats {
 	struct stress_stats *hash_next;	/* next stats in hash table */
@@ -616,6 +643,7 @@ typedef struct stress_stats {
 	stress_checksum_t *checksum;	/* pointer to checksum data */
 	stress_interrupts_t interrupts[STRESS_INTERRUPTS_MAX];
 	stress_cstate_stats_t cstates;	/* cstate stats */
+	stress_io_stats_t io_stats;	/* io read/write stats */
 	double rusage_utime;		/* rusage user time */
 	double rusage_stime;		/* rusage system time */
 	double rusage_utime_total;	/* rusage user time */
@@ -879,17 +907,17 @@ static inline void ALWAYS_INLINE stress_force_killed_bogo(stress_args_t *args)
  *	add val to the stressor bogo ops counter with lock, return true
  *	if stress_continue is true
  */
-static inline void stress_bogo_add_lock(stress_args_t *args, void *lock, const uint64_t val)
+static inline void stress_bogo_add_lock(stress_args_t *args, void *bogo_lock, const uint64_t val)
 {
 	/*
 	 *  Failure in lock acquire, don't bump counter
 	 *  and get racy stress_continue state, that's
 	 *  probably the best we can do in this failure mode
 	 */
-	if (UNLIKELY(stress_lock_acquire(lock) < 0))
+	if (UNLIKELY(stress_lock_acquire(bogo_lock) < 0))
 		return;
 	stress_bogo_add(args, val);
-	stress_lock_release(lock);
+	stress_lock_release(bogo_lock);
 }
 
 /*
@@ -897,7 +925,7 @@ static inline void stress_bogo_add_lock(stress_args_t *args, void *lock, const u
  *	increment the stressor bogo ops counter with lock, return true
  *	if stress_continue is true
  */
-static inline bool stress_bogo_inc_lock(stress_args_t *args, void *lock, const bool inc)
+static inline bool stress_bogo_inc_lock(stress_args_t *args, void *bogo_lock, const bool inc)
 {
 	bool ret;
 
@@ -906,12 +934,12 @@ static inline bool stress_bogo_inc_lock(stress_args_t *args, void *lock, const b
 	 *  and get racy stress_continue state, that's
 	 *  probably the best we can do in this failure mode
 	 */
-	if (UNLIKELY(stress_lock_acquire(lock) < 0))
+	if (UNLIKELY(stress_lock_acquire(bogo_lock) < 0))
 		return stress_continue(args);
 	ret = stress_continue(args);
 	if (inc && ret)
 		stress_bogo_inc(args);
-	stress_lock_release(lock);
+	stress_lock_release(bogo_lock);
 
 	return ret;
 }

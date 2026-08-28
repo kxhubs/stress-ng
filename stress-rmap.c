@@ -61,7 +61,7 @@ static int OPTIMIZE3 stress_rmap_touch(
 	uintptr_t *addr,
 	const size_t sz)
 {
-	register uintptr_t *begin = ((uintptr_t *)addr) + child_index;
+	register uintptr_t *begin = addr + child_index;
 	register const uintptr_t *end = (uintptr_t *)((uintptr_t)addr + sz);
 	register uintptr_t *ptr;
 	register const size_t inc = rmap_procs;
@@ -193,12 +193,14 @@ fail:
  */
 static int stress_rmap(stress_args_t *args)
 {
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	const size_t page_size = args->page_size;
 	const size_t sz = ((MAPPINGS_MAX - 1) + MAPPING_PAGES) * page_size;
-	int fd = -1, rc;
-	size_t i;
 	size_t rmap_procs = DEFAULT_RMAP_PROCS;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	size_t i;
+	int fd = -1;
+	int rc;
 	uintptr_t *mappings[MAPPINGS_MAX];
 	uintptr_t *paddings[MAPPINGS_MAX];
 	char filename[PATH_MAX];
@@ -215,7 +217,7 @@ static int stress_rmap(stress_args_t *args)
 
 	s_pids = stress_sync_s_pids_mmap(rmap_procs);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu PIDs failed%s, skipping stressor\n",
 			args->name, rmap_procs, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -239,7 +241,7 @@ static int stress_rmap(stress_args_t *args)
 	if (rc < 0) {
 		(void)stress_lock_destroy(counter_lock);
 		(void)stress_sync_s_pids_munmap(s_pids, rmap_procs);
-		return stress_exit_status((int)-rc);
+		return stress_exit_status(-rc);
 	}
 
 	(void)stress_fs_temp_filename_args(args,
@@ -247,14 +249,14 @@ static int stress_rmap(stress_args_t *args)
 
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: open %s failed, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		(void)stress_fs_temp_dir_rm_args(args);
 		(void)stress_lock_destroy(counter_lock);
 		(void)stress_sync_s_pids_munmap(s_pids, rmap_procs);
 
-		return (int)rc;
+		return rc;
 	}
 	(void)shim_unlink(filename);
 
@@ -360,10 +362,19 @@ cleanup:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-major"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rmap_info = {
 	.stressor = stress_rmap,
 	.classifier = CLASS_OS | CLASS_MEMORY,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
 	.opts = opts,
+	.exercises = exercises,
 };

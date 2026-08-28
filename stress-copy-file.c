@@ -19,28 +19,34 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-mmap.h"
 
-#define MIN_COPY_FILE_BYTES	(128 * MB)
-#define MAX_COPY_FILE_BYTES	(MAX_FILE_LIMIT)
-#define DEFAULT_COPY_FILE_BYTES	(256 * MB)
-#define DEFAULT_COPY_FILE_SIZE	(128 * KB)
+#define MIN_COPY_FILE_BYTES		(128 * STRESS_MB)
+#define MAX_COPY_FILE_BYTES		(MAX_FILE_LIMIT)
+#define DEFAULT_COPY_FILE_BYTES		(256 * STRESS_MB)
+
+#define MIN_COPY_FILE_IO_BYTES		(4 * STRESS_KB)
+#define MAX_COPY_FILE_IO_BYTES		(1 * STRESS_MB)
+#define DEFAULT_COPY_FILE_IO_BYTES	(128 * STRESS_KB)
+
+#define COPY_FILE_MAX_BUF_SIZE		(4 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"copy-file N",		"start N workers that copy file data" },
 	{ NULL,	"copy-file-bytes N",	"specify size of file to be copied" },
+	{ NULL, "copy-file-io-bytes N", "specify copying I/O size" },
 	{ NULL,	"copy-file-ops N",	"stop after N copy bogo operations" },
 	{ NULL,	NULL,			NULL }
 
 };
 
 static const stress_opt_t opts[] = {
-	{ OPT_copy_file_bytes, "copy-file-bytes", TYPE_ID_UINT64_BYTES_FS, MIN_COPY_FILE_BYTES, MAX_COPY_FILE_BYTES, NULL },
+	{ OPT_copy_file_bytes,    "copy-file-bytes",    TYPE_ID_UINT64_BYTES_FS, MIN_COPY_FILE_BYTES, MAX_COPY_FILE_BYTES, NULL },
+	{ OPT_copy_file_io_bytes, "copy-file-io-bytes", TYPE_ID_SIZE_T_BYTES, MIN_COPY_FILE_IO_BYTES, MAX_COPY_FILE_IO_BYTES, NULL },
 	END_OPT,
 };
 
 #if defined(HAVE_COPY_FILE_RANGE)
-
-#define COPY_FILE_MAX_BUF_SIZE	(4096)
 
 /*
  *  stress_copy_file_seek64()
@@ -70,19 +76,19 @@ static int stress_copy_file_fill(
 	stress_args_t *args,
 	const int fd,
 	const shim_off64_t off64,
-	const ssize_t size)
+	char * const buf,
+	const size_t buf_len)
 {
-	char buf[COPY_FILE_MAX_BUF_SIZE];
-	ssize_t sz = size;
-
-	(void)shim_memset(buf, stress_mwc8(), sizeof(buf));
+	register ssize_t sz = buf_len;
 
 	if (stress_copy_file_seek64(fd, off64, SEEK_SET) < 0)
 		return -1;
 
+	(void)shim_memset(buf, stress_mwc8(), buf_len);
+
 	while (sz > 0) {
 		ssize_t n;
-		ssize_t wr_size = sz > (ssize_t)sizeof(buf) ? (ssize_t)sizeof(buf) : sz;
+		const ssize_t wr_size = sz > (ssize_t)buf_len ? (ssize_t)buf_len : sz;
 
 		n = write(fd, buf, wr_size);
 		if (n < 0)
@@ -109,7 +115,9 @@ static int stress_copy_file_range_verify(
 	size_t bytes_left = (size_t)bytes;
 
 	while (bytes_left > 0) {
-		ssize_t n, bytes_in, bytes_out;
+		ssize_t n;
+		ssize_t bytes_in;
+		ssize_t bytes_out;
 		size_t sz = STRESS_MINIMUM(bytes_left, COPY_FILE_MAX_BUF_SIZE);
 		char buf_in[COPY_FILE_MAX_BUF_SIZE];
 		char buf_out[COPY_FILE_MAX_BUF_SIZE];
@@ -150,12 +158,35 @@ static int stress_copy_file_range_verify(
  */
 static int stress_copy_file(stress_args_t *args)
 {
-	int fd_in, fd_out, rc = EXIT_FAILURE, ret;
+	int fd_in;
+	int fd_out;
+	int rc = EXIT_FAILURE;
+	int ret;
 	const int fd_bad = stress_fs_bad_fd_get();
-	char filename[PATH_MAX - 5], tmp[PATH_MAX];
-	uint64_t copy_file_bytes, copy_file_bytes_total = DEFAULT_COPY_FILE_BYTES;
-	double duration = 0.0, bytes = 0.0, rate;
+	char filename[PATH_MAX - 5];
+	char tmp[PATH_MAX];
+	size_t copy_file_io_bytes = DEFAULT_COPY_FILE_IO_BYTES;
+	uint64_t copy_file_bytes;
+	uint64_t copy_file_bytes_total = DEFAULT_COPY_FILE_BYTES;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
+	char *buf;
+
+	if (!stress_setting_get("copy-file-io-bytes", &copy_file_io_bytes)) {
+		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
+			copy_file_io_bytes = MAX_COPY_FILE_IO_BYTES;
+		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
+			copy_file_io_bytes = MIN_COPY_FILE_IO_BYTES;
+	}
+	buf = stress_mmap_populate(NULL, copy_file_io_bytes, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (buf == MAP_FAILED) {
+		pr_inf_skip("%s: failed to mmap %zu bytes for I/O buffer, errno=%d (%s), skipping stressor\n",
+			args->name, copy_file_io_bytes, errno, strerror(errno));
+		return EXIT_NO_RESOURCE;
+	}
 
 	if (!stress_setting_get("copy-file-bytes", &copy_file_bytes_total)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -177,8 +208,8 @@ static int stress_copy_file(stress_args_t *args)
 	}
 
 	copy_file_bytes = copy_file_bytes_total / args->instances;
-	if (copy_file_bytes < DEFAULT_COPY_FILE_SIZE) {
-		copy_file_bytes = DEFAULT_COPY_FILE_SIZE * 2;
+	if (copy_file_bytes < (uint64_t)copy_file_io_bytes) {
+		copy_file_bytes = (uint64_t)copy_file_io_bytes * 2UL;
 		copy_file_bytes_total = copy_file_bytes * args->instances;
 	}
 	if (copy_file_bytes < MIN_COPY_FILE_BYTES) {
@@ -188,16 +219,18 @@ static int stress_copy_file(stress_args_t *args)
 	if (stress_instance_zero(args))
 		stress_fs_usage_bytes(args, copy_file_bytes, copy_file_bytes_total);
 
-        ret = stress_fs_temp_dir_make_args(args);
-        if (ret < 0)
-                return stress_exit_status(-ret);
+	ret = stress_fs_temp_dir_make_args(args);
+	if (ret < 0) {
+		rc = stress_exit_status(-ret);
+		goto tidy_unmap;
+	}
 
 	(void)stress_fs_temp_filename_args(args,
 			filename, sizeof(filename), stress_mwc32());
 	(void)snprintf(tmp, sizeof(tmp), "%s-orig", filename);
 	if ((fd_in = open(tmp, O_CREAT | O_RDWR,  S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, tmp, errno, strerror(errno));
 		goto tidy_dir;
 	}
@@ -213,7 +246,7 @@ static int stress_copy_file(stress_args_t *args)
 	(void)snprintf(tmp, sizeof(tmp), "%s-copy", filename);
 	if ((fd_out = open(tmp, O_CREAT | O_RDWR,  S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, tmp, errno, strerror(errno));
 		goto tidy_in;
 	}
@@ -241,22 +274,26 @@ static int stress_copy_file(stress_args_t *args)
 
 	do {
 		ssize_t copy_ret;
-		shim_off64_t off64_in, off64_out, off64_in_orig, off64_out_orig;
+		shim_off64_t off64_in;
+		shim_off64_t off64_out;
+		shim_off64_t off64_in_orig;
+		shim_off64_t off64_out_orig;
 		double t;
 
-		off64_in_orig = (shim_loff_t)stress_mwc64modn(copy_file_bytes - DEFAULT_COPY_FILE_SIZE);
+		/* offsets are between 0.. and end of file - copy size */
+		off64_in_orig = (shim_loff_t)stress_mwc64modn(copy_file_bytes - (uint64_t)copy_file_io_bytes);
 		off64_in = off64_in_orig;
-		off64_out_orig = (shim_loff_t)stress_mwc64modn(copy_file_bytes - DEFAULT_COPY_FILE_SIZE);
+		off64_out_orig = (shim_loff_t)stress_mwc64modn(copy_file_bytes - (uint64_t)copy_file_io_bytes);
 		off64_out = off64_out_orig;
 
 		if (UNLIKELY(!stress_continue(args)))
 			break;
-		stress_copy_file_fill(args, fd_in, off64_in, DEFAULT_COPY_FILE_SIZE);
+		stress_copy_file_fill(args, fd_in, off64_in, buf, copy_file_io_bytes);
 		if (UNLIKELY(!stress_continue(args)))
 			break;
 		t = stress_time_now();
 		copy_ret = shim_copy_file_range(fd_in, &off64_in, fd_out,
-						&off64_out, DEFAULT_COPY_FILE_SIZE, 0);
+						&off64_out, copy_file_io_bytes, 0);
 		if (LIKELY(copy_ret >= 0)) {
 			duration += stress_time_now() - t;
 			bytes += (double)copy_ret;
@@ -303,17 +340,17 @@ static int stress_copy_file(stress_args_t *args)
 		 *  Exercise with bad fds
 		 */
 		VOID_RET(ssize_t, shim_copy_file_range(fd_bad, &off64_in, fd_out,
-						&off64_out, DEFAULT_COPY_FILE_SIZE, 0));
+						&off64_out, copy_file_io_bytes, 0));
 		VOID_RET(ssize_t, shim_copy_file_range(fd_in, &off64_in, fd_bad,
-						&off64_out, DEFAULT_COPY_FILE_SIZE, 0));
+						&off64_out, copy_file_io_bytes, 0));
 		VOID_RET(ssize_t, shim_copy_file_range(fd_out, &off64_in, fd_in,
-						&off64_out, DEFAULT_COPY_FILE_SIZE, 0));
+						&off64_out, copy_file_io_bytes, 0));
 		(void)copy_ret;
 		/*
 		 *  Exercise with bad flags
 		 */
 		VOID_RET(ssize_t, shim_copy_file_range(fd_in, &off64_in, fd_out,
-						&off64_out, DEFAULT_COPY_FILE_SIZE, ~0U));
+						&off64_out, copy_file_io_bytes, ~0U));
 		if (UNLIKELY(!stress_continue(args)))
 			break;
 		(void)shim_fsync(fd_out);
@@ -323,7 +360,7 @@ static int stress_copy_file(stress_args_t *args)
 
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec copy rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 tidy_out:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -334,16 +371,35 @@ tidy_in:
 tidy_dir:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 	(void)stress_fs_temp_dir_rm_args(args);
+tidy_unmap:
+	(void)munmap((void *)buf, copy_file_io_bytes);
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+	STRESS_EX_FEATURE("writeback-dirty-folio"),
+
+	STRESS_EX_SYSCALL("copy_file_range"),
+#if defined(HAVE_LSEEK64)
+	STRESS_EX_SYSCALL("lseek64"),
+#else
+	STRESS_EX_SYSCALL("lseek"),
+#endif
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_copy_file_info = {
 	.stressor = stress_copy_file,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_copy_file_info = {

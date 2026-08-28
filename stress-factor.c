@@ -42,10 +42,19 @@ static const stress_opt_t opts[] = {
 
 static int OPTIMIZE3 stress_factor(stress_args_t *args)
 {
-	size_t factor_digits = 10, max_digits = 0;
-	double total_factors = 0.0, mean, t, duration = 0.0, rate;
+	size_t factor_digits = 10;
+	size_t max_digits = 0;
+	double total_factors = 0.0;
+	double mean;
+	double t;
+	double duration = 0.0;
+	double rate;
 	uint64_t ops, factors;
-	mpz_t value, divisor, q, r, tmp;
+	mpz_t value;
+	mpz_t divisor;
+	mpz_t q;
+	mpz_t r;
+	mpz_t tmp;
 
 	if (!stress_setting_get("factor-digits", &factor_digits)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -137,12 +146,29 @@ abort:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-division"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("gmp"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_factor_info = {
 	.stressor = stress_factor,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

@@ -69,7 +69,8 @@ static const stress_opt_t opts[] = {
 
 #if defined(__linux__) &&		\
     defined(HAVE_LIB_PTHREAD) &&	\
-    defined(HAVE_PTHREAD_BARRIER)
+    defined(HAVE_PTHREAD_BARRIER) &&	\
+    defined(HAVE_IOVEC)
 
 #define MSG_ID			'M'
 
@@ -194,7 +195,11 @@ static inline ssize_t stress_race_fd_send(const int fd, const int fd_send)
 
 	ptr = (int *)(uintptr_t)CMSG_DATA(cmsg);
 	*ptr = fd_send;
+#if defined(MSG_NOSIGNAL)
+	return sendmsg(fd, &msg, MSG_NOSIGNAL);
+#else
 	return sendmsg(fd, &msg, 0);
+#endif
 }
 
 /*
@@ -205,7 +210,7 @@ static inline int stress_race_fd_recv(const int fd)
 {
 	struct iovec iov;
 	struct msghdr ALIGN64 msg;
-	struct cmsghdr *cmsg;
+	const struct cmsghdr *cmsg;
 	char msg_data[1] = { 0 };
 	char ctrl[CMSG_SPACE(sizeof(int))];
 
@@ -232,7 +237,7 @@ static inline int stress_race_fd_recv(const int fd)
 	    (cmsg->cmsg_level == SOL_SOCKET) &&
 	    (cmsg->cmsg_type == SCM_RIGHTS) &&
 	    ((size_t)cmsg->cmsg_len >= (size_t)CMSG_LEN(sizeof(int)))) {
-		int *const ptr = (int *)(uintptr_t)CMSG_DATA(cmsg);
+		const int * const ptr = (int *)(uintptr_t)CMSG_DATA(cmsg);
 		return *ptr;
 	}
 
@@ -279,17 +284,22 @@ static void *stress_fd_race_pthread(void *ptr)
  */
 static int OPTIMIZE3 stress_race_fd_client(stress_fd_race_context *context)
 {
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	stress_args_t *args = context->args;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 
 	do {
 		ssize_t n;
 		socklen_t addr_len = 0;
-		int i, fd, retries = 0, so_reuseaddr = 1;
-		int fds_min = INT_MAX, fds_max = -1;
+		int i;
+		int fd;
+		int retries = 0;
+		int so_reuseaddr = 1;
+		int fds_min = INT_MAX;
+		int fds_max = -1;
 		int pthreads_ret[MAX_PTHREADS];
 		pthread_t pthreads[MAX_PTHREADS];
 		size_t j;
@@ -321,13 +331,12 @@ retry:
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
-
 		if (UNLIKELY(stress_net_sockaddr_set(args->name, args->instance, context->pid,
 						     AF_UNIX, context->socket_fd_port,
 						     &addr, &addr_len, NET_ADDR_ANY) < 0)) {
 			return EXIT_FAILURE;
 		}
-		if (UNLIKELY(connect(fd, addr, addr_len) < 0)) {
+		if (UNLIKELY(connect(fd, (struct sockaddr *)&addr, addr_len) < 0)) {
 			(void)close(fd);
 			if (retries++ > 100) {
 				/* Give up.. */
@@ -368,8 +377,8 @@ retry:
 
 #if defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
-	if (addr) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	{
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -392,7 +401,8 @@ static void *stress_fd_race_current(void *ptr)
 
 	do {
 		int current_fd = context->current_fd;
-		int fd, fd_end;
+		int fd;
+		int fd_end;
 
 		if (context->current_fd == -1) {
 			(void)shim_usleep(200000);
@@ -500,15 +510,18 @@ static int OPTIMIZE3 stress_race_fd_server(
 	stress_fd_race_filename_t *list)
 {
 	size_t j;
-	int fd, so_reuseaddr = 1, rc = EXIT_SUCCESS;
+	int fd;
+	int so_reuseaddr = 1;
+	int rc = EXIT_SUCCESS;
 	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	uint64_t msgs = 0;
-	stress_fd_race_filename_t *entry;
+	const stress_fd_race_filename_t *entry;
 	stress_args_t *args = context->args;
 	int pthreads_ret[MAX_PTHREADS];
 	pthread_t pthreads[MAX_PTHREADS];
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	for (j = 0; j < MAX_PTHREADS; j++) {
 		pthreads_ret[j] = -1;
 	}
@@ -547,7 +560,7 @@ retry:
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 		if (errno == EADDRINUSE) {
 			rc = EXIT_NO_RESOURCE;
 			pr_inf_skip("%s: cannot bind, skipping stressor, errno=%d (%s)\n",
@@ -580,7 +593,8 @@ retry:
 		sfd = accept(fd, (struct sockaddr *)NULL, NULL);
 		if (sfd >= 0) {
 			ssize_t i;
-			int fds_min = INT_MAX, fds_max = -1;
+			int fds_min = INT_MAX;
+			int fds_max = -1;
 			double t_end = stress_time_now() + 0.5;
 
 			(void)shim_memset(context->fds, 0, context->fds_size);
@@ -634,8 +648,8 @@ die_close:
 die:
 #if defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
-	if (addr) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	{
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -665,7 +679,7 @@ static stress_fd_race_filename_t *stress_fd_race_filename_add(
 	};
 
 	for (i = 0; i < SIZEOF_ARRAY(ignore_list); i++) {
-		if (strncmp(filename, ignore_list[i], strlen(ignore_list[i])) == 0)
+		if (shim_strncmp(filename, ignore_list[i], shim_strlen(ignore_list[i])) == 0)
 			return NULL;
 	}
 
@@ -732,7 +746,7 @@ static void stress_fd_race_filename_dir(const char *dirname, stress_fd_race_file
 		if ((de->d_name[0] == '\0') || (de->d_name[0] == '.'))
 			continue;
 
-		for (len = (ssize_t)strlen(de->d_name) - 1; len > 1; len--) {
+		for (len = (ssize_t)shim_strlen(de->d_name) - 1; len > 1; len--) {
 			if (!isdigit((unsigned char)de->d_name[len]))
 				break;
 		}
@@ -777,7 +791,7 @@ static void stress_fd_race_get_dev(
 		struct stat statbuf;
 
 		if (stat(dirname, &statbuf) < 0) {
-			pr_inf("%s: cannot stat %s, errno=%d (%s), option "
+			pr_inf("%s: stat '%s' failed, errno=%d (%s), option "
 				"%s will be disabled\n", args->name, dirname,
 				errno, strerror(errno), opt_name);
 			*opt_flag = false;
@@ -794,7 +808,10 @@ static void stress_fd_race_get_dev(
 static int stress_fd_race(stress_args_t *args)
 {
 	pid_t pid;
-	int fd, rc = EXIT_SUCCESS, ret, reserved_port;
+	int fd;
+	int rc = EXIT_SUCCESS;
+	int ret;
+	int reserved_port;
 	char filename[PATH_MAX];
 	stress_fd_race_filename_t *list = NULL;
 	bool fd_race_dev = false;
@@ -826,7 +843,7 @@ static int stress_fd_race(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_inf("%s: failed to create file '%s', errno=%d (%s), skipping stressor\n",
+		pr_inf("%s: open '%s' failed, errno=%d (%s), skipping stressor\n",
 			args->name, filename, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_file;
@@ -890,11 +907,9 @@ static int stress_fd_race(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
-	pid = fork();
+
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto tidy_barrier;
@@ -929,12 +944,54 @@ tidy_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("dup"),
+	STRESS_EX_SYSCALL("faccessat"),
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("fdatasync"),
+#if defined(HAVE_FLOCK) &&	\
+    defined(LOCK_UN)
+	STRESS_EX_SYSCALL("flock"),
+#endif
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("fstatat"),
+	STRESS_EX_SYSCALL("fsync"),
+#if defined(FIONREAD)
+	STRESS_EX_SYSCALL("ioctl"),
+#endif
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("lseek"),
+#if defined(HAVE_POLL_H) &&	\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_POSIX_FADVISE) && 	\
+    defined(SHIM_POSIX_FADV_NORMAL)
+	STRESS_EX_SYSCALL("posix_fadvise"),
+#endif
+#if defined(HAVE_SYS_SELECT_H) &&       \
+    defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("socket"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fd_race_info = {
 	.stressor = stress_fd_race,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fd_race_info = {
@@ -943,6 +1000,6 @@ const stressor_info_t stress_fd_race_info = {
 	.verify = VERIFY_ALWAYS,
 	.help = help,
 	.opts = opts,
-	.unimplemented_reason = "only supported on Linux with pthread support and pthread_barrier"
+	.unimplemented_reason = "only supported on Linux with pthread support and pthread_barrier and struct iovec"
 };
 #endif

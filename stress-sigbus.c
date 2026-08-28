@@ -37,8 +37,8 @@ static const stress_help_t help[] = {
 
 static sigjmp_buf jmp_env;
 #if defined(SA_SIGINFO)
-static volatile void *fault_addr;
-static volatile void *expected_addr;
+static void * volatile fault_addr;
+static void * volatile expected_addr;
 static volatile int signo;
 static volatile int code;
 #endif
@@ -92,16 +92,17 @@ static void NORETURN MLOCKED_TEXT stress_bushandler(int signum)
  */
 static int stress_sigbus(stress_args_t *args)
 {
-	int ret, fd;
+	int ret;
+	int fd;
 	char filename[PATH_MAX];
 	const char *fs_type;
-	NOCLOBBER uint8_t *ptr;
-	NOCLOBBER int rc = EXIT_FAILURE;
+	uint8_t * CLOBBERED ptr;
+	CLOBBERED int rc = EXIT_FAILURE;
 	const size_t page_size = args->page_size;
 #if defined(SA_SIGINFO)
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #endif
-	NOCLOBBER double time_start;
+	CLOBBERED double time_start;
 	struct sigaction action;
 
 	ret = stress_fs_temp_dir_make_args(args);
@@ -110,7 +111,7 @@ static int stress_sigbus(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_dir;
         }
@@ -132,7 +133,7 @@ static int stress_sigbus(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_SHARED, fd, 0);
 	if (ptr == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte read only pages%s, "
+		pr_inf_skip("%s: mmap %zu byte read only pages failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, page_size * 2,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -142,8 +143,8 @@ static int stress_sigbus(stress_args_t *args)
 	/* And remove last page on backing file */
 	ret = ftruncate(fd, page_size);
 	if (ret < 0) {
-		pr_fail("%s: ftruncate file to a single page failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_fail("%s: ftruncate '%s' to a single page failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		rc = EXIT_FAILURE;
 		goto tidy_mmap;
 	}
@@ -274,7 +275,6 @@ static int stress_sigbus(stress_args_t *args)
 						     "popf;\n");
 #endif
 			}
-
 			/* Access un-backed file mmapping */
 			(*(ptr + page_size))++;
 		}
@@ -293,13 +293,24 @@ tidy_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigbus_info = {
 	.stressor = stress_sigbus,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 #if defined(SA_SIGINFO)
 	.verify = VERIFY_OPTIONAL,
 #endif
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -308,7 +319,7 @@ const stressor_info_t stress_sigbus_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

@@ -128,22 +128,25 @@ static void stress_timerfd_set(
  */
 static int stress_timerfd(stress_args_t *args)
 {
+	char file_fd_name[PATH_MAX];
 	struct itimerspec timer;
+#if defined(USE_POLL)
+	struct pollfd *pollfds;
+#endif
 	uint64_t timerfd_freq = DEFAULT_TIMERFD_FREQ;
 	int timerfd_fds = TIMER_FDS_DEFAULT;
-	int count = 0, i, max_timerfd = -1;
-	bool timerfd_rand = false;
+	int count = 0;
+	int i;
+	int max_timerfd = -1;
 	int file_fd;
-	char file_fd_name[PATH_MAX];
-#if defined(CLOCK_REALTIME_ALARM)
-	const bool cap_wake_alarm = stress_capabilities_check(SHIM_CAP_WAKE_ALARM);
-#endif
 	const int bad_fd = stress_fs_bad_fd_get();
 	const pid_t self = getpid();
 	int *timerfds;
-	int ret, rc = EXIT_SUCCESS;
-#if defined(USE_POLL)
-	struct pollfd *pollfds;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	bool timerfd_rand = false;
+#if defined(CLOCK_REALTIME_ALARM)
+	const bool cap_wake_alarm = stress_capabilities_check(SHIM_CAP_WAKE_ALARM);
 #endif
 
 	(void)stress_setting_get("timerfd-rand", &timerfd_rand);
@@ -167,7 +170,7 @@ static int stress_timerfd(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, file_fd_name, sizeof(file_fd_name), stress_mwc32());
 	file_fd = open(file_fd_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (file_fd < 0) {
-		pr_err("%s: cannot create %s\n", args->name, file_fd_name);
+		pr_err("%s: open '%s' failed\n", args->name, file_fd_name);
 		rc = stress_exit_status(errno);
 		goto close_file_fd;
 	}
@@ -175,7 +178,7 @@ static int stress_timerfd(stress_args_t *args)
 
 	timerfds = (int *)calloc((size_t)timerfd_fds, sizeof(*timerfds));
 	if (!timerfds) {
-		pr_inf_skip("%s: failed to allocate %d timerfd file descriptors%s, "
+		pr_inf_skip("%s: allocate %d timerfd file descriptors failed%s, "
 			"skipping stressor\n", args->name,
 			timerfd_fds, stress_memory_free_get());
 		rc = EXIT_NO_RESOURCE;
@@ -187,7 +190,7 @@ static int stress_timerfd(stress_args_t *args)
 #if defined(USE_POLL)
 	pollfds = (struct pollfd *)calloc((size_t)timerfd_fds, sizeof(*pollfds));
 	if (!pollfds) {
-		pr_inf_skip("%s: failed to allocate %d pollfd file descriptors%s, "
+		pr_inf_skip("%s: allocate %d pollfd file descriptors failed%s, "
 			"skipping stressor\n", args->name,
 			timerfd_fds, stress_memory_free_get());
 		rc = EXIT_NO_RESOURCE;
@@ -232,7 +235,7 @@ retry:
 		if (ret >= 0) {
 #if 0
 			pr_fail("%s: timerfd_create without capability CAP_WAKE_ALARM unexpectedly "
-					"succeeded, errno=%d (%s)\n", args->name, errno, strerror(errno));
+				"succeeded, errno=%d (%s)\n", args->name, errno, strerror(errno));
 #endif
 			(void)close(ret);
 		}
@@ -428,12 +431,36 @@ dir_rm:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("close"),
+#if defined(HAVE_SYS_TIMERFD_H) &&	\
+    defined(TFD_IOC_SET_TICKS)
+	STRESS_EX_SYSCALL("ioctl"),
+#endif
+#if defined(USE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+#if defined(USE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("timerfd_create"),
+	STRESS_EX_SYSCALL("timerfd_gettime"),
+	STRESS_EX_SYSCALL("timerfd_settime"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_timerfd_info = {
 	.stressor = stress_timerfd,
 	.classifier = CLASS_INTERRUPT | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_timerfd_info = {
@@ -442,6 +469,6 @@ const stressor_info_t stress_timerfd_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without sys/timerfd.h, timerfd_create(), timerfd_settime(), timerfd_setime, select() or poll()"
+	.unimplemented_reason = "built without sys/timerfd.h, timerfd_create(), timerfd_gettime(), timerfd_settime(), select() or poll()"
 };
 #endif

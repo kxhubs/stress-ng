@@ -23,9 +23,9 @@
 #include "core-signal.h"
 #include "core-sort.h"
 
-#define MIN_SHELLSORT_SIZE	(1 * KB)
-#define MAX_SHELLSORT_SIZE	(4 * MB)
-#define DEFAULT_SHELLSORT_SIZE	(256 * KB)
+#define MIN_SHELLSORT_SIZE	(1 * STRESS_KB)
+#define MAX_SHELLSORT_SIZE	(4 * STRESS_MB)
+#define DEFAULT_SHELLSORT_SIZE	(256 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -83,11 +83,15 @@ static inline void OPTIMIZE3 shellsort32(void *base, size_t nmemb,
 static int OPTIMIZE3 stress_shellsort(stress_args_t *args)
 {
 	uint64_t shellsort_size = DEFAULT_SHELLSORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, data_size;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t data_size;
 	double rate;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
@@ -107,7 +111,7 @@ static int OPTIMIZE3 stress_shellsort(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (data == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu 32 bit integers%s, "
+		pr_inf_skip("%s: mmap %zu 32 bit integers failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, n, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -238,10 +242,24 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_shellsort_info = {
 	.stressor = stress_shellsort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -136,14 +136,10 @@ static void check_unshare(
  */
 static inline bool enough_memory(void)
 {
-	size_t shmall, freemem, totalmem, freeswap, totalswap;
-	bool enough;
+	stress_memory_info_t info;
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-
-	enough = (freemem == 0) ? true : freemem > (8 * MB);
-
-	return enough;
+	stress_memory_info_get(&info);
+	return (info.freemem == 0) ? true : info.freemem > (8 * STRESS_MB);
 }
 
 /*
@@ -152,22 +148,26 @@ static inline bool enough_memory(void)
  */
 static int stress_unshare(stress_args_t *args)
 {
+	stress_unshare_info_t *unshare_info;
+	int *clone_flag_perms;
+	size_t i;
+	size_t clone_flag_count;
+	const size_t unshare_info_size = sizeof(stress_unshare_info_t) * MAX_PIDS;
+	double total_duration = 0.0;
+	double total_count = 0.0;
+	double rate;
+	int rc = EXIT_SUCCESS;
+	int all_flags;
 #if defined(CLONE_NEWNET)
 	const uid_t euid = geteuid();
 #endif
-	int *clone_flag_perms, all_flags;
-	size_t i, clone_flag_count;
-	const size_t unshare_info_size = sizeof(stress_unshare_info_t) * MAX_PIDS;
-	stress_unshare_info_t *unshare_info;
-	double total_duration = 0.0, total_count = 0.0, rate;
-	int rc = EXIT_SUCCESS;
 
 	unshare_info = (stress_unshare_info_t *)stress_mmap_populate(NULL,
 				unshare_info_size,
 				PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (unshare_info == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu bytes for unshare metrics%s, "
+		pr_inf("%s: mmap %zu bytes for unshare metrics failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, unshare_info_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -310,11 +310,25 @@ static int stress_unshare(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("unshare"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_unshare_info = {
 	.stressor = stress_unshare,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_unshare_info = {

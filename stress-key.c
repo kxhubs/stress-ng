@@ -117,11 +117,13 @@ static int stress_key(stress_args_t *args)
 	char *huge_description;
 	const size_t key_huge_desc_size = STRESS_MAXIMUM(args->page_size, KEY_HUGE_DESC_SIZE) + 1024;
 	uint64_t keys_added = 0;
-	double t_start, duration, rate;
+	double t_start;
+	double duration;
+	double rate;
 
 	huge_description = (char *)malloc(key_huge_desc_size);
 	if (!huge_description) {
-		pr_inf_skip("%s: cannot allocate %zu byte description string%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu byte description string failed%s, skipping stressor\n",
 			args->name, key_huge_desc_size,
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -134,7 +136,8 @@ static int stress_key(stress_args_t *args)
 
 	t_start = stress_time_now();
 	do {
-		size_t i = 0, n = 0;
+		size_t i = 0;
+		size_t n = 0;
 		char ALIGN64 description[64];
 		char ALIGN64 payload[64];
 
@@ -195,7 +198,7 @@ static int stress_key(stress_args_t *args)
 			if (UNLIKELY(keys[n] < 0)) {
 				if (errno == EPERM) {
 					if (stress_instance_zero(args)) {
-						pr_inf_skip("%s: skipping stressor, no permission for add_key\n",
+						pr_inf_skip("%s: no permission for add_key, skipping stressor\n",
 							args->name);
 					}
 					no_error = false;
@@ -203,7 +206,7 @@ static int stress_key(stress_args_t *args)
 					goto tidy;
 				} else if (errno == ENOSYS) {
 					if (stress_instance_zero(args)) {
-						pr_inf_skip("%s: skipping stressor, add_key not implemented\n",
+						pr_inf_skip("%s: add_key not implemented, skipping stressor\n",
 							args->name);
 					}
 					no_error = false;
@@ -412,11 +415,24 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("add_key"),
+	STRESS_EX_SYSCALL("keyctl"),
+#if defined(HAVE_REQUEST_KEY)
+	STRESS_EX_SYSCALL("request_key"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_key_info = {
 	.stressor = stress_key,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_key_info = {

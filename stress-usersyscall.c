@@ -124,10 +124,14 @@ static inline long int x86_64_syscall0(const long int number)
  */
 static int stress_sigsys_libc_mapping(uintptr_t *begin, uintptr_t *end)
 {
-	char perm[5], buf[1024] ALIGN64;
 	char libc_path[PATH_MAX + 1];
+	char buf[1024] ALIGN64;
+	char perm[5];
 	FILE *fp;
-	uint64_t offset, dev_major, dev_minor, inode;
+	uint64_t offset;
+	uint64_t dev_major;
+	uint64_t dev_minor;
+	uint64_t inode;
 
 	fp = fopen("/proc/self/maps", "r");
 	if (UNLIKELY(!fp))
@@ -138,7 +142,8 @@ static int stress_sigsys_libc_mapping(uintptr_t *begin, uintptr_t *end)
 
 	while (fgets(buf, sizeof(buf), fp)) {
 		int n;
-		uintptr_t map_begin, map_end;
+		uintptr_t map_begin;
+		uintptr_t map_end;
 
 		n = sscanf(buf, "%" SCNxPTR "-%" SCNxPTR "%4s %" SCNx64 " %" SCNx64
 			":%" SCNx64 " %" SCNu64 "%" X_STR(PATH_MAX) "s\n",
@@ -148,10 +153,10 @@ static int stress_sigsys_libc_mapping(uintptr_t *begin, uintptr_t *end)
 		/*
 		 *  name /libc-*.so or /libc.so found?
 		 */
-		if ((n == 8) && !strncmp(perm, "r-xp", 4) &&
-		    strstr(libc_path, ".so")) {
-			if (strstr(libc_path, "/libc-") ||
-			    strstr(libc_path, "/libc.so")) {
+		if ((n == 8) && !shim_strncmp(perm, "r-xp", 4) &&
+		    shim_strstr(libc_path, ".so")) {
+			if (shim_strstr(libc_path, "/libc-") ||
+			    shim_strstr(libc_path, "/libc.so")) {
 				if (*begin > map_begin)
 					*begin = map_begin;
 				if (*end < map_end)
@@ -199,15 +204,19 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_sigsys_handler(
  */
 static int OPTIMIZE3 stress_usersyscall(stress_args_t *args)
 {
-	int ret, rc;
 	struct sigaction action;
-#if defined(STRESS_EXERCISE_X86_SYSCALL)
-	uintptr_t begin, end;
-	const bool libc_ok = (stress_sigsys_libc_mapping(&begin, &end) == 0);
-	const pid_t pid = getpid();
-#endif
-	double duration = 0.0, count = 0.0, rate;
+	int ret;
+	int rc;
 	int metrics_count = 0;
+#if defined(STRESS_EXERCISE_X86_SYSCALL)
+	uintptr_t begin;
+	uintptr_t end;
+	const pid_t pid = getpid();
+	const bool libc_ok = (stress_sigsys_libc_mapping(&begin, &end) == 0);
+#endif
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	(void)shim_memset(&action, 0, sizeof action);
 	action.sa_sigaction = stress_sigsys_handler;
@@ -304,7 +313,8 @@ static int OPTIMIZE3 stress_usersyscall(stress_args_t *args)
 
 #if defined(STRESS_EXERCISE_X86_SYSCALL)
 		if (libc_ok) {
-			int saved_errno, ret_not_libc;
+			int saved_errno;
+			int ret_not_libc;
 			const int ret_libc = (int)syscall(__NR_getpid);
 
 			/*
@@ -361,12 +371,22 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("prctl"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_usersyscall_info = {
 	.stressor = stress_usersyscall,
 	.classifier = CLASS_OS,
 	.supported = stress_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

@@ -62,7 +62,8 @@ static bool OPTIMIZE3 stress_besselmath_j0(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -85,7 +86,8 @@ static bool OPTIMIZE3 stress_besselmath_j1(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -108,7 +110,8 @@ static bool OPTIMIZE3 stress_besselmath_jn(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -131,7 +134,8 @@ static bool OPTIMIZE3 stress_besselmath_j0f(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -154,7 +158,8 @@ static bool OPTIMIZE3 stress_besselmath_j1f(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -177,7 +182,8 @@ static bool OPTIMIZE3 stress_besselmath_jnf(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -200,7 +206,8 @@ static bool OPTIMIZE3 stress_besselmath_j0l(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -223,7 +230,8 @@ static bool OPTIMIZE3 stress_besselmath_j1l(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -246,7 +254,8 @@ static bool OPTIMIZE3 stress_besselmath_jnl(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -269,7 +278,8 @@ static bool OPTIMIZE3 stress_besselmath_y0(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -292,7 +302,8 @@ static bool OPTIMIZE3 stress_besselmath_y1(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -315,7 +326,8 @@ static bool OPTIMIZE3 stress_besselmath_yn(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -338,7 +350,8 @@ static bool OPTIMIZE3 stress_besselmath_y0f(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -361,7 +374,8 @@ static bool OPTIMIZE3 stress_besselmath_y1f(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -384,7 +398,8 @@ static bool OPTIMIZE3 stress_besselmath_ynf(stress_args_t *args)
 {
 	static bool first_run = true;
 	static double result = -1.0;
-	register double sum = 0.0, di = 0.1;
+	register double sum = 0.0;
+	register double di = 0.1;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -407,7 +422,8 @@ static bool OPTIMIZE3 stress_besselmath_y0l(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -430,7 +446,8 @@ static bool OPTIMIZE3 stress_besselmath_y1l(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -453,7 +470,8 @@ static bool OPTIMIZE3 stress_besselmath_ynl(stress_args_t *args)
 {
 	static bool first_run = true;
 	static long double result = -1.0L;
-	register long double sum = 0.0L, di = 0.1L;
+	register long double sum = 0.0L;
+	register long double di = 0.1L;
 	register int i;
 
 PRAGMA_UNROLL_N(8)
@@ -606,23 +624,41 @@ static int stress_besselmath(stress_args_t *args)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_besselmath_method, "besselmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_besselmath_method },
+	{ OPT_besselmath_method, "besselmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_besselmath_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("backend-bound-rob"),
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_besselmath_info = {
 	.stressor = stress_besselmath,
-	.classifier = CLASS_CPU | CLASS_FP |CLASS_COMPUTE,
+	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_besselmath_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_besselmath_methods),
+	.exercises = exercises,
 };
 
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_besselmath_method, "besselmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_besselmath_method, "besselmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

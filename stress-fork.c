@@ -157,8 +157,12 @@ static void stress_fork_maps_reduce(const size_t page_size, const int reduce_mod
 	 * Look for field 0060b000-0060c000 r--p 0000b000 08:01 1901726
 	 */
 	while (fgets(buffer, sizeof(buffer), fp)) {
-		uint64_t begin, end, len, offset;
-		uintptr_t begin_ptr, end_ptr;
+		uint64_t begin;
+		uint64_t end;
+		uint64_t len;
+		uint64_t offset;
+		uintptr_t begin_ptr;
+		uintptr_t end_ptr;
 		char tmppath[1024];
 		char prot[6];
 		size_t i;
@@ -176,7 +180,7 @@ static void stress_fork_maps_reduce(const size_t page_size, const int reduce_mod
 			continue;
 
 		/* Avoid vdso and vvar */
-		if (strncmp("[v", tmppath, 2) == 0)
+		if (shim_strncmp("[v", tmppath, 2) == 0)
 			continue;
 
 		if ((begin > UINTPTR_MAX) || (end > UINTPTR_MAX))
@@ -201,13 +205,15 @@ static void stress_fork_maps_reduce(const size_t page_size, const int reduce_mod
 #endif
 
 		for (i = 0; i < SIZEOF_ARRAY(stress_fork_shlibs); i++) {
-			if (strstr(tmppath, stress_fork_shlibs[i])) {
+			if (shim_strstr(tmppath, stress_fork_shlibs[i])) {
 				if (reduce_mode & STRESS_MODE_DONTNEED) {
 					(void)madvise((void *)begin_ptr, len, MADV_DONTNEED);
 				} else if (reduce_mode & STRESS_MODE_UNMAP) {
 					unsigned char *vec;
-					uint8_t *ptr, *unmap_start = NULL;
-					size_t unmap_len = 0, j;
+					uint8_t *ptr;
+					uint8_t *unmap_start = NULL;
+					size_t unmap_len = 0;
+					size_t j;
 
 					vec = (unsigned char *)calloc(len / page_size, sizeof(*vec));
 					if (!vec)
@@ -266,11 +272,11 @@ static int stress_fork_fn(
 	const int mode)
 {
 	static fork_info_t info[MAX_FORKS] ALIGN64;
-	NOCLOBBER uint32_t j;
+	CLOBBERED uint32_t j;
 #if defined(__linux__)
-	NOCLOBBER bool remove_reduced = false;
+	CLOBBERED bool remove_reduced = false;
 #endif
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	stress_set_oom_adjustment(args, true);
 #if defined(__linux__)
@@ -291,8 +297,9 @@ static int stress_fork_fn(
 
 	j = args->instance;
 	do {
-		NOCLOBBER uint32_t i, n;
-		NOCLOBBER char *fork_fn_name;
+		CLOBBERED uint32_t i;
+		CLOBBERED uint32_t n;
+		const char * CLOBBERED fork_fn_name = NULL;
 
 		(void)shim_memset(info, 0, sizeof(info));
 
@@ -485,8 +492,11 @@ static int stress_fork_fn(
 static int stress_fork(stress_args_t *args)
 {
 	uint32_t fork_max = DEFAULT_FORKS;
-	int rc, mode = 0;
-	bool fork_vm = false, fork_unmap = false, fork_pageout = false;
+	int rc;
+	int mode = 0;
+	bool fork_vm = false;
+	bool fork_unmap = false;
+	bool fork_pageout = false;
 
 	(void)stress_setting_get("fork-unmap", &fork_unmap);
 	(void)stress_setting_get("fork-pageout", &fork_pageout);
@@ -584,12 +594,31 @@ static const stress_opt_t vfork_opts[] = {
 	END_OPT,
 };
 
+
+static const stress_exercises_t fork_exercises[] = {
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fork_info = {
 	.stressor = stress_fork,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = fork_opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = fork_help
+	.help = fork_help,
+	.exercises = fork_exercises,
+};
+
+static const stress_exercises_t vfork_exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("vfork"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_vfork_info = {
@@ -597,5 +626,6 @@ const stressor_info_t stress_vfork_info = {
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = vfork_opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = vfork_help
+	.help = vfork_help,
+	.exercises = vfork_exercises,
 };

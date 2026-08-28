@@ -236,10 +236,15 @@ static int stress_cpu_sched_setscheduler(const pid_t pid)
 {
 	struct sched_param param;
 	const uint32_t i = stress_mwc8modn((uint8_t)SIZEOF_ARRAY(policies));
-	int ret, policy_masked, policy, prio;
+	int ret;
+	int policy_masked;
+	int policy;
+	int prio;
 #if defined(SCHED_FIFO) ||	\
      defined(SCHED_RR)
-	int prio_min, prio_max, prio_range;
+	int prio_min;
+	int prio_max;
+	int prio_range;
 #endif
 #if defined(SCHED_DEADLINE) &&	\
     defined(HAVE_SCHED_GETATTR)
@@ -281,7 +286,7 @@ static int stress_cpu_sched_setscheduler(const pid_t pid)
 
 	switch (policy_masked) {
 #if defined(SCHED_DEADLINE) &&	\
-    defined(HAVE_SCHED_GETATTR)
+    defined(HAVE_SCHED_SETATTR)
 	case SCHED_DEADLINE:
 		rndtime = (uint64_t)stress_mwc8modn(64) + 32;
 
@@ -469,7 +474,8 @@ static void stress_cpu_sched_set_handler(void)
  */
 static void stress_cpu_sched_child_exercise(const pid_t pid, const int cpu)
 {
-	unsigned int new_cpu, node;
+	unsigned int new_cpu;
+	unsigned int node;
 
 	(void)stress_cpu_sched_setaffinity(pid, cpu);
 	(void)shim_getcpu(&new_cpu, &node, NULL);
@@ -485,7 +491,6 @@ static void stress_cpu_sched_child_exercise(const pid_t pid, const int cpu)
 static void stress_cpu_sched_fork(stress_args_t *args)
 {
 	pid_t pid;
-	int retry = 0;
 
 	stress_cpu_sched_set_handler();
 
@@ -494,13 +499,8 @@ static void stress_cpu_sched_fork(stress_args_t *args)
 	if (stress_cpu_sched_hrtimer_sigprocmask(SIG_BLOCK) < 0)
 		return;
 #endif
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 10);
 	if (pid == -1) {
-                if ((retry++ < 10) && stress_redo_fork(args, errno)) {
-			(void)shim_usleep_interruptible(50000);
-                        goto again;
-		}
 		goto err;
 	} else if (pid == 0) {
 		const pid_t child_pid = getpid();
@@ -616,7 +616,6 @@ static int stress_cpu_sched_next_cpu_idx(const int instance, const int last_cpu_
 static void stress_cpu_sched_exec(stress_args_t *args, char *exec_prog)
 {
 	pid_t pid;
-	int retry = 0;
 
 #if defined(HAVE_TIMER_CLOCK_REALTIME)
 	stress_cpu_sched_hrtimer_set(0);
@@ -624,13 +623,8 @@ static void stress_cpu_sched_exec(stress_args_t *args, char *exec_prog)
 		return;
 #endif
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 10);
 	if (pid < 0) {
-                if ((retry++ < 10) && stress_redo_fork(args, errno)) {
-			(void)shim_usleep_interruptible(50000);
-                        goto again;
-		}
 #if defined(HAVE_TIMER_CLOCK_REALTIME)
 		(void)stress_cpu_sched_hrtimer_sigprocmask(SIG_UNBLOCK);
 #endif
@@ -678,7 +672,6 @@ again:
 
 static int stress_cpu_sched_child(stress_args_t *args, void *context)
 {
-	/* Child */
 	int cpu_idx = 0, rc = EXIT_SUCCESS;
 	const int instance = (int)args->instance;
 	size_t i;
@@ -709,15 +702,9 @@ static int stress_cpu_sched_child(stress_args_t *args, void *context)
 
 	for (i = 0; LIKELY((i < cpu_sched_procs) && stress_continue(args)); i++) {
 		pid_t pid;
-		int retry = 0;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 10);
 		if (pid < 0) {
-                	if ((retry++ < 10) && stress_redo_fork(args, errno)) {
-				(void)shim_usleep_interruptible(50000);
-				goto again;
-			}
 			stress_cpu_sched_pids[i].pid = -1;
 		} else if (pid == 0) {
 			pid_t mypid = getpid();
@@ -850,11 +837,11 @@ again:
 
 		counter++;
 		if (counter & 0x1ff) {
-			double min1, min5, min15;
+			stress_load_average_info_t load_average_info;
 			static bool get_load_avg = true;
 
 			if (get_load_avg) {
-				if (stress_load_average_get(&min1, &min5, &min15) < 0)
+				if (stress_load_average_get(&load_average_info) < 0)
 					get_load_avg = false;
 			}
 		}
@@ -932,12 +919,60 @@ static int stress_cpu_sched(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("lock-contention"),
+
+	STRESS_EX_SYSCALL("getcpu"),
+#if defined(__linux__) &&		\
+    defined(HAVE_GETPRIORITY) &&	\
+    defined(HAVE_SETPRIORITY) && 	\
+    defined(PRIO_PROCESS)
+	STRESS_EX_SYSCALL("getpriority"),
+	STRESS_EX_SYSCALL("setpriority"),
+#else
+	STRESS_EX_SYSCALL("nice"),
+#endif
+#if defined(HAVE_SET_MEMPOLICY)
+#endif
+	STRESS_EX_SYSCALL("nanosleep"),
+#if defined(SCHED_FIFO) ||	\
+    defined(SCHED_RR)
+	STRESS_EX_SYSCALL("sched_get_priority_min"),
+	STRESS_EX_SYSCALL("sched_get_priority_max"),
+#endif
+	STRESS_EX_SYSCALL("sched_getaffinity"),
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+#if defined(SCHED_DEADLINE) &&	\
+    defined(HAVE_SCHED_SETATTR)
+	STRESS_EX_SYSCALL("sched_setattr"),
+#endif
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+	STRESS_EX_SYSCALL("set_mempolicy"),
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_SYSCALL("sleep"),
+#if defined(HAVE_TIMER_CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("timer_create"),
+	STRESS_EX_SYSCALL("timer_delete"),
+	STRESS_EX_SYSCALL("timer_settime"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_cpu_sched_info = {
 	.stressor = stress_cpu_sched,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

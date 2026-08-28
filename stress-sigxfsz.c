@@ -25,7 +25,9 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,			NULL }
 };
 
-#if defined(SIGXFSZ) &&	\
+#if defined(SIGXFSZ) &&		\
+    defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
     defined(RLIMIT_FSIZE)
 
 static volatile uint64_t async_sigs;
@@ -47,8 +49,12 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_sigxfsz_handler(int signum)
  */
 static int stress_sigxfsz(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS, fd;
-	double t_start, t_delta, rate;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	int fd;
+	double t_start;
+	double t_delta;
+	double rate;
 	char buffer[4] ALIGN64;
 	char filename[PATH_MAX];
 	struct rlimit limit;
@@ -67,7 +73,7 @@ static int stress_sigxfsz(stress_args_t *args)
 
 	ret = stress_fs_temp_dir_make_args(args);
 	if (ret < 0)
-		return stress_exit_status((int)-ret);
+		return stress_exit_status(-ret);
 
 	(void)shim_memset(buffer, 0xff, sizeof(buffer));
 
@@ -75,7 +81,7 @@ static int stress_sigxfsz(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	fd = open(filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_inf("%s: cannot open file '%s', errno=%d (%s), skipping stressor\n",
+		pr_inf("%s: open file '%s' failed, errno=%d (%s), skipping stressor\n",
 			args->name, filename, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_dir;
@@ -133,11 +139,31 @@ tidy_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(HAVE_PWRITE)
+	STRESS_EX_SYSCALL("pwrite"),
+#else
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("write"),
+#endif
+	STRESS_EX_SYSCALL("setrlimit"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigxfsz_info = {
 	.stressor = stress_sigxfsz,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigxfsz_info = {
@@ -145,6 +171,6 @@ const stressor_info_t stress_sigxfsz_info = {
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without SIGXFSZ or RLIMIT_FSIZE"
+	.unimplemented_reason = "built without setrlimit(), SIGXFSZ or RLIMIT_FSIZE"
 };
 #endif

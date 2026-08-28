@@ -76,6 +76,7 @@ static volatile bool keep_thread_running_flag;
 static volatile bool keep_running_flag;
 static uint64_t pthread_count;
 static stress_pthread_info_t pthreads[MAX_PTHREAD];
+static stress_pthread_args_t pthread_args[MAX_PTHREAD];
 
 #endif
 
@@ -428,13 +429,16 @@ die:
 static int stress_pthread(stress_args_t *args)
 {
 	char msg[64];
-	bool locked = false;
-	uint64_t limited = 0, attempted = 0, maximum = 0;
+	uint64_t limited = 0;
+	uint64_t attempted = 0;
+	uint64_t maximum = 0;
 	uint64_t pthread_max = DEFAULT_PTHREAD;
-	int ret;
-	stress_pthread_args_t pargs = { args, NULL, 0 };
 	sigset_t set;
-	double count = 0.0, duration = 0.0, average;
+	double count = 0.0;
+	double duration = 0.0;
+	double average;
+	int ret;
+	bool locked = false;
 #if defined(HAVE_PTHREAD_MUTEXATTR_T) &&		\
     defined(HAVE_PTHREAD_MUTEXATTR_INIT) &&		\
     defined(HAVE_PTHREAD_MUTEXATTR_DESTROY) &&		\
@@ -506,7 +510,8 @@ static int stress_pthread(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		uint64_t i, j;
+		uint64_t i;
+		uint64_t j;
 
 		keep_thread_running_flag = true;
 		pthread_count = 0;
@@ -525,12 +530,15 @@ static int stress_pthread(stress_args_t *args)
 		for (i = 0; i < pthread_max; i++) {
 			if (UNLIKELY(!(keep_running() && stress_continue(args))))
 				break;
-			pargs.data = (void *)&pthreads[i];
+
+			pthread_args[i].args = args;
+			pthread_args[i].data = (void *)&pthreads[i];
+			pthread_args[i].pthread_ret = 0;
 
 			pthreads[i].t_create = stress_time_now();
 			pthreads[i].t_run = pthreads[i].t_create;
 			pthreads[i].ret = pthread_create(&pthreads[i].pthread, NULL,
-				stress_pthread_func, (void *)&pargs);
+				stress_pthread_func, (void *)&pthread_args[i]);
 			if (UNLIKELY(pthreads[i].ret)) {
 				/* Out of resources, don't try any more */
 				if (pthreads[i].ret == EAGAIN) {
@@ -664,12 +672,24 @@ reap:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pthread_info = {
 	.stressor = stress_pthread,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_pthread_info = {

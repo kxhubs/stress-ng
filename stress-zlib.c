@@ -48,7 +48,7 @@ static const stress_help_t help[] = {
 
 #include "zlib.h"
 
-#define DATA_SIZE_64K 	(KB * 64)	/* Must be a multiple of 64 bytes */
+#define DATA_SIZE_64K 	(STRESS_KB * 64)	/* Must be a multiple of 64 bytes */
 #define DATA_SIZE DATA_SIZE_64K
 
 #define ZLIB_MIN_COMPRESSION	(0)
@@ -326,27 +326,71 @@ static void TARGET_CLONES stress_rand_data_01(
 	}
 }
 
-static inline uint32_t mul10(const uint32_t n)
-{
-	return (n << 3) + (n << 1);
-}
-
-static inline uint32_t div10(const uint32_t n)
+/*
+ *  mul10()
+ *  	fast unsigned 16 bit multiply by 10
+ */
+static inline ALWAYS_INLINE uint16_t mul10(register const uint16_t n)
 {
 #if 0
-	uint64_t n64 = (uint64_t)n * 28147497671066;
-
-	return (uint32_t)(n64 >> 48);
+	return (n << 3) + (n << 1);
 #else
 	return n / 10;
 #endif
 }
 
 /*
+ *  div10()
+ *  	fast unsigned 16 bit division by 10
+ */
+static inline ALWAYS_INLINE uint16_t div10(register const uint16_t n)
+{
+#if 0
+	/* return (uint16_t)(((uint32_t)n * (0x1999b800 >> 13)) >> 19); */
+	return (uint16_t)(((uint32_t)n * (0xcccd)) >> 19);
+#else
+	return n / 10;
+#endif
+}
+
+/*
+ *  stress_rand_data_digits_4()
+ *	generate 4 ASCII digits from a uint16_t value
+ */
+static inline uint8_t ALWAYS_INLINE *stress_rand_data_digits_4(
+	register uint16_t v,
+	register uint8_t *ptr)
+{
+	register uint16_t r;
+	register uint16_t v10th;
+
+	v10th = div10(v);
+	r = v - mul10(v10th);
+	*(ptr++) = (uint8_t)(r + '0');
+
+	v = v10th;
+	v10th = div10(v);
+	r = v - mul10(v10th);
+	*(ptr++) = (uint8_t)(r + '0');
+
+	v = v10th;
+	v10th = div10(v);
+	r = v - mul10(v10th);
+	*(ptr++) = (uint8_t)(r + '0');
+
+	v = v10th;
+	v10th = div10(v);
+	r = v - mul10(v10th);
+	*(ptr++) = (uint8_t)(r + '0');
+
+	return ptr;
+}
+
+/*
  *  stress_rand_data_digits()
  *	fill buffer with random ASCII '0' .. '9'
  */
-static void stress_rand_data_digits(
+static void OPTIMIZE3 stress_rand_data_digits(
 	stress_args_t *args,
 	uint64_t *RESTRICT data,
 	uint64_t *RESTRICT data_end)
@@ -357,47 +401,15 @@ static void stress_rand_data_digits(
 	(void)args;
 
 	while (ptr < end) {
-		register uint32_t v10th, r, v, rnd = stress_mwc32();
+		register uint32_t rnd;
 
-		v = rnd & 0xffff;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
+		rnd = stress_mwc32();
+		ptr = stress_rand_data_digits_4((uint16_t)(rnd & 0xffff), ptr);
+		ptr = stress_rand_data_digits_4((uint16_t)(rnd >> 16), ptr);
 
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = rnd >> 16;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
-
-		v = v10th;
-		v10th = div10(v);
-		r = v - mul10(v10th);
-		*(ptr++) = (uint8_t)(r + '0');
+		rnd = stress_mwc32();
+		ptr = stress_rand_data_digits_4((uint16_t)(rnd & 0xffff), ptr);
+		ptr = stress_rand_data_digits_4((uint16_t)(rnd >> 16), ptr);
 	}
 }
 
@@ -570,7 +582,10 @@ static void stress_rand_data_rdrand(
 #if defined(HAVE_ASM_X86_RDRAND)
 	if (stress_cpu_x86_has_rdrand()) {
 		while (LIKELY(ptr < end)) {
-			register uint64_t a, b, c, d;
+			register uint64_t a;
+			register uint64_t b;
+			register uint64_t c;
+			register uint64_t d;
 
 			a = stress_asm_x86_rdrand();
 			*(ptr++) = a;
@@ -597,7 +612,10 @@ static void stress_rand_data_rdrand(
 	}
 #endif
 	while (ptr < end) {
-		register uint64_t a, b, c, d;
+		register uint64_t a;
+		register uint64_t b;
+		register uint64_t c;
+		register uint64_t d;
 
 		a = stress_mwc64();
 		*(ptr++) = a;
@@ -1359,10 +1377,10 @@ static const char *stress_zlib_method(const size_t i)
 static const stress_opt_t opts[] = {
 	{ OPT_zlib_level,        "zlib-level",        TYPE_ID_UINT32, ZLIB_MIN_COMPRESSION, ZLIB_MAX_COMPRESSION, NULL },
 	{ OPT_zlib_mem_level,    "zlib-mem-level",    TYPE_ID_UINT32, ZLIB_MIN_MEM_LEVEL, ZLIB_MAX_MEM_LEVEL, NULL },
-	{ OPT_zlib_method,       "zlib-method",       TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_zlib_method },
-	{ OPT_zlib_window_bits,  "zlib-window-bits",  TYPE_ID_CALLBACK, 0, 0, (void *)stress_zlib_window_bits },
+	{ OPT_zlib_method,       "zlib-method",       TYPE_ID_SIZE_T_METHOD, 0, 0, stress_zlib_method },
+	{ OPT_zlib_window_bits,  "zlib-window-bits",  TYPE_ID_CALLBACK, 0, 0, stress_zlib_window_bits },
 	{ OPT_zlib_stream_bytes, "zlib-stream-bytes", TYPE_ID_UINT64_BYTES_VM, 0, MAX_MEM_LIMIT, NULL },
-	{ OPT_zlib_strategy,     "zlib-strategy",      TYPE_ID_UINT32, Z_DEFAULT_STRATEGY, Z_FIXED, NULL },
+	{ OPT_zlib_strategy,     "zlib-strategy",     TYPE_ID_UINT32, Z_DEFAULT_STRATEGY, Z_FIXED, NULL },
 	END_OPT,
 };
 
@@ -1732,11 +1750,11 @@ finish:
 	ratio = (bytes_in > 0) ? 100.0 * (double)bytes_out / (double)bytes_in : 0.0;
 	stress_metrics_set(args, "% compression ratio",
 		ratio, STRESS_METRIC_GEOMETRIC_MEAN);
-	rate = (duration > 0.0) ? ((double)bytes_in / duration) / MB : 0.0;
+	rate = (duration > 0.0) ? ((double)bytes_in / duration) / STRESS_MB : 0.0;
 	stress_metrics_set(args, "MB/sec compression rate",
 		rate, STRESS_METRIC_HARMONIC_MEAN);
 	stress_metrics_set(args, "MB compressed",
-		(double)bytes_in / MB, STRESS_METRIC_HARMONIC_MEAN);
+		(double)bytes_in / STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	ret = EXIT_SUCCESS;
 zlib_checksum_error:
@@ -1769,7 +1787,7 @@ static int stress_zlib(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (shared_checksums == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu bytes%s, "
+		pr_inf("%s: mmap %zu bytes failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*shared_checksums),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -1787,12 +1805,9 @@ static int stress_zlib(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-again:
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		(void)munmap((void *)shared_checksums, sizeof(*shared_checksums));
 		(void)close(fds[0]);
 		(void)close(fds[1]);
@@ -1873,12 +1888,27 @@ again:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-shift"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+	STRESS_EX_LIBRARY("z"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_zlib_info = {
 	.stressor = stress_zlib,
 	.classifier = CLASS_CPU | CLASS_CPU_CACHE | CLASS_MEMORY | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_zlib_info = {
@@ -1886,6 +1916,6 @@ const stressor_info_t stress_zlib_info = {
 	.classifier = CLASS_CPU | CLASS_CPU_CACHE | CLASS_MEMORY | CLASS_COMPUTE,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without zlib library support or siglongjmp support"
+	.unimplemented_reason = "built without zlib library support or siglongjmp() support"
 };
 #endif

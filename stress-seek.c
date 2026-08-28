@@ -19,9 +19,9 @@
  */
 #include "stress-ng.h"
 
-#define MIN_SEEK_SIZE		(1 * MB)
+#define MIN_SEEK_SIZE		(1 * STRESS_MB)
 #define MAX_SEEK_SIZE		(MAX_FILE_LIMIT)
-#define DEFAULT_SEEK_SIZE	(16 * MB)
+#define DEFAULT_SEEK_SIZE	(16 * STRESS_MB)
 
 static double duration;
 static double count;
@@ -37,7 +37,8 @@ static const stress_help_t help[] = {
 
 static inline off_t max_off_t(void)
 {
-	off_t v, nv = 1;
+	off_t v;
+	off_t nv = 1;
 
 	for (v = 1; (nv = ((v << 1) | 1)) > 0; v = nv)
 		;
@@ -75,12 +76,14 @@ static off_t stress_shim_lseek(int fd, off_t offset, int whence)
  */
 static int stress_seek(stress_args_t *args)
 {
-	uint64_t len;
-	uint64_t seek_size = DEFAULT_SEEK_SIZE;
-	int ret, fd, rc = EXIT_FAILURE;
-	const int bad_fd = stress_fs_bad_fd_get();
 	char filename[PATH_MAX];
 	uint8_t buf[512] ALIGN64;
+	uint64_t len;
+	uint64_t seek_size = DEFAULT_SEEK_SIZE;
+	int ret;
+	int fd;
+	int rc = EXIT_FAILURE;
+	const int bad_fd = stress_fs_bad_fd_get();
 	const off_t bad_off_t = max_off_t();
 	const char *fs_type;
 #if defined(HAVE_OFF64_T) &&	\
@@ -126,7 +129,7 @@ static int stress_seek(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto finish;
 	}
@@ -157,8 +160,8 @@ static int stress_seek(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		off_t offset;
 		uint8_t tmp[512] ALIGN64;
+		off_t offset;
 		ssize_t rwret;
 
 		offset = (off_t)stress_mwc64modn(len);
@@ -395,10 +398,24 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("lseek"),
+#if defined(HAVE_OFF64_T) &&	\
+    defined(HAVE_LSEEK64)
+	STRESS_EX_SYSCALL("lseek64"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_seek_info = {
 	.stressor = stress_seek,
 	.classifier = CLASS_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

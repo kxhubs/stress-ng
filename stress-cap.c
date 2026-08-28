@@ -53,24 +53,20 @@ static int stress_capgetset_pid(
 	uch.pid = pid;
 
 	ret = capget(&uch, ucd);
-	if (ret < 0) {
-		if (((errno == ESRCH) && exists) ||
-		    (errno != ESRCH)) {
-			pr_fail("%s: capget on PID %" PRIdMAX " failed, errno=%d (%s)\n",
-				args->name, (intmax_t)pid, errno, strerror(errno));
-			return EXIT_FAILURE;
-		}
+	if ((ret < 0) &&
+	    (((errno == ESRCH) && exists) || (errno != ESRCH))) {
+		pr_fail("%s: capget on PID %" PRIdMAX " failed, errno=%d (%s)\n",
+			args->name, (intmax_t)pid, errno, strerror(errno));
+		return EXIT_FAILURE;
 	}
 
 	if (do_set) {
 		ret = capset(&uch, ucd);
-		if (ret < 0) {
-			if (((errno == ESRCH) && exists) ||
-			    (errno != ESRCH)) {
-				pr_fail("%s: capset on PID %" PRIdMAX " failed, errno=%d (%s)\n",
-					args->name, (intmax_t)pid, errno, strerror(errno));
-				return EXIT_FAILURE;
-			}
+		if ((ret < 0) &&
+		    (((errno == ESRCH) && exists) || (errno != ESRCH))) {
+			pr_fail("%s: capset on PID %" PRIdMAX " failed, errno=%d (%s)\n",
+				args->name, (intmax_t)pid, errno, strerror(errno));
+			return EXIT_FAILURE;
 		}
 
 		/*
@@ -189,11 +185,21 @@ static int stress_cap(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("capget"),
+	STRESS_EX_SYSCALL("capset"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_cap_info = {
 	.stressor = stress_cap,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_cap_info = {

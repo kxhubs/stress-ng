@@ -79,7 +79,7 @@ static void stress_fractal_init(const uint32_t instances)
 	g_shared->fractal.row = 0;
 
 	if (g_shared->fractal.lock == NULL)
-		printf("fractal lock create failed\n");
+		(void)printf("fractal lock create failed\n");
 }
 
 static void stress_fractal_deinit(void)
@@ -117,7 +117,8 @@ static inline ALWAYS_INLINE int32_t stress_fractal_get_row(stress_args_t *args, 
 	 *  Slow method, always correct but much slower as it requires
 	 *  a lock.
 	 */
-	int32_t row, row_next;
+	int32_t row;
+	int32_t row_next;
 
 	if (UNLIKELY(stress_lock_acquire_relax(g_shared->fractal.lock) < 0))
 		return -1;
@@ -144,20 +145,29 @@ static void OPTIMIZE3 TARGET_CLONES stress_fractal_mandelbrot(fractal_info_t *in
 	const int32_t max_iter = info->iterations;
 	const double dx = info->dx;
 	const int32_t xsize = info->xsize;
-	double xc = info->xmin, yc = info->ymin + ((double)row * info->dy);
+	double xc = info->xmin;
+	double yc = info->ymin + ((double)row * info->dy);
 	uint16_t *data = info->data;
 
 	/* Even numbers of columns */
 	for (ix = 0; LIKELY(ix < (xsize & (int32_t)0xfffffffe)); ix += 2) {
-		register double x0 = 0.0, y0 = 0.0;
-		register double x1 = 0.0, y1 = 0.0;
+		register double x0 = 0.0;
+		register double y0 = 0.0;
+		register double x1 = 0.0;
+		register double y1 = 0.0;
 		register int32_t iter0 = 0;
 		register int32_t iter1 = 0;
 		register double xc1 = xc + dx;
 
 		for (;;) {
-			register double x0_2, y0_2, x1_2, y1_2, t0, t1;
-			register bool end0, end1;
+			register double x0_2;
+			register double y0_2;
+			register double x1_2;
+			register double y1_2;
+			register double t0;
+			register double t1;
+			register bool end0;
+			register bool end1;
 
 			end0 = (iter0 >= max_iter);
 			end1 = (iter1 >= max_iter);
@@ -191,7 +201,8 @@ static void OPTIMIZE3 TARGET_CLONES stress_fractal_mandelbrot(fractal_info_t *in
 
 	/* residual */
 	for (; LIKELY(ix < xsize); ix++) {
-		register double x = 0.0, y = 0.0;
+		register double x = 0.0;
+		register double y = 0.0;
 		register int32_t iter = 0;
 
 		while (LIKELY(iter < max_iter)) {
@@ -236,8 +247,14 @@ static void OPTIMIZE3 TARGET_CLONES stress_fractal_julia(fractal_info_t *info, c
 		register double y1 = y_start;
 
 		for (;;) {
-			register double x0_2, y0_2, x1_2, y1_2, t0, t1;
-			register bool end0, end1;
+			register double x0_2;
+			register double y0_2;
+			register double x1_2;
+			register double y1_2;
+			register double t0;
+			register double t1;
+			register bool end0;
+			register bool end1;
 
 			end0 = (iter0 >= max_iter);
 			end1 = (iter1 >= max_iter);
@@ -307,7 +324,7 @@ static const char *stress_fractal_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_fractal_iterations, "fractal-iterations", TYPE_ID_INT32, MIN_FRACTAL_ITERATIONS, MAX_FRACTAL_ITERATIONS, NULL },
-	{ OPT_fractal_method,     "fractal-method",     TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_fractal_method },
+	{ OPT_fractal_method,     "fractal-method",     TYPE_ID_SIZE_T_METHOD, 0, 0, stress_fractal_method },
 	{ OPT_fractal_xsize,      "fractal-xsize",      TYPE_ID_INT32, MIN_FRACTAL_XSIZE, MAX_FRACTAL_XSIZE, NULL },
 	{ OPT_fractal_ysize,      "fractal-ysize",      TYPE_ID_INT32, MIN_FRACTAL_YSIZE, MAX_FRACTAL_YSIZE, NULL },
 	END_OPT,
@@ -319,7 +336,10 @@ static int stress_fractal(stress_args_t *args)
 	fractal_func func;
 	size_t fractal_method = 0;	/* mandelbrot */
 	size_t data_sz;
-	double rate, rows = 0.0, t, duration = 0.0;
+	double rate;
+	double rows = 0.0;
+	double t;
+	double duration = 0.0;
 
 	(void)stress_setting_get("fractal-method", &fractal_method);
 
@@ -400,6 +420,20 @@ static int stress_fractal(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("i-tlb-read-miss"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fractal_info = {
 	.stressor = stress_fractal,
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
@@ -407,5 +441,6 @@ const stressor_info_t stress_fractal_info = {
 	.deinit = stress_fractal_deinit,
 	.verify = VERIFY_NONE,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

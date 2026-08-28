@@ -47,6 +47,7 @@ static const stress_opt_t opts[] = {
 #define PAGE_MULTIPLES	(8)
 
 #if defined(HAVE_MPROTECT) &&	\
+    defined(HAVE_SIGLONGJMP) &&	\
     !defined(__NetBSD__)
 
 static const int sigs[] = {
@@ -197,12 +198,13 @@ static void *stress_far_mmap(
 	const uintptr_t base,		/* Base address (stress_far_branch) */
 	size_t offset, 			/* Desired offset from base */
 	stress_ret_func_t *funcs,	/* Array of function pointers */
-	size_t *total_funcs,		/* Total number of functions */
-	size_t *total_file_mapped_funcs)/* Total number of file mapped functions */
+	CLOBBERED size_t *total_funcs,	/* Total number of functions */
+	CLOBBERED size_t *total_file_mapped_funcs)/* Total number of file mapped functions */
 {
 	uint8_t *ptr = (uint8_t *)MAP_FAILED;
 	uintptr_t addr = (uintptr_t)NULL;
-	size_t i, n;
+	size_t i;
+	size_t n;
 	static size_t count = 0;
 
 	/*
@@ -363,22 +365,29 @@ static inline void stress_far_branch_pageout(void *addr, const size_t page_size)
  */
 static int OPTIMIZE3 stress_far_branch(stress_args_t *args)
 {
-	size_t i, j, k;
+	size_t i;
+	size_t j;
+	size_t k;
 	const size_t bits = sizeof(void *) * 8;
 	size_t n_pages = (bits - 16) * PAGE_MULTIPLES;
 	const size_t page_size = args->page_size;
 	uintptr_t base = 0;
 	size_t max_funcs;
-	double t_start, t_next, duration, rate;
+	double t_start;
+	double t_next;
+	double duration;
+	double rate;
 	struct sigaction sa;
 	int ret, fd;
-	NOCLOBBER stress_ret_func_t *funcs = NULL;
-	NOCLOBBER void **pages = NULL;
-	NOCLOBBER size_t total_funcs = 0, total_file_mapped_funcs = 0;
-	NOCLOBBER size_t n_pages_failed = 0, n_pages_mapped = 0;
-	NOCLOBBER double calls = 0.0;
-	NOCLOBBER bool far_branch_flush = false;
-	NOCLOBBER bool far_branch_pageout = false;
+	stress_ret_func_t * CLOBBERED funcs = NULL;
+	void ** CLOBBERED pages = NULL;
+	CLOBBERED size_t total_funcs = 0;
+	CLOBBERED size_t total_file_mapped_funcs = 0;
+	CLOBBERED size_t n_pages_failed = 0;
+	CLOBBERED size_t n_pages_mapped = 0;
+	CLOBBERED double calls = 0.0;
+	CLOBBERED bool far_branch_flush = false;
+	CLOBBERED bool far_branch_pageout = false;
 	char filename[PATH_MAX];
 
 	ret = stress_fs_temp_dir_make_args(args);
@@ -386,7 +395,7 @@ static int OPTIMIZE3 stress_far_branch(stress_args_t *args)
 		return stress_exit_status(-ret);
 	(void)stress_fs_temp_filename_args(args,
 		filename, sizeof(filename), stress_mwc32());
-	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
+	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IXUSR)) < 0) {
 		pr_fail("%s: open %s failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -394,8 +403,8 @@ static int OPTIMIZE3 stress_far_branch(stress_args_t *args)
 	}
 	(void)shim_unlink(filename);
 
-	(void)stress_setting_get("far-branch-flush", &far_branch_flush);
-	(void)stress_setting_get("far-branch-pageout", &far_branch_pageout);
+	(void)stress_setting_get("far-branch-flush", UNCLOBBER(&far_branch_flush));
+	(void)stress_setting_get("far-branch-pageout", UNCLOBBER(&far_branch_pageout));
 	if (!stress_setting_get("far-branch-pages", &n_pages)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
 			n_pages = MAX_FAR_BRANCH_PAGES;
@@ -592,7 +601,8 @@ l1:
 #if defined(MADV_SOFT_OFFLINE) ||	\
     defined(MADV_PAGEOUT)
 		if (UNLIKELY(far_branch_pageout)) {
-			uintptr_t addr1, addr2;
+			uintptr_t addr1;
+			uintptr_t addr2;
 
 			const size_t n = stress_mwc32modn((uint32_t)(n_pages >> 4)) + 1;
 
@@ -652,13 +662,26 @@ cleanup:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("branch"),
+	STRESS_EX_FEATURE("i-cache"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_far_branch_info = {
 	.stressor = stress_far_branch,
 	.classifier = CLASS_CPU_CACHE,
 	.verify = VERIFY_ALWAYS,
 	.supported = stress_asm_ret_supported,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_far_branch_info = {
@@ -671,7 +694,7 @@ const stressor_info_t stress_far_branch_info = {
 #if defined(__NetBSD__)
 	.unimplemented_reason = "denied by NetBSD exploit mitigation features"
 #else
-	.unimplemented_reason = "built without mprotect() support or architecture not supported"
+	.unimplemented_reason = "built without siglongjmp(), mprotect() support or architecture not supported"
 #endif
 };
 #endif

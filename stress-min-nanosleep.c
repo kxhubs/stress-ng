@@ -67,7 +67,7 @@ static const char *stress_min_nanoseconds_sched(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_min_nanosleep_max,   "min-nanosleep-max",   TYPE_ID_SIZE_T, 0, NANOSLEEP_MAX_NS, NULL },
-	{ OPT_min_nanosleep_sched, "min-nanosleep-sched", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_min_nanoseconds_sched },
+	{ OPT_min_nanosleep_sched, "min-nanosleep-sched", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_min_nanoseconds_sched },
 	END_OPT,
 };
 
@@ -109,7 +109,10 @@ static void stress_min_nanosleep_sched(stress_args_t *args, const size_t min_nan
 {
 	struct sched_param param;
 	int ret = 0;
-	int max_prio, min_prio, rng_prio, policy;
+	int max_prio;
+	int min_prio;
+	int rng_prio;
+	int policy;
 	const char *policy_name;
 
 	if (min_nanosleep_sched >= stress_sched_types_length)
@@ -298,12 +301,15 @@ static void stress_min_nanosleep_init_delay(nanosleep_delay_t *delay, const uint
 static int stress_min_nanosleep(stress_args_t *args)
 {
 	int rc = EXIT_FAILURE;
-	size_t i, j;
+	size_t i;
+	size_t j;
 	uint32_t k;
-	size_t min_nanosleep_max = NANOSLEEP_MAX_NS, max_delay;
+	size_t min_nanosleep_max = NANOSLEEP_MAX_NS;
+	size_t max_delay;
 	size_t min_nanosleep_sched = SIZE_MAX;
 	const pid_t mypid = getpid();
-	nanosleep_delay_t *delay, *delay_head;
+	nanosleep_delay_t *delay;
+	nanosleep_delay_t *delay_head;
 
 	(void)stress_setting_get("min-nanosleep-max", &min_nanosleep_max);
 	(void)stress_setting_get("min-nanosleep-sched", &min_nanosleep_sched);
@@ -314,7 +320,7 @@ static int stress_min_nanosleep(stress_args_t *args)
 	stress_min_nanosleep_sched(args, min_nanosleep_sched);
 
 	if (delays == MAP_FAILED) {
-		pr_inf("%s: failed to mmap an array of %zu bytes%s, "
+		pr_inf("%s: mmap an array of %zu bytes failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, max_delay * sizeof(*delay),
 			stress_memory_free_get(),
@@ -346,7 +352,8 @@ static int stress_min_nanosleep(stress_args_t *args)
 		for (i = 0, delay = delay_head; i <= max_delay; i++, delay++) {
 			const uint32_t nsec = delay->nsec;
 			struct timespec tv;
-			struct timespec t1, t2;
+			struct timespec t1;
+			struct timespec t2;
 			long long int dt_nsec;
 
 			tv.tv_sec = 0;
@@ -440,7 +447,7 @@ err:
 			"sleep ns", "min ns", "max ns", "mean ns");
 		for (i = 0; i <= max_delay; i++) {
 			nanosleep_delay_t result;
-			char *notes = "";
+			const char *notes = "";
 
 			stress_min_nanosleep_init_delay(&result, delays[0].delay[i].nsec);
 
@@ -485,6 +492,16 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("clock_gettime"),
+	STRESS_EX_SYSCALL("nanosleep"),
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_min_nanosleep_info = {
 	.stressor = stress_min_nanosleep,
 	.init = stress_min_nanosleep_init,
@@ -492,7 +509,8 @@ const stressor_info_t stress_min_nanosleep_info = {
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_min_nanosleep_info = {

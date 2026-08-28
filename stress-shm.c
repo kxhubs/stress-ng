@@ -24,9 +24,9 @@
 #include "core-mincore.h"
 #include "core-out-of-memory.h"
 
-#define MIN_SHM_POSIX_BYTES	(1 * MB)
-#define MAX_SHM_POSIX_BYTES	(1 * GB)
-#define DEFAULT_SHM_POSIX_BYTES	(8 * MB)
+#define MIN_SHM_POSIX_BYTES	(1 * STRESS_MB)
+#define MAX_SHM_POSIX_BYTES	(1 * STRESS_GB)
+#define DEFAULT_SHM_POSIX_BYTES	(8 * STRESS_MB)
 
 #define MIN_SHM_POSIX_OBJECTS	(1)
 #define MAX_SHM_POSIX_OBJECTS	(128)
@@ -68,7 +68,8 @@ static int stress_shm_posix_check(
 	const size_t sz,
 	const size_t page_size)
 {
-	uint8_t *ptr, val;
+	uint8_t *ptr;
+	uint8_t val;
 	const uint8_t *end = buf + sz;
 
 	(void)shim_memset(buf, 0xa5, sz);
@@ -113,14 +114,16 @@ static int stress_shm_posix_child(
 
 	addrs = (void **)calloc(shm_posix_objects, sizeof(*addrs));
 	if (!addrs) {
-		pr_fail("%s: calloc on addrs failed, out of memory\n", args->name);
-		return EXIT_NO_RESOURCE;
+		pr_fail("%s: calloc addrs failed\n", args->name);
+		rc = EXIT_NO_RESOURCE;
+		goto shm_end_of_run;
 	}
 	shm_names = (char *)calloc(shm_posix_objects, SHM_NAME_LEN);
 	if (!shm_names) {
 		free(addrs);
-		pr_fail("%s: calloc on shm_names, out of memory\n", args->name);
-		return EXIT_NO_RESOURCE;
+		pr_fail("%s: calloc shm_names failed\n", args->name);
+		rc = EXIT_NO_RESOURCE;
+		goto shm_end_of_run;
 	}
 
 	/* Make sure this is killable by OOM killer */
@@ -137,16 +140,19 @@ static int stress_shm_posix_child(
 			args->name, errno, strerror(errno));
 		free(addrs);
 		free(shm_names);
-		return EXIT_NO_RESOURCE;
+		rc = EXIT_NO_RESOURCE;
+		goto shm_end_of_run;
 	}
 
 	do {
 		for (i = 0; ok && (i < (ssize_t)shm_posix_objects); i++) {
-			int shm_fd, ret;
-			pid_t newpid;
+			struct stat statbuf;
 			void *addr;
 			char *shm_name = &shm_names[i * SHM_NAME_LEN];
-			struct stat statbuf;
+			pid_t newpid;
+			size_t check_sz;
+			int shm_fd;
+			int ret;
 
 			shm_name[0] = '\0';
 
@@ -161,14 +167,14 @@ static int stress_shm_posix_child(
 				S_IRUSR | S_IWUSR);
 			if (UNLIKELY(shm_fd < 0)) {
 				ok = false;
-				pr_fail("%s: shm_open %s failed, errno=%d (%s)\n",
+				pr_fail("%s: shm_open '%s' failed, errno=%d (%s)\n",
 					args->name, shm_name, errno, strerror(errno));
 				rc = EXIT_FAILURE;
 				goto reap;
 			}
 			if (ftruncate(shm_fd, sz) < 0) {
 				ok = false;
-				pr_fail("%s: ftruncate %s failed, errno=%d (%s)\n",
+				pr_fail("%s: ftruncate '%s' failed, errno=%d (%s)\n",
 					args->name, shm_name, errno, strerror(errno));
 				rc = EXIT_FAILURE;
 				goto reap;
@@ -196,7 +202,7 @@ static int stress_shm_posix_child(
 			}
 			if (UNLIKELY(addr == MAP_FAILED)) {
 				ok = false;
-				pr_fail("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+				pr_fail("%s: mmap %zu bytes%s failed, errno=%d (%s)\n",
 					args->name, sz, stress_memory_free_get(),
 					errno, strerror(errno));
 				rc = EXIT_FAILURE;
@@ -259,8 +265,14 @@ static int stress_shm_posix_child(
 
 			/* Now truncated it back */
 			ret = ftruncate(shm_fd, (off_t)sz);
-			if (UNLIKELY(ret < 0))
+			check_sz = sz;
+			if (UNLIKELY(ret < 0)) {
+#if !defined(__CYGWIN__)
+				/* Windows refuses to shrink a file if currently memory mapped */
 				pr_fail("%s: ftruncate of shared memory failed\n", args->name);
+#endif
+				check_sz += page_size;
+			}
 			(void)shim_fsync(shm_fd);
 
 			/* fstat shared memory */
@@ -268,21 +280,21 @@ static int stress_shm_posix_child(
 			if (UNLIKELY(ret < 0)) {
 				pr_fail("%s: fstat failed on shared memory\n", args->name);
 			} else {
-				if (UNLIKELY(statbuf.st_size != (off_t)sz)) {
+				if (UNLIKELY(statbuf.st_size != (off_t)check_sz)) {
 					pr_fail("%s: fstat reports different size of shared memory, "
 						"got %" PRIdMAX " bytes, expected %zu bytes\n", args->name,
-						(intmax_t)statbuf.st_size, sz);
+						(intmax_t)statbuf.st_size, check_sz);
 				}
 			}
 
 			/* Make it read only */
 			ret = fchmod(shm_fd, S_IRUSR);
 			if (UNLIKELY(ret < 0)) {
-				pr_fail("%s: failed to fchmod to S_IRUSR on shared memory\n", args->name);
+				pr_fail("%s: fchmod to S_IRUSR on shared memory failed\n", args->name);
 			}
 			ret = fchown(shm_fd, uid, gid);
 			if (UNLIKELY(ret < 0)) {
-				pr_fail("%s: failed to fchown on shared memory\n", args->name);
+				pr_fail("%s: fchown on shared memory failed\n", args->name);
 			}
 
 			(void)close(shm_fd);
@@ -336,6 +348,10 @@ reap:
 		}
 	} while (ok && stress_continue(args));
 
+	free(shm_names);
+	free(addrs);
+
+shm_end_of_run:
 	/* Inform parent of end of run */
 	msg.index = -1;
 	(void)shim_strscpy(msg.shm_name, "", SHM_NAME_LEN);
@@ -344,8 +360,6 @@ reap:
 			args->name, errno, strerror(errno));
 		rc = EXIT_FAILURE;
 	}
-	free(shm_names);
-	free(addrs);
 
 	return rc;
 }
@@ -357,7 +371,8 @@ reap:
 static int stress_shm(stress_args_t *args)
 {
 	const size_t page_size = args->page_size;
-	size_t orig_sz, sz;
+	size_t orig_sz;
+	size_t sz;
 	int pipefds[2];
 	int rc = EXIT_SUCCESS;
 	ssize_t i;
@@ -401,7 +416,7 @@ static int stress_shm(stress_args_t *args)
 	 *  be writeable, if not shm_open will fail
 	 */
 	if (access("/dev/shm", W_OK) < 0) {
-		pr_inf("%s: cannot access /dev/shm for writes, errno=%d (%s) skipping stressor\n",
+		pr_inf("%s: access '/dev/shm' for writes failed', errno=%d (%s) skipping stressor\n",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -416,11 +431,8 @@ static int stress_shm(stress_args_t *args)
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args))) {
 				(void)close(pipefds[0]);
 				(void)close(pipefds[1]);
@@ -441,7 +453,7 @@ again:
 
 			shm_names = (char *)calloc(shm_posix_objects, SHM_NAME_LEN);
 			if (!shm_names) {
-				pr_fail("%s: failed to allocate %zu bytes%s, out of memory\n",
+				pr_fail("%s: allocate %zu bytes failed%s\n",
 					args->name, shm_posix_objects * SHM_NAME_LEN,
 					stress_memory_free_get());
 				(void)close(pipefds[0]);
@@ -453,7 +465,7 @@ again:
 
 			while (stress_continue_flag()) {
 				ssize_t n;
-				stress_shm_msg_t 	msg;
+				stress_shm_msg_t msg;
 				char *shm_name;
 
 				/*
@@ -468,11 +480,11 @@ again:
 					if ((errno == EAGAIN) || (errno == EINTR))
 						continue;
 					if (errno) {
-						pr_fail("%s: read failed, errno=%d (%s)\n",
+						pr_fail("%s: pipe read failed, errno=%d (%s)\n",
 							args->name, errno, strerror(errno));
 						break;
 					}
-					pr_fail("%s: zero bytes read\n", args->name);
+					pr_fail("%s: pipe read returned zero bytes of data (child died prematurely?)\n", args->name);
 					break;
 				}
 				if (UNLIKELY((msg.index < 0) ||
@@ -505,7 +517,8 @@ again:
 			 *  shared memory segment.
 			 */
 			for (i = 0; i < (ssize_t)shm_posix_objects; i++) {
-				char *shm_name = &shm_names[i * SHM_NAME_LEN];
+				const char *shm_name = &shm_names[i * SHM_NAME_LEN];
+
 				if (*shm_name)
 					(void)shm_unlink(shm_name);
 			}
@@ -535,12 +548,37 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("fchmod"),
+	STRESS_EX_SYSCALL("fchown"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("msymc"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("shm_open"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_shm_info = {
 	.stressor = stress_shm,
 	.classifier = CLASS_VM | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_shm_info = {

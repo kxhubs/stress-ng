@@ -193,7 +193,10 @@ static int stress_cyclic_clock_nanosleep(
 	stress_rt_stats_t *rt_stats,
 	const uint64_t cyclic_sleep)
 {
-	struct timespec t1, t2, t, trem;
+	struct timespec t1;
+	struct timespec t2;
+	struct timespec t;
+	struct timespec trem;
 	int ret;
 
 	(void)args;
@@ -222,7 +225,10 @@ static int stress_cyclic_posix_nanosleep(
 	stress_rt_stats_t *rt_stats,
 	const uint64_t cyclic_sleep)
 {
-	struct timespec t1, t2, t, trem;
+	struct timespec t1;
+	struct timespec t2;
+	struct timespec t;
+	struct timespec trem;
 	int ret;
 
 	(void)args;
@@ -250,7 +256,8 @@ static int stress_cyclic_poll(
 	stress_rt_stats_t *rt_stats,
 	const uint64_t cyclic_sleep)
 {
-	struct timespec t1, t2;
+	struct timespec t1;
+	struct timespec t2;
 
 	(void)args;
 
@@ -298,7 +305,9 @@ static int stress_cyclic_pselect(
 	stress_rt_stats_t *rt_stats,
 	const uint64_t cyclic_sleep)
 {
-	struct timespec t1, t2, t;
+	struct timespec t1;
+	struct timespec t2;
+	struct timespec t;
 	int ret;
 
 	(void)args;
@@ -408,7 +417,8 @@ static int stress_cyclic_usleep(
 	stress_rt_stats_t *rt_stats,
 	const uint64_t cyclic_sleep)
 {
-	struct timespec t1, t2;
+	struct timespec t1;
+	struct timespec t2;
 	const useconds_t usecs = (useconds_t)cyclic_sleep / 1000;
 	int ret;
 
@@ -462,7 +472,8 @@ static int stress_cyclic_cmp(const void *p1, const void *p2)
 static void stress_rt_stats(stress_rt_stats_t *rt_stats)
 {
 	size_t i;
-	size_t n = 0, best_n = 0;
+	size_t n = 0;
+	size_t best_n = 0;
 	int64_t current;
 	double variance = 0.0;
 
@@ -552,14 +563,15 @@ static const stress_cyclic_method_info_t cyclic_methods[] = {
  */
 static void stress_rt_dist(
 	const char *name,
-	stress_rt_stats_t *rt_stats,
+	const stress_rt_stats_t *rt_stats,
 	const int64_t cyclic_dist)
 {
 	const ssize_t dist_max_size = (cyclic_dist > 0) ?
 		((ssize_t)rt_stats->max_ns / (ssize_t)cyclic_dist) + 1 : 1;
 	const ssize_t dist_size = STRESS_MINIMUM(MAX_BUCKETS, dist_max_size);
 	const ssize_t dist_min = STRESS_MINIMUM(5, dist_max_size);
-	ssize_t i, n;
+	ssize_t i;
+	ssize_t n;
 	int64_t *dist;
 
 	if (!cyclic_dist)
@@ -616,14 +628,17 @@ static int stress_cyclic(stress_args_t *args)
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action_xcpu;
 #endif
+#if defined(HAVE_SETRLIMIT) &&	\
+    (defined(RLIMIT_CPU) || defined(RLIMIT_RTTIME))
 	struct rlimit rlim;
+#endif
 	pid_t pid;
-	NOCLOBBER uint64_t timeout;
+	CLOBBERED uint64_t timeout;
 	uint64_t cyclic_sleep = DEFAULT_DELAY_NS;
 	uint64_t cyclic_dist = 0;
 	int32_t cyclic_prio = INT32_MAX;
 	size_t cyclic_samples = DEFAULT_SAMPLES;
-	NOCLOBBER int policy;
+	CLOBBERED int policy;
 	int rc = EXIT_SUCCESS;
 #if defined(SCHED_FIFO)
 	size_t cyclic_policy = stress_cyclic_find_policy(SCHED_FIFO);
@@ -757,11 +772,8 @@ static int stress_cyclic(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_inf("%s: cannot fork, errno=%d (%s)\n",
@@ -772,9 +784,9 @@ again:
 	} else if (pid == 0) {
 #if defined(HAVE_SCHED_GET_PRIORITY_MIN) &&	\
     defined(HAVE_SCHED_GET_PRIORITY_MAX)
-		NOCLOBBER pid_t mypid;
+		CLOBBERED pid_t mypid;
 #endif
-		NOCLOBBER int ncrc = EXIT_FAILURE;
+		CLOBBERED int ncrc = EXIT_FAILURE;
 
 #if defined(HAVE_SCHED_GET_PRIORITY_MIN) &&	\
     defined(HAVE_SCHED_GET_PRIORITY_MAX)
@@ -783,6 +795,8 @@ again:
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 		stress_make_it_fail_set();
 
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_CPU)
 		/*
 		 * We run the stressor as a child so that
 		 * if we reach the hard time limits the child
@@ -792,8 +806,10 @@ again:
 		rlim.rlim_cur = timeout;
 		rlim.rlim_max = timeout;
 		(void)setrlimit(RLIMIT_CPU, &rlim);
+#endif
 
-#if defined(RLIMIT_RTTIME)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_RTTIME)
 		rlim.rlim_cur = 1000000 * timeout;
 		rlim.rlim_max = 1000000 * timeout;
 		(void)setrlimit(RLIMIT_RTTIME, &rlim);
@@ -982,12 +998,22 @@ static const char *stress_cyclic_policies(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_cyclic_dist,    "cyclic-dist",    TYPE_ID_UINT64, 1, 10000000, NULL },
-	{ OPT_cyclic_method,  "cyclic-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_cyclic_methods },
-	{ OPT_cyclic_policy,  "cyclic-policy",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_cyclic_policies },
+	{ OPT_cyclic_method,  "cyclic-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_cyclic_methods },
+	{ OPT_cyclic_policy,  "cyclic-policy",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_cyclic_policies },
 	{ OPT_cyclic_prio,    "cyclic-prio",    TYPE_ID_INT32, 1, 100, NULL },
 	{ OPT_cyclic_sleep,   "cyclic-sleep",   TYPE_ID_UINT64, 1, STRESS_NANOSECOND, NULL },
 	{ OPT_cyclic_samples, "cyclic-samples", TYPE_ID_SIZE_T, 1, MAX_SAMPLES, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+
+	STRESS_EX_LIBRARY("md"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_cyclic_info = {
@@ -996,5 +1022,6 @@ const stressor_info_t stress_cyclic_info = {
 	.opts = opts,
 	.init = stress_cyclic_init,
 	.deinit = stress_cyclic_deinit,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

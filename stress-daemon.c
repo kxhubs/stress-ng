@@ -20,6 +20,8 @@
 #include "stress-ng.h"
 #include "core-capabilities.h"
 #include "core-signal.h"
+#include "core-mmap.h"
+#include "core-put.h"
 
 #if defined(NSIG)
 #define MAX_SIGNUM      NSIG
@@ -32,10 +34,11 @@
 #define MAX_BACKOFF	(10000)
 
 static const stress_help_t help[] = {
-	{ NULL,	"daemon N",	"start N workers creating multiple daemons" },
-	{ NULL,	"daemon-ops N",	"stop when N daemons have been created" },
-	{ NULL, "daemon-wait",	"stressor wait for daemon to exit and not init" },
-	{ NULL,	NULL,		NULL }
+	{ NULL,	"daemon N",       "start N workers creating multiple daemons" },
+	{ NULL, "daemon-bloat N", "specify N bytes of daemon child process memory bloat" },
+	{ NULL,	"daemon-ops N",   "stop when N daemons have been created" },
+	{ NULL, "daemon-wait",    "stressor wait for daemon to exit and not init" },
+	{ NULL,	NULL,              NULL }
 };
 
 /*
@@ -58,6 +61,7 @@ static void daemon_wait_pid(const pid_t pid, const bool daemon_wait)
 static int stress_make_daemon(
 	stress_args_t *args,
 	const int fd,
+	const size_t daemon_bloat,
 	const bool daemon_wait)
 {
 	int fds[3];
@@ -134,6 +138,15 @@ static int stress_make_daemon(
 			VOID_RET(int, stress_capabilities_drop(args->name));
 			stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
+			if (daemon_bloat) {
+				void *ptr;
+
+				ptr = stress_mmap_populate(NULL, daemon_bloat,
+						PROT_READ | PROT_WRITE,
+						MAP_PRIVATE | MAP_ANONYMOUS,
+						-1, 0);
+				stress_put_void_ptr(ptr);
+			}
 			sz = write(fd, &rc, sizeof(rc));
 			if (sz != sizeof(rc))
 				goto err_close_fds2;
@@ -143,7 +156,6 @@ static int stress_make_daemon(
 			break;
 		}
 	}
-
 err_close_fds2:
 	(void)close(fds[2]);
 err_close_fds1:
@@ -162,10 +174,13 @@ err_close_fd:
  */
 static int stress_daemon(stress_args_t *args)
 {
-	int fds[2], rc = EXIT_SUCCESS;
+	int fds[2];
+	int rc = EXIT_SUCCESS;
 	pid_t pid;
 	bool daemon_wait = false;
+	size_t daemon_bloat = 0;
 
+	(void)stress_setting_get("daemon-bloat", &daemon_bloat);
 	(void)stress_setting_get("daemon-wait", &daemon_wait);
 
 	if (stress_signal_stop_stressing(args->name, SIGALRM) < 0)
@@ -180,11 +195,9 @@ static int stress_daemon(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
-	pid = fork();
+
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			(void)close(fds[0]);
 			(void)close(fds[1]);
@@ -199,7 +212,7 @@ again:
 		/* Children */
 		stress_make_it_fail_set();
 		(void)close(fds[0]);
-		rc = stress_make_daemon(args, fds[1], daemon_wait);
+		rc = stress_make_daemon(args, fds[1], daemon_bloat, daemon_wait);
 		shim_exit_group(rc);
 	} else {
 		/* Parent */
@@ -234,8 +247,22 @@ finish:
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_daemon_wait, "daemon-wait", TYPE_ID_BOOL, 0, 1, NULL },
+	{ OPT_daemon_bloat, "daemon-bloat", TYPE_ID_SIZE_T_BYTES, 4 * STRESS_KB, 64 * STRESS_MB, NULL },
+	{ OPT_daemon_wait,  "daemon-wait",  TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+	STRESS_EX_SYSCALL("chdir"),
+	STRESS_EX_SYSCALL("dup"),
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("setsid"),
+	STRESS_EX_SYSCALL("signal"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_daemon_info = {
@@ -243,5 +270,6 @@ const stressor_info_t stress_daemon_info = {
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

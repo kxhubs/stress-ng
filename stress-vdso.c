@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 
 #include <time.h>
 
@@ -57,7 +58,7 @@ typedef int (*stress_vdso_func_t)(void *);
  */
 typedef struct stress_wrap_func {
 	const stress_vdso_func_t func;	/* Wrapper function */
-	char *name;			/* Function name */
+	const char *name;		/* Function name */
 } stress_wrap_func_t;
 
 /*
@@ -80,7 +81,8 @@ static stress_vdso_sym_t *vdso_sym_list;
  */
 static int OPTIMIZE3 wrap_getcpu(void *vdso_func)
 {
-	unsigned int cpu, node;
+	unsigned int cpu;
+	unsigned int node;
 
 	int (*vdso_getcpu)(unsigned *cpu, unsigned *node, void *tcache);
 
@@ -202,7 +204,7 @@ static stress_vdso_func_t func_find(const char *name)
 	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(wrap_funcs); i++) {
-		if (!strcmp(name, wrap_funcs[i].name))
+		if (!shim_strcmp(name, wrap_funcs[i].name))
 			return wrap_funcs[i].func;
 	}
 	return NULL;
@@ -327,12 +329,12 @@ static char *vdso_sym_list_str(void)
 {
 	char *str = NULL;
 	size_t len = 0;
-	stress_vdso_sym_t *vdso_sym;
+	const stress_vdso_sym_t *vdso_sym;
 
 	for (vdso_sym = vdso_sym_list; vdso_sym; vdso_sym = vdso_sym->next) {
 		char *tmp;
 
-		len += (strlen(vdso_sym->name) + 2);
+		len += (shim_strlen(vdso_sym->name) + 2);
 		tmp = (char *)realloc(str, len);
 		if (!tmp) {
 			free(str);
@@ -370,12 +372,12 @@ static void vdso_sym_list_free(stress_vdso_sym_t **list)
  *  remove_sym
  *	find and remove a symbol from the symbol list
  */
-static void remove_sym(stress_vdso_sym_t **list, stress_vdso_sym_t *dup)
+static void remove_sym(stress_vdso_sym_t **list, stress_vdso_sym_t *sym)
 {
 	while (*list) {
-		if (*list == dup) {
-			*list = dup->next;
-			free(dup);
+		if (*list == sym) {
+			*list = sym->next;
+			free(sym);
 			return;
 		}
 		list = &(*list)->next;
@@ -391,9 +393,9 @@ static void vdso_sym_list_remove_duplicates(stress_vdso_sym_t **list)
 	stress_vdso_sym_t *vs1;
 
 	for (vs1 = *list; vs1; vs1 = vs1->next) {
-		stress_vdso_sym_t *vs2;
-
 		if (vs1->name[0] == '_') {
+			const stress_vdso_sym_t *vs2;
+
 			for (vs2 = *list; vs2; vs2 = vs2->next) {
 				if ((vs1 != vs2) && (vs1->addr == vs2->addr))
 					vs1->duplicate = true;
@@ -451,7 +453,7 @@ static int vdso_sym_list_check_vdso_func(stress_vdso_sym_t **list)
 		return 0;
 
 	for (vs1 = vdso_sym_list; vs1; vs1 = vs1->next) {
-		if (!strcmp(vs1->name, name))
+		if (!shim_strcmp(vs1->name, name))
 			break;
 	}
 	if (!vs1) {
@@ -466,7 +468,7 @@ static int vdso_sym_list_check_vdso_func(stress_vdso_sym_t **list)
 	while (vs1) {
 		stress_vdso_sym_t *next = vs1->next;
 
-		if (strcmp(vs1->name, name))
+		if (shim_strcmp(vs1->name, name))
 			remove_sym(list, vs1);
 		vs1 = next;
 	}
@@ -479,10 +481,14 @@ static int vdso_sym_list_check_vdso_func(stress_vdso_sym_t **list)
  */
 static int stress_vdso(stress_args_t *args)
 {
-	double t1, t2, t3, dt, overhead_ns;
+	register stress_vdso_sym_t *vdso_sym;
+	double t1;
+	double t2;
+	double t3;
+	double dt;
+	double overhead_ns;
 	uint64_t counter;
 	int n_vdso = 0;
-	register stress_vdso_sym_t *vdso_sym;
 
 	if (!vdso_sym_list) {
 		/* Should not fail, but worth checking to avoid breakage */
@@ -557,12 +563,29 @@ static int stress_vdso(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("user-time"),
+
+#if defined(HAVE_CLOCK_GETTIME)
+	STRESS_EX_SYSCALL("clock_gettime"),
+#endif
+#if defined(HAVE_CLOCK_GETRES)
+	STRESS_EX_SYSCALL("clock_getres"),
+#endif
+	STRESS_EX_SYSCALL("getcpu"),
+	STRESS_EX_SYSCALL("gettimeofday"),
+	STRESS_EX_SYSCALL("time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vdso_info = {
 	.stressor = stress_vdso,
 	.supported = stress_vdso_supported,
 	.classifier = CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_vdso_info = {

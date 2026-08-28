@@ -20,6 +20,7 @@
 #include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
+#include "core-sched.h"
 
 #include <sched.h>
 
@@ -30,14 +31,6 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_NICE)
-
-#if (defined(_POSIX_PRIORITY_SCHEDULING) || defined(__linux__)) &&	     \
-    (defined(SCHED_OTHER) || defined(SCHED_BATCH) || defined(SCHED_IDLE)) && \
-     !defined(__OpenBSD__) &&						     \
-     !defined(__minix__) &&						     \
-     !defined(__APPLE__)
-#define HAVE_SCHEDULING
-#endif
 
 static void MLOCKED_TEXT stress_resched_usr1_handler(int sig)
 {
@@ -156,11 +149,15 @@ static void stress_resched_spawn(
 static int stress_resched(stress_args_t *args)
 {
 	stress_pid_t *s_pids;
-	int i, s_pids_max, max_prio = 19, rc = EXIT_SUCCESS;
+	int i;
+	int s_pids_max;
+	int max_prio = 19;
+	int rc = EXIT_SUCCESS;
 	size_t yields_size;
 	uint64_t *yields;
 
 #if defined(HAVE_SETPRIORITY) &&	\
+    defined(HAVE_GETRIMIT) &&		\
     defined(RLIMIT_NICE)
 	{
 		struct rlimit rlim;
@@ -175,7 +172,7 @@ static int stress_resched(stress_args_t *args)
 	s_pids_max = max_prio + 1; /* 0.. max_prio */
 	s_pids = stress_sync_s_pids_mmap((size_t)s_pids_max);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %d PIDs failed%s, skipping stressor\n",
 			args->name, s_pids_max, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -191,7 +188,7 @@ static int stress_resched(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (yields == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte yield counter array%s, "
+		pr_inf_skip("%s: mmap %zu byte yield counter array failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, yields_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -270,11 +267,27 @@ tidy_s_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("sched_getscheduler"),
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_SYSCALL("nice"),
+	STRESS_EX_SYSCALL("wait"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_resched_info = {
 	.stressor = stress_resched,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

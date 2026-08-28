@@ -87,27 +87,27 @@ typedef struct {
 static const stress_mmaphuge_setting_t stress_mmaphuge_settings[] =
 {
 #if defined(MAP_HUGE_2MB)
-	{ MAP_HUGETLB | MAP_HUGE_2MB,	2 * MB },
+	{ MAP_HUGETLB | MAP_HUGE_2MB,	2 * STRESS_MB },
 #endif
 #if defined(MAP_HUGE_1GB)
-	{ MAP_HUGETLB | MAP_HUGE_1GB,	1 * GB },
+	{ MAP_HUGETLB | MAP_HUGE_1GB,	1 * STRESS_GB },
 #endif
 #if defined(MAP_HUGE_512MB)
-	{ MAP_HUGETLB | MAP_HUGE_512MB,	512 * MB },
+	{ MAP_HUGETLB | MAP_HUGE_512MB,	512 * STRESS_MB },
 #endif
-	{ MAP_HUGETLB, 1 * GB },
-	{ MAP_HUGETLB, 16 * MB },	/* ppc64 */
-	{ MAP_HUGETLB, 2 * MB },
-	{ 0, 1 * GB },			/* for THP */
-	{ 0, 16 * MB },			/* for THP */
-	{ 0, 2 * MB },			/* for THP */
+	{ MAP_HUGETLB, 1 * STRESS_GB },
+	{ MAP_HUGETLB, 16 * STRESS_MB },/* ppc64 */
+	{ MAP_HUGETLB, 2 * STRESS_MB },
+	{ 0, 1 * STRESS_GB },		/* for THP */
+	{ 0, 16 * STRESS_MB },		/* for THP */
+	{ 0, 2 * STRESS_MB },		/* for THP */
 };
 
 static int stress_mmaphuge_child(stress_args_t *args, void *v_context)
 {
 	stress_mmaphuge_context_t *context = (stress_mmaphuge_context_t *)v_context;
 	const size_t page_size = args->page_size;
-	stress_mmaphuge_buf_t *bufs = (stress_mmaphuge_buf_t *)context->bufs;
+	stress_mmaphuge_buf_t *bufs = context->bufs;
 	size_t idx = 0;
 	int rc = EXIT_SUCCESS;
 
@@ -122,10 +122,12 @@ static int stress_mmaphuge_child(stress_args_t *args, void *v_context)
 			bufs[i].buf = (uint8_t *)MAP_FAILED;
 
 		for (i = 0; LIKELY(stress_continue(args) && (i < context->mmaphuge_mmaps)); i++) {
-			size_t shmall, freemem, totalmem, freeswap, totalswap, last_freeswap, last_totalswap;
+			stress_memory_info_t info;
+			size_t last_freeswap;
 			size_t j;
 
-			stress_memory_limits_get(&shmall, &freemem, &totalmem, &last_freeswap, &last_totalswap);
+			stress_memory_info_get(&info);
+			last_freeswap = info.freeswap;
 
 			for (j = 0; j < SIZEOF_ARRAY(stress_mmaphuge_settings); j++) {
 				uint64_t *buf = (uint64_t *)MAP_FAILED;
@@ -167,7 +169,8 @@ static int stress_mmaphuge_child(stress_args_t *args, void *v_context)
 				if (buf != MAP_FAILED) {
 					const uint64_t rndval = stress_mwc64();
 					register const size_t stride = (page_size * 64) / sizeof(uint64_t);
-					register uint64_t *ptr, val;
+					register uint64_t *ptr;
+					register uint64_t val;
 					const uint64_t *buf_end = (uint64_t *)((uintptr_t)buf + sz);
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
@@ -196,10 +199,10 @@ static int stress_mmaphuge_child(stress_args_t *args, void *v_context)
 					break;
 				}
 			}
-			stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+			stress_memory_info_get(&info);
 
 			/* Check if we eat into swap */
-			if (last_freeswap > freeswap)
+			if (last_freeswap > info.freeswap)
 				break;
 		}
 
@@ -225,7 +228,7 @@ static int stress_mmaphuge_child(stress_args_t *args, void *v_context)
 
 			sz = bufs[i].sz;
 			(void)memset(&stats, 0, sizeof(stats));
-			if (stress_mmap_stats(buf, (size_t)sz, &stats) == 0)
+			if (stress_mmap_stats(buf, sz, &stats) == 0)
 				stress_mmap_stats_sum(&context->stats, &stats);
 
 			if (page_size < sz) {
@@ -264,7 +267,7 @@ static int stress_mmaphuge(stress_args_t *args)
 
 	context = stress_mmap_anon_shared(sizeof(*context), PROT_READ | PROT_WRITE);
 	if (context == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte sized context, "
+		pr_inf_skip("%s: mmap %zu byte sized context failed, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*context), errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -275,7 +278,7 @@ static int stress_mmaphuge(stress_args_t *args)
 	context->numa_mask = NULL;
 	context->numa_nodes = NULL;
 #endif
-	context->sz = 16 * MB;
+	context->sz = 16 * STRESS_MB;
 	context->fd = -1;
 	context->mmaphuge_mmaps = MAX_MMAP_BUFS;
 	if (!stress_setting_get("mmaphuge-mmaps", &context->mmaphuge_mmaps)) {
@@ -293,7 +296,7 @@ static int stress_mmaphuge(stress_args_t *args)
 
 	context->bufs = (stress_mmaphuge_buf_t *)calloc(context->mmaphuge_mmaps, sizeof(*context->bufs));
 	if (!context->bufs) {
-		pr_inf_skip("%s: cannot allocate %zu byte buffer array%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu byte buffer array failed%s, skipping stressor\n",
 			args->name, context->mmaphuge_mmaps * sizeof(*context->bufs),
 			stress_memory_free_get());
 		(void)stress_munmap_anon_shared(context, sizeof(*context));
@@ -316,7 +319,7 @@ static int stress_mmaphuge(stress_args_t *args)
 		context->fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 		if (context->fd < 0) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: open %s failed, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			(void)shim_unlink(filename);
 			(void)stress_fs_temp_dir_rm_args(args);
@@ -338,9 +341,12 @@ static int stress_mmaphuge(stress_args_t *args)
 		 *  Allocate a 16 MB aligned chunk of data.
 		 */
 		if (shim_fallocate(context->fd, 0, 0, (off_t)context->sz) < 0) {
-			rc = stress_exit_status(errno);
+			if (errno == EINTR)
+				rc = EXIT_NO_RESOURCE;
+			else
+				rc = stress_exit_status(errno);
 			pr_fail("%s: fallocate of %zu MB failed, errno=%d (%s)\n",
-				args->name, (size_t)(context->sz / MB), errno, strerror(errno));
+				args->name, (size_t)(context->sz / STRESS_MB), errno, strerror(errno));
 			(void)close(context->fd);
 			(void)stress_fs_temp_dir_rm_args(args);
 			free(context->bufs);
@@ -363,7 +369,8 @@ static int stress_mmaphuge(stress_args_t *args)
 	}
 
 	if (stress_instance_zero(args)) {
-		size_t i, max = 0;
+		size_t i;
+		size_t max = 0;
 
 		for (i = 0; i < SIZEOF_ARRAY(stress_mmaphuge_settings); i++) {
 			if (max < stress_mmaphuge_settings[i].sz)
@@ -399,12 +406,24 @@ static int stress_mmaphuge(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("maple-tree-read"),
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("oom"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmaphuge_info = {
 	.stressor = stress_mmaphuge,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

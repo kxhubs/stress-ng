@@ -49,6 +49,8 @@ typedef struct {
 	struct rlimit rlim;
 } stress_rlimit_info_t;
 
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
 static const shim_rlimit_resource_t rlimit_resources[] = {
 #if defined(RLIMIT_AS)
 	RLIMIT_AS,
@@ -95,6 +97,7 @@ static const shim_rlimit_resource_t rlimit_resources[] = {
 };
 
 static stress_rlimit_info_t rlimits[SIZEOF_ARRAY(rlimit_resources)];
+#endif
 
 static const stress_help_t help[] = {
 	{ NULL,	"set N",	"start N workers exercising the set*() system calls" },
@@ -108,7 +111,11 @@ static const stress_help_t help[] = {
  */
 static int stress_set(stress_args_t *args)
 {
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
 	size_t i;
+	const bool cap_sys_resource = stress_capabilities_check(SHIM_CAP_SYS_RESOURCE);
+#endif
 	int ret_hostname;
 	const size_t max_hostname_len = stress_hostname_length_get();
 	const size_t max_longname_len = max_hostname_len << 1;
@@ -119,7 +126,6 @@ static int stress_set(stress_args_t *args)
     defined(HAVE_SETPGID)
 	const pid_t mypid = getpid();
 #endif
-	const bool cap_sys_resource = stress_capabilities_check(SHIM_CAP_SYS_RESOURCE);
 #if defined(HAVE_SETREUID)
 	const bool cap_setuid = stress_capabilities_check(SHIM_CAP_SETUID);
 	int bad_uid_count = 0;
@@ -129,19 +135,22 @@ static int stress_set(stress_args_t *args)
 	const bool cap_root = stress_capabilities_check(0);
 #endif
 
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
 	for (i = 0; i < SIZEOF_ARRAY(rlimits); i++) {
 		rlimits[i].ret = getrlimit(rlimit_resources[i], &rlimits[i].rlim);
 	}
+#endif
 
 	hostname = (char *)calloc(max_hostname_len, sizeof(*hostname));
 	if (!hostname) {
-		pr_inf_skip("%s: cannot allocate hostname array of %zu bytes%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate hostname array of %zu bytes failed%s, skipping stressor\n",
 			args->name, max_hostname_len, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 	longname = (char *)calloc(max_longname_len, sizeof(*longname));
 	if (!longname) {
-		pr_inf_skip("%s: cannot allocate longname array of %zu bytes%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate longname array of %zu bytes failed%s, skipping stressor\n",
 			args->name, max_longname_len, stress_memory_free_get());
 		free(hostname);
 		return EXIT_NO_RESOURCE;
@@ -159,7 +168,6 @@ static int stress_set(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		int ret;
 		gid_t gid;
 		uid_t uid;
 #if defined(HAVE_SETREUID)
@@ -167,7 +175,10 @@ static int stress_set(stress_args_t *args)
 #else
 		UNEXPECTED
 #endif
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
 		struct rlimit rlim;
+#endif
 
 		/* setsid will fail, ignore return */
 		VOID_RET(pid_t, setsid());
@@ -218,6 +229,7 @@ static int stress_set(stress_args_t *args)
 		if (!stress_capabilities_check(SHIM_CAP_SYS_TIME)) {
 			struct timeval tv;
 			shim_timezone_t tz;
+			int ret;
 
 			/* We should not be able to set the time of day */
 			ret = gettimeofday(&tv, &tz);
@@ -270,22 +282,26 @@ static int stress_set(stress_args_t *args)
 #if defined(HAVE_GRP_H) &&	\
     defined(HAVE_GETGROUPS) &&	\
     defined(HAVE_SETGROUPS)
-		ret = getgroups(0, NULL);
-		if (ret > 0) {
-			gid_t groups[GIDS_MAX];
-			int n;
+		{
+			int ret;
 
-			(void)shim_memset(groups, 0, sizeof(groups));
-			ret = STRESS_MINIMUM(ret, (int)SIZEOF_ARRAY(groups));
-			n = getgroups(ret, groups);
-			if (n > 0) {
-				const gid_t bad_groups[1] = { (gid_t)-1 };
+			ret = getgroups(0, NULL);
+			if (ret > 0) {
+				gid_t groups[GIDS_MAX];
+				int n;
 
-				/* Exercise invalid groups */
-				VOID_RET(int, shim_setgroups(INT_MIN, groups));
-				VOID_RET(int, shim_setgroups(0, groups));
-				VOID_RET(int, shim_setgroups(1, bad_groups));
-				VOID_RET(int, shim_setgroups(n, groups));
+				(void)shim_memset(groups, 0, sizeof(groups));
+				ret = STRESS_MINIMUM(ret, (int)SIZEOF_ARRAY(groups));
+				n = getgroups(ret, groups);
+				if (n > 0) {
+					const gid_t bad_groups[1] = { (gid_t)-1 };
+
+					/* Exercise invalid groups */
+					VOID_RET(int, shim_setgroups(INT_MIN, groups));
+					VOID_RET(int, shim_setgroups(0, groups));
+					VOID_RET(int, shim_setgroups(1, bad_groups));
+					VOID_RET(int, shim_setgroups(n, groups));
+				}
 			}
 		}
 #else
@@ -315,29 +331,36 @@ static int stress_set(stress_args_t *args)
 		UNEXPECTED
 #endif
 
-#if defined(HAVE_SETREGID)
+#if defined(HAVE_SETRESGID)
 #if defined(HAVE_GETRESGID)
 		{
+			int ret;
 			gid_t rgid = (gid_t)-1;
 			gid_t egid = (gid_t)-1;
 			gid_t sgid = (gid_t)-1;
 
 			ret = getresgid(&rgid, &egid, &sgid);
 			if (ret == 0) {
-				VOID_RET(int, setregid(rgid, egid));
-				VOID_RET(int, setregid((gid_t)-1, egid));
-				VOID_RET(int, setregid(rgid, (gid_t)-1));
+				VOID_RET(int, setresgid(rgid, egid, sgid));
+				VOID_RET(int, setresgid(rgid, egid, (gid_t)-1));
+				VOID_RET(int, setresgid(rgid, (gid_t)-1, sgid));
+				VOID_RET(int, setresgid(rgid, (gid_t)-1, (gid_t)-1));
+				VOID_RET(int, setresgid((gid_t)-1, egid, sgid));
+				VOID_RET(int, setresgid((gid_t)-1, egid, (gid_t)-1));
+				VOID_RET(int, setresgid((gid_t)-1, (gid_t)-1, sgid));
+				VOID_RET(int, setresgid((gid_t)-1, (gid_t)-1, (gid_t)-1));
 
-				if (geteuid() != 0) {
-					VOID_RET(int, setregid((gid_t)-2, egid));
-					VOID_RET(int, setregid(rgid, (gid_t)-2));
-				}
+				VOID_RET(int, setresgid((gid_t)-2, egid, sgid));
+				VOID_RET(int, setresgid(rgid, (gid_t)-2, sgid));
+				VOID_RET(int, setresgid(rgid, egid, (gid_t)-2));
+
+				VOID_RET(int, setresgid(rgid, egid, sgid));
 			}
 		}
 #else
 		UNEXPECTED
 #endif
-		VOID_RET(int, setregid((gid_t)-1, (gid_t)-1));
+		VOID_RET(int, setresgid((gid_t)-1, (gid_t)-1, (gid_t)-1));
 #else
 		UNEXPECTED
 #endif
@@ -345,6 +368,7 @@ static int stress_set(stress_args_t *args)
 #if defined(HAVE_SETRESUID)
 #if defined(HAVE_GETRESUID)
 		{
+			int ret;
 			uid_t ruid = (uid_t)-1;
 			uid_t euid = (uid_t)-1;
 			uid_t suid = (uid_t)-1;
@@ -378,6 +402,7 @@ static int stress_set(stress_args_t *args)
 #if defined(HAVE_SETRESGID)
 #if defined(HAVE_GETRESGID)
 		{
+			int ret;
 			gid_t rgid = (gid_t)-1;
 			gid_t egid = (gid_t)-1;
 			gid_t sgid = (gid_t)-1;
@@ -415,6 +440,8 @@ static int stress_set(stress_args_t *args)
 			/* Passing -1 will return the current fsgid */
 			fsgid = setfsgid((gid_t)-1);
 			if (fsgid >= 0) {
+				int ret;
+
 				/* Set the current fsgid, should work */
 				ret = setfsgid((gid_t)fsgid);
 				if (ret == fsgid) {
@@ -443,6 +470,8 @@ static int stress_set(stress_args_t *args)
 			/* Passing -1 will return the current fsuid */
 			fsuid = setfsuid((uid_t)-1);
 			if (fsuid >= 0) {
+				int ret;
+
 				/* Set the current fsuid, should work */
 				ret = setfsuid((uid_t)fsuid);
 				if (ret == fsuid) {
@@ -476,6 +505,7 @@ static int stress_set(stress_args_t *args)
 #if defined(HAVE_GETDOMAINNAME) &&	\
     defined(HAVE_SETDOMAINNAME)
 		{
+			int ret;
 			char name[2048];
 
 			ret = shim_getdomainname(name, sizeof(name));
@@ -495,6 +525,9 @@ static int stress_set(stress_args_t *args)
 #else
 		UNEXPECTED
 #endif
+
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
 		/*
 		 *  Invalid setrlimit syscall with invalid
 		 *  resource attribute resulting in EINVAL error
@@ -526,8 +559,11 @@ static int stress_set(stress_args_t *args)
 		if (!cap_sys_resource) {
 			for (i = 0; i < SIZEOF_ARRAY(rlimits); i++) {
 				if ((rlimits[i].ret == 0) && (rlimits[i].rlim.rlim_max < RLIM_INFINITY)) {
+					int ret;
+
 					rlim.rlim_cur = rlimits[i].rlim.rlim_cur;
 					rlim.rlim_max = RLIM_INFINITY;
+
 					ret = setrlimit(rlimit_resources[i], &rlim);
 					/*
 					 *  Cygwin can return -EINVAL as it's not supported in
@@ -545,6 +581,7 @@ static int stress_set(stress_args_t *args)
 				}
 			}
 		}
+#endif
 
 		{
 			/*
@@ -573,9 +610,65 @@ static int stress_set(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+#if defined(HAVE_GETDOMAINNAME) &&	\
+    defined(HAVE_SETDOMAINNAME)
+	STRESS_EX_SYSCALL("setdomainname"),
+#endif
+#if defined(HAVE_SETFSGID) &&   \
+    defined(HAVE_SYS_FSUID_H)
+	STRESS_EX_SYSCALL("setfsgid"),
+#endif
+#if defined(HAVE_SETFSUID) && 	\
+    defined(HAVE_SYS_FSUID_H)
+	STRESS_EX_SYSCALL("setfsuid"),
+#endif
+	STRESS_EX_SYSCALL("setgid"),
+	STRESS_EX_SYSCALL("sethostname"),
+#if defined(HAVE_GETPGID) &&	\
+    defined(HAVE_SETPGID)
+	STRESS_EX_SYSCALL("setpgid"),
+#endif
+#if defined(HAVE_GETPGRP) &&	\
+    defined(HAVE_SETPGRP)
+	STRESS_EX_SYSCALL("setpgrp"),
+#endif
+	STRESS_EX_SYSCALL("setsid"),
+#if defined(HAVE_GETRESGID) &&	\
+    defined(HAVE_SETREGID)
+	STRESS_EX_SYSCALL("setregid"),
+#endif
+#if defined(HAVE_GETREGID) &&	\
+    defined(HAVE_SETRESGID)
+	STRESS_EX_SYSCALL("setresgid"),
+#endif
+#if defined(HAVE_GETRESUID) &&	\
+    defined(HAVE_SETRESUID)
+	STRESS_EX_SYSCALL("setresuid"),
+#endif
+#if defined(HAVE_SETREUID)
+	STRESS_EX_SYSCALL("setreuid"),
+#endif
+#if defined(HAVE_GETTIMEOFDAY) &&	\
+    defined(HAVE_SETTIMEOFDAY)
+	STRESS_EX_SYSCALL("settimeofday"),
+#endif
+	STRESS_EX_SYSCALL("setrlimit"),
+	STRESS_EX_SYSCALL("setuid"),
+#if defined(__NR_sgetmask) &&	\
+    defined(__NR_ssetmask)
+	STRESS_EX_SYSCALL("ssetmask"),
+#endif
+	STRESS_EX_SYSCALL("stime"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_set_info = {
 	.stressor = stress_set,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

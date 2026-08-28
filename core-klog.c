@@ -18,6 +18,7 @@
  */
 #include "stress-ng.h"
 #include "core-attribute.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-klog.h"
 #include "core-processes.h"
@@ -63,7 +64,7 @@ static bool CONST stress_klog_err_no_exceptions(const char *str)
 	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(err_exceptions); i++) {
-		if (strstr(str, err_exceptions[i]))
+		if (shim_strstr(str, err_exceptions[i]))
 			return false;
 	}
 	return true;
@@ -78,7 +79,8 @@ static bool CONST stress_klog_err_no_exceptions(const char *str)
 static void stress_klog_kernel_cmdline(void)
 {
 	static bool already_dumped = false;
-	char buffer[4096], *ptr;
+	char buffer[4096];
+	char *ptr;
 	ssize_t ret;
 
 	if (already_dumped)
@@ -108,7 +110,7 @@ static void stress_klog_kernel_cmdline(void)
 static void stress_klog_convert_nl(char *buf)
 {
 	for (;;) {
-		char *ptr = strstr(buf, "\\x0a");
+		char *ptr = shim_strstr(buf, "\\x0a");
 
 		if (!ptr)
 			return;
@@ -153,18 +155,20 @@ void stress_klog_start(void)
 		(void)fseek(klog_fp, 0, SEEK_END);
 
 		while (fgets(buf, sizeof(buf), klog_fp)) {
-			int priority, facility, n;
+			int priority;
+			int facility;
+			int n;
 			uint64_t timestamp;
 			char *ptr;
 			char ts[32];
-			char *msg;
+			const char *msg;
 			bool dump_procs = false;
 
-			ptr = strchr(buf, '\n');
+			ptr = shim_strchr(buf, '\n');
 			if (ptr)
 				*ptr = '\0';
 
-			ptr = strchr(buf, ';');
+			ptr = shim_strchr(buf, ';');
 			if (!ptr)
 				continue;
 			ptr++;
@@ -178,36 +182,36 @@ void stress_klog_start(void)
 
 			stress_klog_convert_nl(buf);
 
-			if (strstr(buf, "audit:")) {
+			if (shim_strstr(buf, "audit:")) {
 				msg = "audit";
 				goto log_info;
 			}
 
 			/* Check for CPU throttling messages */
-			if ((strstr(buf, "CPU") || strstr(buf, "cpu")) &&
-			    (strstr(buf, "throttle") || strstr(buf, "throttling"))) {
+			if ((shim_strstr(buf, "CPU") || shim_strstr(buf, "cpu")) &&
+			    (shim_strstr(buf, "throttle") || shim_strstr(buf, "throttling"))) {
 				msg = "CPU throttling";
 				goto log_info;
 			}
-			if (strstr(buf, "blocked for more than")) {
+			if (shim_strstr(buf, "blocked for more than")) {
 				msg = "hung task";
 				goto log_info;
 			}
-			if (strstr(buf, "watchdog") && strstr(buf, "hard LOCKUP")) {
+			if (shim_strstr(buf, "watchdog") && shim_strstr(buf, "hard LOCKUP")) {
 				msg = "hard lockup";
 				dump_procs = true;
 				goto log_err;
 			}
-			if (strstr(buf, "soft lockup") && strstr(buf, "stuck")) {
+			if (shim_strstr(buf, "soft lockup") && shim_strstr(buf, "stuck")) {
 				msg = "soft lockup";
 				dump_procs = true;
 				goto log_err;
 			}
-			if (strstr(buf, "Out of memory")) {
+			if (shim_strstr(buf, "Out of memory")) {
 				msg = "out of memory";
 				goto log_info;
 			}
-			if ((priority > 3) && strstr(buf, "OOM")) {
+			if ((priority > 3) && shim_strstr(buf, "OOM")) {
 				msg = "out of memory";
 				goto log_info;
 			}

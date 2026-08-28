@@ -54,7 +54,8 @@ static const stress_help_t help[] = {
     defined(HAVE_LINUX_SOCK_DIAG_H) &&	\
     defined(HAVE_LINUX_NETLINK_H) && 	\
     defined(HAVE_LINUX_RTNETLINK_H) &&	\
-    defined(HAVE_LINUX_UNIX_DIAG_H)
+    defined(HAVE_LINUX_UNIX_DIAG_H) &&	\
+    defined(HAVE_IOVEC)
 
 typedef struct {
 	struct nlmsghdr nlh;
@@ -292,7 +293,8 @@ static int stress_sockdiag(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		int fd, ret;
+		int fd;
+		int ret;
 
 		fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_SOCK_DIAG);
 		if (UNLIKELY(fd < 0)) {
@@ -330,11 +332,25 @@ static int stress_sockdiag(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("recvmsg"),
+	STRESS_EX_SYSCALL("sendmsg"),
+	STRESS_EX_SYSCALL("socket"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sockdiag_info = {
 	.stressor = stress_sockdiag,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sockdiag_info = {

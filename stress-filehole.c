@@ -23,9 +23,9 @@
 #include "core-mmap.h"
 #include "core-signal.h"
 
-#define MIN_FILEHOLE_BYTES	(1 * MB)
-#define MAX_FILEHOLE_BYTES	(32 * GB)
-#define DEFAULT_FILEHOLE_BYTES	(16 * MB)
+#define MIN_FILEHOLE_BYTES	(1 * STRESS_MB)
+#define MAX_FILEHOLE_BYTES	(32 * STRESS_GB)
+#define DEFAULT_FILEHOLE_BYTES	(16 * STRESS_MB)
 
 #if defined(HAVE_PREADV) || \
     defined(HAVE_PWRITEV)
@@ -82,7 +82,7 @@ static const fallocate_mode_t fallocate_modes[] = {
 static int stress_filehole_write(
 	stress_args_t *args,
 	const int fd,
-	void *buf,
+	const void *buf,
 	const size_t buf_len,
 	const off_t offset)
 {
@@ -244,7 +244,7 @@ static void stress_filehole_non_zeros_to_holes(
 #else
 		if (lseek(fd, offset, SEEK_SET) < 0)
 			continue;
-		ret = read(fd, buf, buf_len);
+		ret = read(fd, buf, page_size);
 #endif
 		if (ret != (ssize_t)page_size)
 			continue;
@@ -463,13 +463,17 @@ static int stress_filehole(stress_args_t *args)
 	int fd = -1, ret, rc = EXIT_SUCCESS;
 	char filename[PATH_MAX];
 	size_t extents;
-	uint64_t *buf, *zero_buf;
+	uint64_t *buf;
+	uint64_t *zero_buf;
 	uint64_t filehole_bytes_total = DEFAULT_FILEHOLE_BYTES;
 	const size_t page_size = args->page_size;
-	off_t offset, filehole_bytes;
+	off_t offset;
+	off_t filehole_bytes;
 	size_t pages;
-	double max_size, max_blks;
-	double extents_total, extents_count;
+	double max_size;
+	double max_blks;
+	double extents_total;
+	double extents_count;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	bool filehole_defrag = false;
 
@@ -527,7 +531,7 @@ static int stress_filehole(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_temp;
 	}
@@ -680,13 +684,13 @@ static int stress_filehole(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 	stress_metrics_set(args, "Mbytes per file (maximum)",
-		max_size / (double)MB, STRESS_METRIC_GEOMETRIC_MEAN);
+		max_size / (double)STRESS_MB, STRESS_METRIC_GEOMETRIC_MEAN);
 	stress_metrics_set(args, "blocks used per file (maximum)",
 		max_blks, STRESS_METRIC_GEOMETRIC_MEAN);
 	if (extents_count > 0.0) {
-		extents = extents_total / extents_count;
-		stress_metrics_set(args, "extents per file",
-			(double)extents, STRESS_METRIC_GEOMETRIC_MEAN);
+		const double metric = extents_total / extents_count;
+
+		stress_metrics_set(args, "extents per file", metric, STRESS_METRIC_GEOMETRIC_MEAN);
 	}
 tidy:
 	(void)shim_unlink(filename);
@@ -701,12 +705,31 @@ tidy_ret:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-folio"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("fallocate"),
+#if defined(HAVE_PWRITE)
+	STRESS_EX_SYSCALL("pread"),
+	STRESS_EX_SYSCALL("pwrite"),
+#else
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_filehole_info = {
 	.stressor = stress_filehole,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_filehole_info = {

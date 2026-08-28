@@ -61,18 +61,23 @@ static void check_eperm(stress_args_t *args, const ssize_t ret, const int err)
  */
 static int stress_urandom(stress_args_t *args)
 {
-	int fd_urnd, fd_rnd, fd_rnd_blk, rc = EXIT_FAILURE;
+	const size_t page_size = args->page_size;
+	int fd_urnd;
+	int fd_rnd;
+	int fd_rnd_blk;
+	int rc = EXIT_FAILURE;
 #if defined(__linux__)
 	int fd_rnd_wr;
 #endif
-	bool sys_admin = stress_capabilities_check(SHIM_CAP_SYS_ADMIN);
-	double duration = 0.0, bytes = 0.0, rate;
-	const size_t page_size = args->page_size;
+	const bool sys_admin = stress_capabilities_check(SHIM_CAP_SYS_ADMIN);
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 
 	fd_urnd = open("/dev/urandom", O_RDONLY);
 	if (fd_urnd < 0) {
 		if (errno != ENOENT) {
-			pr_fail("%s: open /dev/urandom failed, errno=%d (%s)\n",
+			pr_fail("%s: open '/dev/urandom' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
@@ -83,7 +88,7 @@ static int stress_urandom(stress_args_t *args)
 	fd_rnd = open("/dev/random", O_RDONLY | O_NONBLOCK);
 	if (fd_rnd < 0) {
 		if (errno != ENOENT) {
-			pr_fail("%s: open /dev/random failed, errno=%d (%s)\n",
+			pr_fail("%s: open '/dev/random' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			(void)close(fd_urnd);
 			return EXIT_FAILURE;
@@ -95,7 +100,7 @@ static int stress_urandom(stress_args_t *args)
 	fd_rnd_blk = open("/dev/random", O_RDONLY);
 	if (fd_rnd_blk < 0) {
 		if (errno != ENOENT) {
-			pr_fail("%s: open /dev/random failed, errno=%d (%s)\n",
+			pr_fail("%s: open '/dev/random' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			(void)close(fd_rnd);
 			(void)close(fd_urnd);
@@ -143,7 +148,7 @@ static int stress_urandom(stress_args_t *args)
 				bytes += (double)ret;
 			} else {
 				if ((errno != EAGAIN) && (errno != EINTR)) {
-					pr_fail("%s: read of /dev/urandom failed, errno=%d (%s)\n",
+					pr_fail("%s: read of '/dev/urandom' failed, errno=%d (%s)\n",
 						args->name, errno, strerror(errno));
 					goto err;
 				}
@@ -174,7 +179,7 @@ static int stress_urandom(stress_args_t *args)
 				bytes += (double)ret;
 			} else {
 				if ((errno != EAGAIN) && (errno != EINTR)) {
-					pr_fail("%s: read of /dev/random failed, errno=%d (%s)\n",
+					pr_fail("%s: read of '/dev/random' failed, errno=%d (%s)\n",
 						args->name, errno, strerror(errno));
 					goto err;
 				}
@@ -310,7 +315,7 @@ next:
 							bytes += (double)ret;
 						} else {
 							if ((errno != EAGAIN) && (errno != EINTR)) {
-								pr_fail("%s: read of /dev/random failed, errno=%d (%s)\n",
+								pr_fail("%s: read of '/dev/random' failed, errno=%d (%s)\n",
 									args->name, errno, strerror(errno));
 								goto err;
 							}
@@ -347,9 +352,32 @@ err:
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("read"),
+#if defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_urandom_info = {
 	.stressor = stress_urandom,
 	.classifier = CLASS_DEV | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

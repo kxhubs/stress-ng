@@ -48,11 +48,6 @@ static volatile bool do_jmp = true;
 static sigjmp_buf jmp_env;
 #endif
 
-static inline void ALWAYS_INLINE stress_spinmem_mfence(void)
-{
-	shim_mfence();
-}
-
 static inline void ALWAYS_INLINE stress_spinmem_mbarrier(void)
 {
 #if defined(HAVE_ASM_ARM_DMB_SY)
@@ -63,12 +58,15 @@ static inline void ALWAYS_INLINE stress_spinmem_mbarrier(void)
 #define SPINMEM_MB()			\
 do {					\
 	stress_asm_mb();		\
-	stress_spinmem_mfence();	\
+	shim_mfence();			\
 	stress_spinmem_mbarrier();	\
 } while (0)				\
 
-#define SPINMEM_FLUSH(ptr)		\
+#define SPINMEM_FL(ptr)			\
 	stress_cpu_cache_data_flush((void *)ptr, 64)
+
+#define SPINMEM_RD(src)		(src)
+#define SPINMEM_WR(dst, src)	(dst) = (src)
 
 #if defined(HAVE_SIGLONGJMP)
 /*
@@ -81,78 +79,107 @@ static void MLOCKED_TEXT stress_spinmem_handler(int signum)
 }
 #endif
 
-#define SPINMEM_READER(name, type)		\
+#define SPINMEM_READER(name, type, mb, flush, rd, wr)		\
 static void OPTIMIZE3 name(uint8_t *data, const bool spinmem_yield)	\
-{						\
-	volatile type *uptr = (type *)		\
-		shim_assume_aligned(data, 16);	\
-	register type val = (type)0;		\
-	register int i;				\
-						\
-	for (i = 0; i < SPINMEM_LOOPS; i++) {	\
-		register type newval;		\
-		register int spins = 0;		\
-						\
-		do {				\
-			newval = uptr[0];	\
-			SPINMEM_MB();		\
-			if (spins++ > SPINMEM_SPINS) \
-				break;		\
-		} while (newval == val);	\
-						\
-		uptr[SPINMEM_OFFSET] = newval;	\
-		SPINMEM_FLUSH(data);		\
-		SPINMEM_MB();			\
-		val = newval;			\
-		if (spinmem_yield)		\
-			shim_sched_yield();	\
-	}					\
+{								\
+	volatile type *uptr = (type *)				\
+		shim_assume_aligned(data, 16);			\
+	register type val = (type)0;				\
+	register int i;						\
+								\
+	for (i = 0; i < SPINMEM_LOOPS; i++) {			\
+		register type newval;				\
+		register int spins = 0;				\
+								\
+		do {						\
+			newval = rd(uptr[0]);			\
+			mb();					\
+			if (spins++ > SPINMEM_SPINS)		\
+				break;				\
+		} while (newval == val);			\
+								\
+		wr(uptr[SPINMEM_OFFSET], newval);		\
+		flush(data);					\
+		mb();						\
+		val = newval;					\
+		if (spinmem_yield)				\
+			shim_sched_yield();			\
+	}							\
 }
 
 
-#define SPINMEM_WRITER(name, type)		\
+#define SPINMEM_WRITER(name, type, mb, flush, rd, wr)		\
 static void OPTIMIZE3 name(uint8_t *data, const bool spinmem_yield)	\
-{						\
-	volatile type *uptr = (type *)		\
-		shim_assume_aligned(data, 16);	\
-	register type v = *data;		\
-	register int i;				\
-						\
-	for (i = 0; i < SPINMEM_LOOPS; i++) {	\
-		register int spins = 0;		\
-						\
-		v++;				\
-		SPINMEM_FLUSH(data);		\
-		SPINMEM_MB();			\
-		uptr[0] = v;			\
-		SPINMEM_FLUSH(data);		\
-		SPINMEM_MB();			\
-						\
-		while (uptr[SPINMEM_OFFSET] != v) { \
-			if (spins++ > SPINMEM_SPINS) \
-				break;		\
-			SPINMEM_MB();		\
-		}				\
-		if (spinmem_yield)		\
-			shim_sched_yield();	\
-	}					\
+{								\
+	volatile type *uptr = (type *)				\
+		shim_assume_aligned(data, 16);			\
+	register type v = *data;				\
+	register int i;						\
+								\
+	for (i = 0; i < SPINMEM_LOOPS; i++) {			\
+		register int spins = 0;				\
+								\
+		v++;						\
+		flush(data);					\
+		mb();						\
+		wr(uptr[0], v);					\
+		flush(data);					\
+		mb();						\
+								\
+		while (rd(uptr[SPINMEM_OFFSET]) != v) {		\
+			if (spins++ > SPINMEM_SPINS) 		\
+				break;				\
+			mb();					\
+		}						\
+		if (spinmem_yield)				\
+			shim_sched_yield();			\
+	}							\
 }
 
-SPINMEM_READER(stress_spinmem_reader8, uint8_t)
-SPINMEM_WRITER(stress_spinmem_writer8, uint8_t)
+SPINMEM_READER(stress_spinmem_reader8, uint8_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+SPINMEM_WRITER(stress_spinmem_writer8, uint8_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
 
-SPINMEM_READER(stress_spinmem_reader16, uint16_t)
-SPINMEM_WRITER(stress_spinmem_writer16, uint16_t)
+SPINMEM_READER(stress_spinmem_reader16, uint16_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+SPINMEM_WRITER(stress_spinmem_writer16, uint16_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
 
-SPINMEM_READER(stress_spinmem_reader32, uint32_t)
-SPINMEM_WRITER(stress_spinmem_writer32, uint32_t)
+SPINMEM_READER(stress_spinmem_reader32, uint32_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+SPINMEM_WRITER(stress_spinmem_writer32, uint32_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
 
-SPINMEM_READER(stress_spinmem_reader64, uint64_t)
-SPINMEM_WRITER(stress_spinmem_writer64, uint64_t)
+SPINMEM_READER(stress_spinmem_reader64, uint64_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+SPINMEM_WRITER(stress_spinmem_writer64, uint64_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
 
 #if defined(HAVE_INT128_T)
-SPINMEM_READER(stress_spinmem_reader128, __uint128_t)
-SPINMEM_WRITER(stress_spinmem_writer128, __uint128_t)
+SPINMEM_READER(stress_spinmem_reader128, __uint128_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+SPINMEM_WRITER(stress_spinmem_writer128, __uint128_t, SPINMEM_MB, SPINMEM_FL, SPINMEM_RD, SPINMEM_WR)
+#endif
+
+#if defined(HAVE_ATOMIC_LOAD_N) &&	\
+    defined(HAVE_ATOMIC_STORE_N)
+
+#if ULONG_MAX == 0xffffffffffffffffULL
+#define STRESS_ATOMIC_64BIT
+#endif
+
+/* Atomic SPINMEM variants */
+#define SPINMEM_A_FL(x)
+#define SPINMEM_A_MB()
+#define SPINMEM_A_RD(src)	__atomic_load_n(&src, __ATOMIC_SEQ_CST)
+#define SPINMEM_A_WR(dst, src)	__atomic_store_n(&dst, src, __ATOMIC_SEQ_CST)
+
+SPINMEM_READER(stress_spinmem_atomic_reader8, uint8_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+SPINMEM_WRITER(stress_spinmem_atomic_writer8, uint8_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+
+SPINMEM_READER(stress_spinmem_atomic_reader16, uint16_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+SPINMEM_WRITER(stress_spinmem_atomic_writer16, uint16_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+
+SPINMEM_READER(stress_spinmem_atomic_reader32, uint32_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+SPINMEM_WRITER(stress_spinmem_atomic_writer32, uint32_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+
+#if defined(STRESS_ATOMIC_64BIT)
+SPINMEM_READER(stress_spinmem_atomic_reader64, uint64_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+SPINMEM_WRITER(stress_spinmem_atomic_writer64, uint64_t, SPINMEM_A_MB, SPINMEM_A_FL, SPINMEM_A_RD, SPINMEM_A_WR)
+#endif
+
 #endif
 
 typedef void (*spinmem_func_t)(uint8_t *data, const bool spinmem_yield);
@@ -170,6 +197,15 @@ static const spinmem_funcs_t spinmem_funcs[] = {
 	{ "64bit", stress_spinmem_reader64, stress_spinmem_writer64 },
 #if defined(HAVE_INT128_T)
 	{ "128bit", stress_spinmem_reader128, stress_spinmem_writer128 },
+#endif
+#if defined(HAVE_ATOMIC_LOAD_N) &&	\
+    defined(HAVE_ATOMIC_STORE_N)
+	{ "8bitatomic",  stress_spinmem_atomic_reader8,  stress_spinmem_atomic_writer8 },
+	{ "16bitatomic",  stress_spinmem_atomic_reader16,  stress_spinmem_atomic_writer16 },
+	{ "32bitatomic",  stress_spinmem_atomic_reader32,  stress_spinmem_atomic_writer32 },
+#if defined(STRESS_ATOMIC_64BIT)
+	{ "64bitatomic",  stress_spinmem_atomic_reader64,  stress_spinmem_atomic_writer64 },
+#endif
 #endif
 };
 
@@ -216,20 +252,21 @@ static void stress_spinmem_numa(
 }
 #endif
 
-
 /*
  *  stress_spinmem()
  *      stress spin write/reads on shared memory
  */
 static int stress_spinmem(stress_args_t *args)
 {
-	NOCLOBBER int rc = EXIT_SUCCESS;
-	NOCLOBBER pid_t pid = -1;
-	NOCLOBBER double duration = 0.0, count = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
+	CLOBBERED pid_t pid = -1;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
 	uint8_t *mapping;
 	double rate;
 	size_t spinmem_method = 2; /* 32bit default */
-	spinmem_func_t spinmem_reader, spinmem_writer;
+	spinmem_func_t spinmem_reader;
+	spinmem_func_t spinmem_writer;
 	bool spinmem_affinity = false;
 	bool spinmem_numa = false;
 	bool spinmem_yield = false;
@@ -274,8 +311,8 @@ static int stress_spinmem(stress_args_t *args)
 			args->page_size, PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (mapping == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap a page of "
-			"%zu bytes%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap a page of %zu bytes failed%s, "
+			"errno=%d (%s), skipping stressor\n",
 			args->name, args->page_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
@@ -307,7 +344,7 @@ static int stress_spinmem(stress_args_t *args)
 
 	pid = fork();
 	if (pid < 0) {
-		pr_inf_skip("%s: could not fork child process, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: fork failed, errno=%d (%s), skipping stressor\n",
 			args->name, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy;
@@ -397,10 +434,7 @@ tidy:
 	(void)munmap((void *)mapping, args->page_size);
 tidy_cpus:
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 #if defined(HAVE_SCHED_SETAFFINITY)
 	stress_affinity_cpus_free(&cpus);
@@ -416,10 +450,27 @@ static const char *stress_spinmem_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_spinmem_affinity, "spinmem-affinity", TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_spinmem_method,   "spinmem-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_spinmem_method },
+	{ OPT_spinmem_method,   "spinmem-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_spinmem_method },
 	{ OPT_spinmem_numa,     "spinmem-numa",     TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_spinmem_yield,    "spinmem-yield",    TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("backend-bound-rob"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("memory-bus"),
+	STRESS_EX_FEATURE("user-time"),
+
+	/*
+#if defined(HAVE_SCHED_SETAFFINITY)
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+#endif
+#if defined(HAVE_LINUX_MEMPOLICY_H)
+	STRESS_EX_SYSCALL("mbind"),
+#endif
+	*/
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_spinmem_info = {
@@ -427,5 +478,6 @@ const stressor_info_t stress_spinmem_info = {
 	.classifier = CLASS_CPU | CLASS_MEMORY | CLASS_CPU_CACHE,
 	.verify = VERIFY_NONE,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

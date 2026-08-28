@@ -197,7 +197,7 @@ static int stress_locka_contention(
 
 		locka_info = stress_locka_info_new();
 		if (UNLIKELY(!locka_info)) {
-			pr_err("%s: calloc failed, out of memory%s\n",
+			pr_err("%s: calloc failed%s\n",
 				args->name, stress_memory_free_get());
 			return -1;
 		}
@@ -217,7 +217,9 @@ static int stress_locka_contention(
  */
 static int stress_locka(stress_args_t *args)
 {
-	int fd, ret = EXIT_FAILURE, parent_cpu;
+	int fd;
+	int ret = EXIT_FAILURE;
+	int parent_cpu;
 	pid_t cpid = -1;
 	char filename[PATH_MAX];
 	char pathname[PATH_MAX];
@@ -235,7 +237,7 @@ static int stress_locka(stress_args_t *args)
 	if (mkdir(pathname, S_IRWXU) < 0) {
 		if (errno != EEXIST) {
 			ret = stress_exit_status(errno);
-			pr_err("%s: mkdir %s failed, errno=%d (%s)\n",
+			pr_err("%s: mkdir '%s' failed, errno=%d (%s)\n",
 				args->name, pathname, errno, strerror(errno));
 			return ret;
 		}
@@ -251,7 +253,7 @@ static int stress_locka(stress_args_t *args)
 
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		ret = stress_exit_status(errno);
-		pr_err("%s: open %s failed, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_rmdir(pathname);
 		return ret;
@@ -285,12 +287,10 @@ redo:
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	cpid = fork();
+	cpid = stress_retry_fork(args, 0);
 	if (cpid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto tidy;
 		pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -325,11 +325,22 @@ tidy:
 
 	return ret;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("file-lock"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fcntl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_locka_info = {
 	.stressor = stress_locka,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_locka_info = {

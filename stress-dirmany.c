@@ -113,7 +113,7 @@ static uint64_t stress_dirmany_create(
 
 		/* File should really exist */
 		if ((shim_stat(filename, &statbuf) < 0) && (errno != ENOMEM)) {
-			pr_fail("%s: stat failed on file %s, errno=%d (%s)\n",
+			pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			*failed = true;
 			break;
@@ -158,9 +158,12 @@ static void stress_dirmany_remove(
 static int stress_dirmany(stress_args_t *args)
 {
 	int ret;
-	uint64_t i_start = 0, total_created = 0;
+	uint64_t i_start = 0;
+	uint64_t total_created = 0;
 	char pathname[PATH_MAX];
-	double create_time = 0.0, remove_time = 0.0, total_time = 0.0;
+	double create_time = 0.0;
+	double remove_time = 0.0;
+	double total_time = 0.0;
 	off_t dirmany_bytes = 0;
 	size_t pathname_len;
 
@@ -174,7 +177,7 @@ static int stress_dirmany(stress_args_t *args)
 
 	if (!stress_setting_get("dirmany-bytes", &dirmany_bytes)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
-			dirmany_bytes = (sizeof(dirmany_bytes) > 5) ? (off_t)(1 * TB) : ~(off_t)0;
+			dirmany_bytes = (sizeof(dirmany_bytes) > 5) ? (off_t)(1 * STRESS_TB) : ~(off_t)0;
 		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
 			dirmany_bytes = MIN_DIRMANY_BYTES;
 	}
@@ -243,10 +246,29 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("directory"),
+	STRESS_EX_FEATURE("io-thermal"),
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fsync"),
+#if defined(HAVE_POSIX_FALLOCATE)
+	STRESS_EX_SYSCALL("posix_fallocate"),
+#else
+	STRESS_EX_SYSCALL("fallocate"),
+#endif
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("stat"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dirmany_info = {
 	.stressor = stress_dirmany,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

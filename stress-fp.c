@@ -22,6 +22,7 @@
 #include "core-builtin.h"
 #include "core-madvise.h"
 #include "core-mmap.h"
+#include "core-pragma.h"
 #include "core-put.h"
 #include "core-signal.h"
 #include "core-target-clones.h"
@@ -180,14 +181,16 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
+PRAGMA_UNROLL								\
 	for (i = 0; i < FP_ELEMENTS; i++) {				\
 		fp_data[i].field.r[idx] = fp_data[i].field.r_init;	\
 	}								\
 									\
 	t1 = stress_time_now();						\
-	for (i = 0; i < loops ; i++) {					\
+	for (i = 0; i < loops; i++) {					\
 		fp_data[0].field.r[idx] += fp_data[0].field.add;	\
 		fp_data[0].field.r[idx] += fp_data[0].field.add_rev;	\
 		fp_data[1].field.r[idx] += fp_data[1].field.add;	\
@@ -220,14 +223,16 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
+PRAGMA_UNROLL								\
 	for (i = 0; i < FP_ELEMENTS; i++) {				\
 		fp_data[i].field.r[idx] = fp_data[i].field.r_init;	\
 	}								\
 									\
 	t1 = stress_time_now();						\
-	for (i = 0; i < loops ; i++) {					\
+	for (i = 0; i < loops; i++) {					\
 		fp_data[0].field.r[idx] -= fp_data[0].field.add;	\
 		fp_data[0].field.r[idx] -= fp_data[0].field.add_rev;	\
 		fp_data[1].field.r[idx] -= fp_data[1].field.add;	\
@@ -260,14 +265,16 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
+PRAGMA_UNROLL								\
 	for (i = 0; i < FP_ELEMENTS; i++) {				\
 		fp_data[i].field.r[idx] = fp_data[i].field.r_init;	\
 	}								\
 									\
 	t1 = stress_time_now();						\
-	for (i = 0; i < loops ; i++) {					\
+	for (i = 0; i < loops; i++) {					\
 		fp_data[0].field.r[idx] *= fp_data[0].field.mul;	\
 		fp_data[0].field.r[idx] *= fp_data[0].field.mul_rev;	\
 		fp_data[1].field.r[idx] *= fp_data[1].field.mul;	\
@@ -300,8 +307,10 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
+PRAGMA_UNROLL								\
 	for (i = 0; i < FP_ELEMENTS; i++) {				\
 		fp_data[i].field.r[idx] = fp_data[i].field.r_init;	\
 	}								\
@@ -580,7 +589,8 @@ static int stress_fp_call_method(
 			return EXIT_SUCCESS;
 
 		for (i = 0; i < FP_ELEMENTS; i++) {
-			long double r0, r1;
+			long double r0;
+			long double r1;
 			int ret;
 
 			switch (fp_type) {
@@ -660,7 +670,8 @@ static double stress_fp_all(
 
 static int stress_fp(stress_args_t *args)
 {
-	size_t i, mmap_size;
+	size_t i;
+	size_t mmap_size;
 	fp_data_t *fp_data;
 	size_t fp_method = 0;	/* "all" */
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -686,6 +697,7 @@ static int stress_fp(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
+PRAGMA_UNROLL
 	for (i = 0; i < SIZEOF_ARRAY(stress_fp_metrics); i++) {
 		stress_fp_metrics[i].duration = 0.0;
 		stress_fp_metrics[i].count = 0.0;
@@ -862,6 +874,7 @@ static int stress_fp(stress_args_t *args)
 	for (i = 1; i < STRESS_NUM_FP_FUNCS; i++) {
 		const double count = stress_fp_metrics[i].count;
 		const double duration = stress_fp_metrics[i].duration;
+
 		if ((duration > 0.0) && (count > 0.0)) {
 			char msg[64];
 			const double rate = count / duration;
@@ -885,8 +898,22 @@ static const char *stress_fp_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_fp_method, "fp-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)stress_fp_method },
+	{ OPT_fp_method, "fp-method", TYPE_ID_SIZE_T_METHOD, 0, 1, stress_fp_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("frontend-bound-bandwidth"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_fp_info = {
@@ -895,5 +922,6 @@ const stressor_info_t stress_fp_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_fp_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(stress_fp_funcs),
+	.exercises = exercises,
 };

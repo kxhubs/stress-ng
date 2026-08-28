@@ -21,6 +21,7 @@
 #include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-hash.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
 #include "core-pthread.h"
@@ -65,13 +66,13 @@ static const stress_help_t help[] = {
 #define OPS_PER_SYSFS_FILE	(28)	/* max iterations per sysfs file */
 
 static sigset_t set;
-static shim_pthread_spinlock_t lock;
+static shim_pthread_spinlock_t path_lock;
 static shim_pthread_spinlock_t open_lock;
 static shim_pthread_spinlock_t hash_lock;
 static volatile bool drain_kmsg = false;
 static volatile uint32_t counter = 0;
 static const char signum_path[] = "/sys/kernel/notes";
-static uint32_t os_release;
+static uint32_t linux_release;
 static stress_hash_table_t *sysfs_hash_table;
 static uint64_t hash_items = 0;
 
@@ -176,7 +177,8 @@ static inline stress_hash_t *stress_sys_bad(stress_hash_table_t *hash_table, con
 static inline bool stress_sys_rw(stress_ctxt_t *ctxt)
 {
 	int fd;
-	ssize_t i = 0, ret;
+	ssize_t i = 0;
+	ssize_t ret;
 	char buffer[SYS_BUF_SZ];
 	char path[PATH_MAX];
 	stress_args_t *args = ctxt->args;
@@ -190,12 +192,12 @@ static inline bool stress_sys_rw(stress_ctxt_t *ctxt)
 		struct timeval tv;
 		ssize_t rret;
 
-		ret = shim_pthread_spin_lock(&lock);
+		ret = shim_pthread_spin_lock(&path_lock);
 		if (UNLIKELY(ret))
 			return false;
 		(void)shim_strscpy(path, ctxt->sysfs_path, sizeof(path));
 		counter++;
-		(void)shim_pthread_spin_unlock(&lock);
+		(void)shim_pthread_spin_unlock(&path_lock);
 		if (counter > OPS_PER_SYSFS_FILE)
 			(void)shim_sched_yield();
 
@@ -347,20 +349,14 @@ static inline bool stress_sys_rw(stress_ctxt_t *ctxt)
 		 *  simple ioctls
 		 */
 #if defined(FIGETBSZ)
-		{
-			int isz;
-
-			VOID_RET(int, ioctl(fd, FIGETBSZ, &isz));
-		}
+		if (stress_ioctl_get_check(fd, FIGETBSZ, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FIGETBSZ failed, not getting value reliably\n", args->name);
 #else
 		UNEXPECTED
 #endif
 #if defined(FIONREAD)
-		{
-			int isz;
-
-			VOID_RET(int, ioctl(fd, FIONREAD , &isz));
-		}
+		if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 #else
 		UNEXPECTED
 #endif
@@ -403,7 +399,7 @@ err:
 			size_t j;
 
 			for (j = 0; j < SIZEOF_ARRAY(stress_sysfs_wr_funcs); j++) {
-				if (strcmp(stress_sysfs_wr_funcs[j].path, path) == 0) {
+				if (shim_strcmp(stress_sysfs_wr_funcs[j].path, path) == 0) {
 					stress_sysfs_wr_funcs[j].sysfs_func(path);
 				}
 			}
@@ -413,7 +409,7 @@ err:
 			 * Special case where we are root and file
 			 * is a sysfd ROM file
 			 */
-			const char *rom = strstr(path, "rom");
+			const char *rom = shim_strstr(path, "rom");
 
 			if (rom && (rom[3] == '\0')) {
 				if ((fd = open(path, O_RDWR | O_NONBLOCK)) < 0)
@@ -490,9 +486,9 @@ static bool stress_sys_skip(const char *path)
 
 	for (i = 0; i < SIZEOF_ARRAY(sys_skip_paths); i++) {
 		const char *skip_path = sys_skip_paths[i];
-		const size_t len = strlen(skip_path);
+		const size_t len = shim_strlen(skip_path);
 
-		if (!strncmp(path, skip_path, len))
+		if (!shim_strncmp(path, skip_path, len))
 			return true;
 	}
 	/*
@@ -500,19 +496,19 @@ static bool stress_sys_skip(const char *path)
 	 *  "/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A03:00/device:07/" \
 	 *  "VMBUS:01/99221fa0-24ad-11e2-be98-001aa01bbf6e/channels/4/read_avail"
 	 */
-	if (UNLIKELY(strstr(path, "PNP0A03") && strstr(path, "VMBUS")))
+	if (UNLIKELY(shim_strstr(path, "PNP0A03") && shim_strstr(path, "VMBUS")))
 		return true;
 	/*
 	 *  Has been known to cause issues on s390x
 	 *
-	if (UNLIKELY(strstr(path, "virtio0/block") && strstr(path, "cache_type")))
+	if (UNLIKELY(shim_strstr(path, "virtio0/block") && shim_strstr(path, "cache_type")))
 		return true;
 	 */
 
 	/*
 	 *  The tpm driver for pre Linux 4.10 is racey so skip
 	 */
-	if (UNLIKELY((os_release < 410) && (strstr(path, "/sys/kernel/security/tpm0"))))
+	if (UNLIKELY((linux_release < 410) && (shim_strstr(path, "/sys/kernel/security/tpm0"))))
 		return true;
 
 	return false;
@@ -531,7 +527,8 @@ static void stress_sys_dir(
 	struct dirent **dlist = NULL;
 	stress_args_t *args = ctxt->args;
 	mode_t flags = S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
-	int i, n;
+	int i;
+	int n;
 
 	if (UNLIKELY(!stress_continue_flag()))
 		return;
@@ -541,7 +538,7 @@ static void stress_sys_dir(
 		return;
 
 	/* Don't want to reset any GCOV metrics */
-	if (UNLIKELY(!strcmp(path, "/sys/kernel/debug/gcov")))
+	if (UNLIKELY(!shim_strcmp(path, "/sys/kernel/debug/gcov")))
 		return;
 
 	n = scandir(path, &dlist, NULL, mixup_sort);
@@ -559,7 +556,9 @@ static void stress_sys_dir(
 		struct stat buf;
 		char tmp[PATH_MAX];
 		const struct dirent *d = dlist[i];
-		double time_start, time_end, time_out;
+		double time_start;
+		double time_end;
+		double time_out;
 
 		if (stress_fs_filename_dotty(d->d_name))
 			goto dt_reg_free;
@@ -582,13 +581,13 @@ static void stress_sys_dir(
 		if ((buf.st_mode & flags) == 0)
 			goto dt_reg_free;
 
-		ret = shim_pthread_spin_lock(&lock);
+		ret = shim_pthread_spin_lock(&path_lock);
 		if (UNLIKELY(ret))
 			goto dt_reg_free;
 
 		(void)shim_strscpy(ctxt->sysfs_path, tmp, sizeof(ctxt->sysfs_path));
 		counter = 0;
-		(void)shim_pthread_spin_unlock(&lock);
+		(void)shim_pthread_spin_unlock(&path_lock);
 
 		drain_kmsg = false;
 		time_start = stress_time_now();
@@ -687,18 +686,23 @@ static bool stress_sysfs_bad_signal(const int status)
  */
 static int stress_sysfs(stress_args_t *args)
 {
-	int i, n, rc = EXIT_SUCCESS;
+	int i;
+	int n;
+	int rc = EXIT_SUCCESS;
 	pthread_t pthreads[MAX_SYSFS_THREADS];
-	int ret, pthreads_ret[MAX_SYSFS_THREADS];
+	int ret;
+	int pthreads_ret[MAX_SYSFS_THREADS];
 	stress_ctxt_t *ctxt;
 	struct dirent **dlist = NULL;
-	double t, duration, rate;
+	double t;
+	double duration;
+	double rate;
 
 	ctxt = (stress_ctxt_t *)stress_mmap_populate(NULL, sizeof(*ctxt),
 				     PROT_READ | PROT_WRITE,
 				     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (ctxt == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap shared context region, skipping stressor\n", args->name);
+		pr_inf_skip("%s: mmap shared context region failed, skipping stressor\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
 	stress_memory_anon_name_set(ctxt, sizeof(*ctxt), "sysfs-pthread-context");
@@ -710,7 +714,7 @@ static int stress_sysfs(stress_args_t *args)
 	if (n <= 0)
 		goto exit_no_sysfs_entries;
 
-	os_release = 0;
+	linux_release = 0;
 #if defined(HAVE_UNAME) &&	\
     defined(HAVE_SYS_UTSNAME_H)
 	{
@@ -718,10 +722,11 @@ static int stress_sysfs(stress_args_t *args)
 
 		ret = uname(&utsbuf);
 		if (ret == 0) {
-			uint16_t major, minor;
+			uint16_t major;
+			uint16_t minor;
 
 			if (sscanf(utsbuf.release, "%5" SCNu16 ".%5" SCNu16, &major, &minor) == 2)
-				os_release = (major * 100) + minor;
+				linux_release = (major * 100) + minor;
 		}
 	}
 #else
@@ -729,7 +734,7 @@ static int stress_sysfs(stress_args_t *args)
 #endif
 	sysfs_hash_table = stress_hash_create(1021);
 	if (!sysfs_hash_table) {
-		pr_err("%s: cannot create sysfs hash table, errno=%d (%s))\n",
+		pr_err("%s: create sysfs hash table failed, errno=%d (%s))\n",
 			args->name, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto exit_free;
@@ -743,7 +748,7 @@ static int stress_sysfs(stress_args_t *args)
 	ctxt->sys_admin = stress_capabilities_check(SHIM_CAP_SYS_ADMIN);
 	(void)stress_kmsg_drain(ctxt->kmsgfd);
 
-	ret = shim_pthread_spin_init(&lock, PTHREAD_PROCESS_PRIVATE);
+	ret = shim_pthread_spin_init(&path_lock, PTHREAD_PROCESS_PRIVATE);
 	if (ret) {
 		pr_inf("%s: pthread_spin_init on lock failed, errno=%d (%s)\n",
 			args->name, ret, strerror(ret));
@@ -787,11 +792,8 @@ static int stress_sysfs(stress_args_t *args)
 	do {
 		pid_t pid;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args))) {
 				rc = EXIT_SUCCESS;
 				goto finish;
@@ -856,12 +858,12 @@ again:
 				}
 			} while (stress_continue(args));
 
-			ret = shim_pthread_spin_lock(&lock);
+			ret = shim_pthread_spin_lock(&path_lock);
 			if (ret) {
 				pr_dbg("%s: failed to lock spin lock for sysfs_path\n", args->name);
 			} else {
 				(void)shim_strscpy(ctxt->sysfs_path, "", sizeof(ctxt->sysfs_path));
-				VOID_RET(int, shim_pthread_spin_unlock(&lock));
+				VOID_RET(int, shim_pthread_spin_unlock(&path_lock));
 			}
 
 			/* Forcefully kill threads */
@@ -896,7 +898,7 @@ finish:
 exit_destroy_open_lock:
 	(void)shim_pthread_spin_destroy(&open_lock);
 exit_destroy_lock:
-	(void)shim_pthread_spin_destroy(&lock);
+	(void)shim_pthread_spin_destroy(&path_lock);
 exit_delete_hash:
 	stress_hash_delete(sysfs_hash_table);
 	if (ctxt->kmsgfd != -1)
@@ -910,16 +912,42 @@ exit_free:
 
 exit_no_sysfs_entries:
 	if (stress_instance_zero(args))
-		pr_inf_skip("%s: no /sys entries found, skipping stressor\n", args->name);
+		pr_inf_skip("%s: no '/sys' entries found, skipping stressor\n", args->name);
 	rc = EXIT_NO_RESOURCE;
 	goto exit_free;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("mumap"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_POLL_H) &&	\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_PPOLL)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("select"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_sysfs_info = {
 	.stressor = stress_sysfs,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sysfs_info = {

@@ -42,12 +42,13 @@ static void stress_mseal_mapping_size(size_t *size)
 
 static int stress_mseal_expect_addr(
 	stress_args_t *args,
-	void *addr,
-	char *msg,
-	void *expect_addr,
+	const void *addr,
+	const char *msg,
+	const void *expect_addr,
 	int expect_errno)
 {
-	char err1[256], err2[256];
+	char err1[256];
+	char err2[256];
 
 	if (LIKELY((addr == expect_addr) && (errno == expect_errno)))
 		return 0;
@@ -63,11 +64,12 @@ static int stress_mseal_expect_addr(
 static int stress_mseal_expect_error(
 	stress_args_t *args,
 	int ret,
-	char *msg,
+	const char *msg,
 	int expect_ret,
 	int expect_errno)
 {
-	char err1[256], err2[256];
+	char err1[256];
+	char err2[256];
 
 	if (LIKELY((ret == expect_ret) && (errno == expect_errno)))
 		return 0;
@@ -367,10 +369,22 @@ static int stress_mseal(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("mseal"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mseal_info = {
 	.stressor = stress_mseal,
 	.supported = stress_mseal_supported,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

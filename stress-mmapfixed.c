@@ -124,7 +124,7 @@ static int stress_mmapfixed_child(stress_args_t *args, void *context)
 #endif
 	uintptr_t addr = MMAP_TOP;
 	int rc = EXIT_SUCCESS;
-	mmapfixed_info_t *info = (mmapfixed_info_t *)context;
+	const mmapfixed_info_t *info = (const mmapfixed_info_t *)context;
 
 	VOID_RET(int, stress_signal_handler(args->name, SIGSEGV, stress_signal_exit_handler, NULL));
 
@@ -311,10 +311,29 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("kmalloc"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mincore"),
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MREMAP) &&	\
+    NEED_GLIBC(2,4,0) && 	\
+    defined(MREMAP_FIXED) &&	\
+    defined(MREMAP_MAYMOVE)
+	STRESS_EX_SYSCALL("mremap"),
+#endif
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmapfixed_info = {
 	.stressor = stress_mmapfixed,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

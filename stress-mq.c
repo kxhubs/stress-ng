@@ -91,10 +91,14 @@ static int stress_mq(stress_args_t *args)
 {
 	pid_t pid;
 	mqd_t mq = -1;
-	int sz, max_sz, mq_size = DEFAULT_MQ_SIZE, parent_cpu;
+	int sz;
+	int max_sz;
+	int mq_size = DEFAULT_MQ_SIZE;
+	int parent_cpu;
 	FILE *fp;
 	struct mq_attr attr;
-	char mq_name[64], mq_tmp_name[64];
+	char mq_name[64];
+	char mq_tmp_name[64];
 	bool do_timed;
 	time_t time_start;
 	struct timespec abs_timeout;
@@ -196,7 +200,7 @@ static int stress_mq(stress_args_t *args)
 			"size %d messages, maximum of %d allowed\n",
 			args->name, mq_size, sz);
 	}
-	pr_dbg("%s: POSIX message queue %s with %lu messages\n",
+	pr_dbg("%s: POSIX message queue '%s' with %lu messages\n",
 		args->name, mq_name, (unsigned long int)attr.mq_maxmsg);
 
 	if (time(&time_start) == ((time_t)-1)) {
@@ -212,12 +216,10 @@ static int stress_mq(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		(void)mq_close(mq);
 		(void)mq_unlink(mq_name);
 
@@ -528,12 +530,35 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+
+	STRESS_EX_SYSCALL("mq_close"),
+	STRESS_EX_SYSCALL("mq_getattr"),
+	STRESS_EX_SYSCALL("mq_notify"),
+	STRESS_EX_SYSCALL("mq_open"),
+	STRESS_EX_SYSCALL("mq_receive"),
+	STRESS_EX_SYSCALL("mq_send"),
+	STRESS_EX_SYSCALL("mq_setattr"),
+	STRESS_EX_SYSCALL("mq_timedreceive"),
+	STRESS_EX_SYSCALL("mq_timedsend"),
+	STRESS_EX_SYSCALL("mq_unlink"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mq_info = {
 	.stressor = stress_mq,
 	.classifier = CLASS_SCHEDULER | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mq_info = {

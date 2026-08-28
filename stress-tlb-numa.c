@@ -164,7 +164,7 @@ static void *stress_tlb_numa_mmap(
 		}
 	} while (retry > 0);
 
-	pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), skipping stressor\n",
+	pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), skipping stressor\n",
 		args->name, length, stress_memory_free_get(),
 		errno, strerror(errno));
 	return mem;
@@ -184,7 +184,7 @@ static inline bool stress_tlb_numa_mbind_do(void)
  *	mbind pages to a NUMA node
  */
 static inline void OPTIMIZE3 stress_tlb_numa_mbind(
-	stress_tlb_numa_t *tlb_numa,
+	const stress_tlb_numa_t *tlb_numa,
 	const long int node,
 	stress_numa_mask_t *numa_mask,
 	uint8_t **pages)
@@ -422,19 +422,23 @@ static stress_tlb_pthread_t stress_tlb_pthreads[] = {
  */
 static int stress_tlb_numa(stress_args_t *args)
 {
-	double rate, t_begin, duration;
-	uint64_t tlb_begin, tlb_end;
-	uint64_t ipi_begin, ipi_end;
-	size_t tlb_entries = DEFAULT_TLB_NUMA_ENTRIES;
-	size_t size;
-	int rc = EXIT_SUCCESS;
 	stress_tlb_numa_t tlb_numa;
 	stress_tlb_numa_pthread_t pthreads[TLB_NUMA_PTHREADS];
-	size_t i;
-	uint32_t prev_cpu = 0;
 	uint8_t	*mmap1;
 	uint8_t *mmap2;
+	double rate;
+	double t_begin;
+	double duration;
+	uint64_t tlb_begin;
+	uint64_t tlb_end;
+	uint64_t ipi_begin;
+	uint64_t ipi_end;
 	long int node = 0;
+	size_t tlb_entries = DEFAULT_TLB_NUMA_ENTRIES;
+	size_t size;
+	size_t i;
+	uint32_t prev_cpu = 0;
+	int rc = EXIT_SUCCESS;
 
 #if defined(STRESS_ARCH_X86)
 	uint32_t x86_tlb_entries;
@@ -484,13 +488,13 @@ static int stress_tlb_numa(stress_args_t *args)
 	 */
 	tlb_numa.pages1 = calloc(tlb_numa.mmap_pages, sizeof(uint8_t *));
 	if (!tlb_numa.pages1) {
-		pr_inf_skip("%s: failed to allocate %zu pointers%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu pointers failed%s, skipping stressor\n",
 			args->name, tlb_numa.mmap_pages, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 	tlb_numa.pages2 = calloc(tlb_numa.mmap_pages, sizeof(uint8_t *));
 	if (!tlb_numa.pages2) {
-		pr_inf_skip("%s: failed to allocate %zu pointers%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu pointers failed%s, skipping stressor\n",
 			args->name, tlb_numa.mmap_pages, stress_memory_free_get());
 		rc = EXIT_NO_RESOURCE;
 		goto free_pages1;
@@ -645,8 +649,10 @@ static int stress_tlb_numa(stress_args_t *args)
 
 err_reap:
 	for (i = 0; i < TLB_NUMA_PTHREADS; i++) {
-		if (pthreads[i].ret == 0)
+		if (pthreads[i].ret == 0) {
 			(void)pthread_cancel(pthreads[i].pthread);
+			(void)pthread_join(pthreads[i].pthread, NULL);
+		}
 	}
 
 	stress_tlb_numa_pages_munmap(tlb_numa.pages2, tlb_numa.mmap_pages, tlb_numa.page_size);
@@ -671,12 +677,35 @@ free_pages1:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-cache-read-miss"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("tlb"),
+
+	STRESS_EX_SYSCALL("mbind"),
+#if defined(HAVE_MADVISE)
+	STRESS_EX_SYSCALL("madvise"),
+#endif
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+	STRESS_EX_SYSCALL("sched_yield"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tlb_numa_info = {
 	.stressor = stress_tlb_numa,
 	.classifier = CLASS_TLB | CLASS_MEMORY,
 	.verify = VERIFY_NONE,
 	.help = help,
-	.opts = opts
+	.opts = opts,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_tlb_numa_info = {

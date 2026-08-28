@@ -35,9 +35,9 @@
 #define HAVE_MMAP2
 #endif
 
-#define MIN_MMAP_BYTES		(4 * KB)
+#define MIN_MMAP_BYTES		(4 * STRESS_KB)
 #define MAX_MMAP_BYTES		(MAX_MEM_LIMIT)
-#define DEFAULT_MMAP_BYTES	(256 * MB)
+#define DEFAULT_MMAP_BYTES	(256 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"mmap N",	     "start N workers stressing mmap and munmap" },
@@ -88,7 +88,7 @@ static const stress_opt_t opts[] = {
 	{ OPT_mmap_odirect,     "mmap-odirect",     TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_mmap_osync,       "mmap-osync",       TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_mmap_slow_munmap,	"mmap-slow-munmap", TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_mmap_stressful,   "mmap-stressful",   TYPE_ID_CALLBACK, 0, 0, (void *)stress_mmap_stressful },
+	{ OPT_mmap_stressful,   "mmap-stressful",   TYPE_ID_CALLBACK, 0, 0, stress_mmap_stressful },
 	{ OPT_mmap_write_check, "mmap-write-check", TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
 };
@@ -439,7 +439,8 @@ static void stress_mmap_fast_munmap(
 	const size_t pages,
 	const size_t page_size)
 {
-	register size_t i, munmap_size = 0;
+	register size_t i;
+	register size_t munmap_size = 0;
 	register uint8_t *munmap_start = NULL;
 
 	for (i = 0; i < pages; i++) {
@@ -493,19 +494,20 @@ static int stress_mmap_child(stress_args_t *args, void *ctxt)
 	const size_t pages = sz / page_size;
 	const bool mmap_file = context->mmap_file;
 	const int fd = context->fd;
-	NOCLOBBER int no_mem_retries = 0;
+	CLOBBERED int no_mem_retries = 0;
 	const int bad_fd = stress_fs_bad_fd_get();
 #if defined(MS_ASYNC) &&	\
     defined(MS_SYNC)
 	const int ms_flags = context->mmap_async ? MS_ASYNC : MS_SYNC;
 #endif
-	uint8_t *mapped, **mappings;
+	uint8_t *mapped;
+	uint8_t **mappings;
 	size_t *idx;
 	void *hint;
 	int ret;
-	NOCLOBBER int mask = ~0;
+	CLOBBERED int mask = ~0;
 	static const char mmap_name[] = "stress-mmap";
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	VOID_RET(int, stress_signal_handler(args->name, SIGBUS, stress_mmap_sighandler, NULL));
 
@@ -513,8 +515,10 @@ static int stress_mmap_child(stress_args_t *args, void *ctxt)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (mapped == MAP_FAILED) {
-		pr_dbg("%s: cannot allocate mapped buffer, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_dbg("%s: mmap buffer failed%s, errno=%d (%s)\n",
+			args->name,
+			stress_memory_free_get(),
+			errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
 	if (context->mmap_mlock)
@@ -523,7 +527,7 @@ static int stress_mmap_child(stress_args_t *args, void *ctxt)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (mappings == MAP_FAILED) {
-		pr_dbg("%s: cannot allocate %zu byte mappings buffer%s, errno=%d (%s)\n",
+		pr_dbg("%s: mmap %zu byte mappings buffer failed%s, errno=%d (%s)\n",
 			args->name, pages * sizeof(*mappings),
 			stress_memory_free_get(),
 			errno, strerror(errno));
@@ -538,7 +542,7 @@ static int stress_mmap_child(stress_args_t *args, void *ctxt)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (idx == MAP_FAILED) {
-		pr_dbg("%s: cannot allocate %zu byte idx buffer%s, errno=%d (%s)\n",
+		pr_dbg("%s: mmap %zu byte idx buffer failed %s, errno=%d (%s)\n",
 			args->name, pages * sizeof(*idx),
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)munmap((void *)mappings, pages * sizeof(*mappings));
@@ -728,7 +732,7 @@ retry:
 			register const size_t page = idx[n];
 
 			if (!mapped[page]) {
-				NOCLOBBER off_t offset;
+				CLOBBERED off_t offset;
 				int fixed_flags = MAP_FIXED;
 
 				offset = mmap_file ? (off_t)(page * page_size) : 0;
@@ -955,12 +959,14 @@ static int stress_mmap(stress_args_t *args)
 {
 	const size_t page_size = args->page_size;
 	char filename[PATH_MAX];
+	size_t i;
+	size_t mmap_total;
+	int ret;
+	int all_flags;
 	bool mmap_osync = false;
 	bool mmap_odirect = false;
 	bool mmap_mmap2 = false;
-	int ret, all_flags;
 	stress_mmap_context_t context;
-	size_t i, mmap_total;
 
 	jmp_env_set = false;
 
@@ -1076,7 +1082,7 @@ static int stress_mmap(stress_args_t *args)
 		context.fd = open(filename, file_flags, S_IRUSR | S_IWUSR);
 		if (context.fd < 0) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: open %s failed, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			(void)shim_unlink(filename);
 			(void)stress_fs_temp_dir_rm_args(args);
@@ -1153,12 +1159,33 @@ redo:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("lock-contention"),
+
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MMAP2) &&	\
+    defined(HAVE_SYSCALL) &&	\
+    defined(__NR_mmap2)
+	STRESS_EX_SYSCALL("mmap2"),
+#endif
+	STRESS_EX_SYSCALL("munamp"),
+#if defined(HAVE_MPROTECT)
+	STRESS_EX_SYSCALL("mprotect"),
+#endif
+#if defined(HAVE_MQUERY) &&	\
+    defined(MAP_FIXED)
+	STRESS_EX_SYSCALL("mquery"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmap_info = {
 	.stressor = stress_mmap,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -1169,7 +1196,7 @@ const stressor_info_t stress_mmap_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

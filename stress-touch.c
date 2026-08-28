@@ -17,6 +17,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-lock.h"
 
@@ -112,24 +113,26 @@ static const touch_method_t touch_methods[] = {
  */
 static void stress_touch_opts(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
 {
-	char *str, *ptr;
+	char *str;
+	char *ptr;
 	const char *token;
+	char *saveptr = NULL;
 	int open_flags = 0;
 
 	str = stress_const_optdup(opt_arg);
 	if (!str) {
-		(void)fprintf(stderr, "%s option: cannot dup string '%s'\n",
+		(void)fprintf(stderr, "%s option: dup string failed'%s'\n",
 			opt_name, opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 
-	for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
+	for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
 		size_t i;
 		bool opt_ok = false;
 
 		for (i = 0; i < SIZEOF_ARRAY(touch_opts); i++) {
-			if (!strcmp(token, touch_opts[i].opt)) {
+			if (!shim_strcmp(token, touch_opts[i].opt)) {
 				open_flags |= touch_opts[i].open_flag;
 				opt_ok = true;
 			}
@@ -155,8 +158,8 @@ static const char *stress_touch_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_touch_opts,   "touch-opts",   TYPE_ID_CALLBACK, 0, 0, (void *)stress_touch_opts },
-	{ OPT_touch_method, "touch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_touch_method },
+	{ OPT_touch_opts,   "touch-opts",   TYPE_ID_CALLBACK, 0, 0, stress_touch_opts },
+	{ OPT_touch_method, "touch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_touch_method },
 	END_OPT,
 };
 
@@ -201,7 +204,8 @@ static void stress_touch_loop(
 	do {
 		char filename[PATH_MAX];
 		uint64_t counter;
-		int fd, ret;
+		int fd;
+		int ret;
 		bool use_open;
 
 		ret = stress_lock_acquire(touch_lock);
@@ -300,23 +304,24 @@ static void stress_touch_loop(
  */
 static int stress_touch(stress_args_t *args)
 {
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
+	size_t touch_method = 0; /* TOUCH_RANDOM */
+	size_t i;
 	int ret;
 	int open_flags = 0;
-	size_t touch_method = 0; /* TOUCH_RANDOM */
 	int touch_method_type;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
-	size_t i;
 
 	s_pids = stress_sync_s_pids_mmap(TOUCH_PROCS);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %d PIDs failed%s, skipping stressor\n",
 			args->name, TOUCH_PROCS, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 
 	touch_lock = stress_lock_create("counter");
 	if (!touch_lock) {
-		pr_inf_skip("%s: cannot create lock, skipping stressor\n", args->name);
+		pr_inf_skip("%s: create lock failed, skipping stressor\n", args->name);
 		(void)stress_sync_s_pids_munmap(s_pids, TOUCH_PROCS);
 		return EXIT_NO_RESOURCE;
 	}
@@ -376,10 +381,20 @@ static int stress_touch(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("creat"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("stat"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_touch_info = {
 	.stressor = stress_touch,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

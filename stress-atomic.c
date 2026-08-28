@@ -21,10 +21,10 @@
 #include "core-killpid.h"
 #include "core-mmap.h"
 
-/* Current disable 128 bit support, some toolchains don't support it */
+/* Currently disable 128 bit support, some toolchains don't support it */
 #undef HAVE_INT128_T
 
-#if ULONG_MAX == 0xffffffffffffffff
+#if ULONG_MAX == 0xffffffffffffffffULL
 #define STRESS_ATOMIC_64BIT		(1)
 #endif
 
@@ -35,7 +35,7 @@
 
 typedef int (*atomic_func_t)(stress_args_t *args, double *duration, double *count);
 
-#define DO_NOTHING()	do { } while (0)
+#define DO_NOTHING()	do { do_nothing++; } while (0)
 
 #if defined(HAVE_ATOMIC_ADD_FETCH)
 #define HAVE_ATOMIC_OPS
@@ -127,6 +127,14 @@ typedef int (*atomic_func_t)(stress_args_t *args, double *duration, double *coun
 #define SHIM_ATOMIC_LOAD(ptr, val, memorder)		DO_NOTHING()
 #endif
 
+#if defined(HAVE_ATOMIC_LOAD_N)
+#define HAVE_ATOMIC_OPS
+#define	SHIM_ATOMIC_LOAD_N(ptr, val, memorder)		\
+	do { *val = __atomic_load_n(ptr, memorder); } while (0)
+#else
+#define SHIM_ATOMIC_LOAD_N(ptr, val, memorder)		DO_NOTHING()
+#endif
+
 #if defined(HAVE_ATOMIC_NAND_FETCH)
 #define HAVE_ATOMIC_OPS
 #if defined(HAVE_COMPILER_GCC_OR_MUSL) && __GNUC__ != 11
@@ -161,6 +169,14 @@ typedef int (*atomic_func_t)(stress_args_t *args, double *duration, double *coun
 #define SHIM_ATOMIC_STORE(ptr, val, memorder)		DO_NOTHING()
 #endif
 
+#if defined(HAVE_ATOMIC_STORE_N)
+#define HAVE_ATOMIC_OPS
+#define	SHIM_ATOMIC_STORE_N(ptr, val, memorder)		\
+	do { __atomic_store_n(ptr, val, memorder); } while (0)
+#else
+#define SHIM_ATOMIC_STORE_N(ptr, val, memorder)		DO_NOTHING()
+#endif
+
 #if defined(HAVE_ATOMIC_SUB_FETCH)
 #define HAVE_ATOMIC_OPS
 #define	SHIM_ATOMIC_SUB_FETCH(ptr, val, memorder)	\
@@ -184,6 +200,7 @@ do {									\
 	double t;							\
 	type tmp = (type)stress_mwc64();				\
 	type unshared, check1 = tmp, check2 = (type)~tmp;		\
+	int do_nothing = 0;						\
 									\
 	t = stress_time_now();						\
 	/* 4 ops */							\
@@ -213,8 +230,9 @@ do {									\
 	SHIM_ATOMIC_NAND_FETCH(var, (type)128, __ATOMIC_ACQUIRE);	\
 	SHIM_ATOMIC_CLEAR(var, __ATOMIC_RELAXED);			\
 									\
-	/* 14 ops */							\
+	/* 15 ops */							\
 	SHIM_ATOMIC_STORE(var, &tmp, __ATOMIC_RELAXED); 		\
+	SHIM_ATOMIC_STORE_N(var, tmp, __ATOMIC_RELAXED); 		\
 	SHIM_ATOMIC_FETCH_ADD(var, (type)1, __ATOMIC_RELAXED);		\
 	SHIM_ATOMIC_FETCH_ADD(var, (type)2, __ATOMIC_ACQUIRE);		\
 	SHIM_ATOMIC_FETCH_SUB(var, (type)3, __ATOMIC_RELAXED);		\
@@ -232,9 +250,11 @@ do {									\
 	SHIM_ATOMIC_FETCH_NAND(var, (type)128, __ATOMIC_ACQUIRE);	\
 	SHIM_ATOMIC_CLEAR(var, __ATOMIC_RELAXED);			\
 									\
-	/* 16 ops */							\
+	/* 19 ops */							\
 	SHIM_ATOMIC_STORE(var, &tmp, __ATOMIC_RELAXED); 		\
 	SHIM_ATOMIC_LOAD(var, &tmp, __ATOMIC_RELAXED);			\
+	SHIM_ATOMIC_STORE_N(var, tmp, __ATOMIC_RELAXED); 		\
+	SHIM_ATOMIC_LOAD_N(var, &tmp, __ATOMIC_RELAXED);		\
 	SHIM_ATOMIC_ADD_FETCH(var, (type)1, __ATOMIC_RELAXED);		\
 	SHIM_ATOMIC_SUB_FETCH(var, (type)3, __ATOMIC_RELAXED);		\
 									\
@@ -245,6 +265,7 @@ do {									\
 									\
 	SHIM_ATOMIC_LOAD(var, &tmp, __ATOMIC_ACQUIRE);			\
 	SHIM_ATOMIC_ADD_FETCH(var, (type)2, __ATOMIC_ACQUIRE);		\
+	SHIM_ATOMIC_LOAD_N(var, &tmp, __ATOMIC_ACQUIRE);		\
 	SHIM_ATOMIC_SUB_FETCH(var, (type)4, __ATOMIC_ACQUIRE);		\
 	SHIM_ATOMIC_AND_FETCH(var, (type)~2, __ATOMIC_ACQUIRE);		\
 									\
@@ -273,7 +294,7 @@ do {									\
 	SHIM_ATOMIC_CLEAR(var, __ATOMIC_RELAXED);			\
 									\
 	(*duration) += stress_time_now() - t;				\
-	(*count) += 64.0;						\
+	(*count) += 68.0 - (double)do_nothing;				\
 									\
 	(void)tmp;							\
 	check2--;							\
@@ -424,8 +445,7 @@ static int stress_atomic_exercise(
 		for (i = 0; i < STRESS_ATOMIC_MAX_FUNCS; i++) {
 			if (arch_bits >= atomic_func_info[i].arch_bits) {
 				register int j;
-
-				const atomic_func_t func = atomic_func_info[i].func;
+				register const atomic_func_t func = atomic_func_info[i].func;
 
 				for (j = 0; j < rounds; j++) {
 					if (UNLIKELY(func(args, &atomic_info->metrics[i].duration,
@@ -446,7 +466,9 @@ static int stress_atomic_exercise(
  */
 static int stress_atomic(stress_args_t *args)
 {
-	size_t i, j, atomic_info_sz;
+	size_t i;
+	size_t j;
+	size_t atomic_info_sz;
 	stress_atomic_info_t *atomic_info;
 	stress_pid_t *s_pid_head = NULL;
 	const size_t n_atomic_procs = STRESS_ATOMIC_MAX_PROCS + 1;
@@ -519,7 +541,9 @@ static int stress_atomic(stress_args_t *args)
 
 	for (j = 0; j < STRESS_ATOMIC_MAX_FUNCS; j++) {
 		if (arch_bits >= atomic_func_info[j].arch_bits) {
-			double duration = 0.0, count = 0.0, rate;
+			double duration = 0.0;
+			double count = 0.0;
+			double rate;
 			char str[60];
 
 			for (i = 0; i < n_atomic_procs; i++) {
@@ -539,11 +563,21 @@ static int stress_atomic(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("atomic"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_atomic_info = {
 	.stressor = stress_atomic,
 	.classifier = CLASS_CPU | CLASS_MEMORY,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

@@ -58,13 +58,14 @@ static int stress_spawn_supported(const char *name)
  */
 static int stress_spawn(stress_args_t *args)
 {
-	int rc = EXIT_SUCCESS;
-	char *path;
-	char exec_path[PATH_MAX];
-	char *ld_library_path = NULL;
-	uint64_t spawn_fails = 0, spawn_calls = 0;
 	static char *argv_new[] = { NULL, "--exec-exit", NULL };
 	static char *env_new[] = { NULL, NULL };
+	char exec_path[PATH_MAX];
+	char *path;
+	char *ld_library_path = NULL;
+	uint64_t spawn_fails = 0;
+	uint64_t spawn_calls = 0;
+	int rc = EXIT_SUCCESS;
 
 	/*
 	 *  Don't want to run this when running as root as
@@ -132,12 +133,22 @@ static int stress_spawn(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+
+	STRESS_EX_SYSCALL("posix_spawn"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_spawn_info = {
 	.stressor = stress_spawn,
 	.supported = stress_spawn_supported,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_spawn_info = {

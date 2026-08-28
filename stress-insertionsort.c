@@ -23,9 +23,9 @@
 #include "core-sort.h"
 #include "core-target-clones.h"
 
-#define MIN_INSERTIONSORT_SIZE		(1 * KB)
-#define MAX_INSERTIONSORT_SIZE		(4 * MB)
-#define DEFAULT_INSERTIONSORT_SIZE	(16384)
+#define MIN_INSERTIONSORT_SIZE		(1 * STRESS_KB)
+#define MAX_INSERTIONSORT_SIZE		(4 * STRESS_MB)
+#define DEFAULT_INSERTIONSORT_SIZE	(16 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -78,7 +78,7 @@ static uint64_t OPTIMIZE3 TARGET_CLONES insertionsort_rev(int32_t *base, size_t 
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_insertionsort_size, "insertionsort-size", TYPE_ID_UINT64, MIN_INSERTIONSORT_SIZE, MAX_INSERTIONSORT_SIZE, 0 },
+	{ OPT_insertionsort_size, "insertionsort-size", TYPE_ID_UINT64, MIN_INSERTIONSORT_SIZE, MAX_INSERTIONSORT_SIZE, NULL },
 	END_OPT,
 };
 
@@ -100,11 +100,16 @@ static void MLOCKED_TEXT stress_insertionsort_handler(int signum)
 static int stress_insertionsort(stress_args_t *args)
 {
 	uint64_t insertionsort_size = DEFAULT_INSERTIONSORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, i, data_size;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t i;
+	size_t data_size;
 	double rate;
-	NOCLOBBER int rc = EXIT_SUCCESS;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
 	int ret;
@@ -243,10 +248,26 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("i-tlb-read-miss"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_insertionsort_info = {
 	.stressor = stress_insertionsort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -29,9 +29,9 @@
 UNEXPECTED
 #endif
 
-#define MIN_VM_RW_BYTES		(4 * KB)
+#define MIN_VM_RW_BYTES		(4 * STRESS_KB)
 #define MAX_VM_RW_BYTES		(MAX_MEM_LIMIT)
-#define DEFAULT_VM_RW_BYTES	(16 * MB)
+#define DEFAULT_VM_RW_BYTES	(16 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"vm-rw N",	 "start N vm read/write process_vm* copy workers" },
@@ -40,13 +40,14 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,		 NULL }
 };
 
-#if defined(HAVE_PROCESS_VM_READV) &&	\
+#if defined(HAVE_SYS_UIO_H) &&		\
+    defined(HAVE_PROCESS_VM_READV) &&	\
     defined(HAVE_PROCESS_VM_WRITEV) &&	\
     defined(HAVE_CLONE) &&		\
     defined(CLONE_VM)
 
 #define STACK_SIZE	(64 * 1024)
-#define CHUNK_SIZE	(1 * GB)
+#define CHUNK_SIZE	(1 * STRESS_GB)
 
 typedef struct {
 	stress_args_t *args;
@@ -69,7 +70,9 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(HAVE_PROCESS_VM_READV) &&	\
+#if defined(HAVE_SYS_UIO_H) &&		\
+    defined(HAVE_IOVEC) &&		\
+    defined(HAVE_PROCESS_VM_READV) &&	\
     defined(HAVE_PROCESS_VM_WRITEV) &&	\
     defined(HAVE_CLONE) &&		\
     defined(CLONE_VM)
@@ -82,7 +85,8 @@ static int OPTIMIZE3 stress_vm_child(void *arg)
 
 	uint8_t *buf;
 	int rc = EXIT_SUCCESS;
-	stress_addr_msg_t msg_rd ALIGN64, msg_wr ALIGN64;
+	stress_addr_msg_t msg_rd ALIGN64;
+	stress_addr_msg_t msg_wr ALIGN64;
 
 	stress_parent_died_alarm();
 
@@ -94,7 +98,7 @@ static int OPTIMIZE3 stress_vm_child(void *arg)
 		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf == MAP_FAILED) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+		pr_fail("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, ctxt->sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		goto cleanup;
@@ -159,7 +163,7 @@ redo_rd1:
 	}
 cleanup:
 	/* Tell parent we're done */
-	msg_wr.addr = 0;
+	msg_wr.addr = NULL;
 	msg_wr.val = 0;
 	if (UNLIKELY(write(ctxt->pipe_wr[1], &msg_wr, sizeof(msg_wr)) <= 0)) {
 		if (errno != EBADF)
@@ -180,7 +184,8 @@ static int OPTIMIZE3 stress_vm_parent(stress_context_t *ctxt)
 	/* Parent */
 	uint8_t val = 0x10;
 	uint8_t *localbuf;
-	stress_addr_msg_t msg_rd, msg_wr;
+	stress_addr_msg_t msg_rd;
+	stress_addr_msg_t msg_wr;
 	stress_args_t *args = ctxt->args;
 	size_t sz;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -188,7 +193,7 @@ static int OPTIMIZE3 stress_vm_parent(stress_context_t *ctxt)
 	localbuf = (uint8_t *)mmap(NULL, ctxt->sz, PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (localbuf == MAP_FAILED) {
-		pr_fail("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+		pr_fail("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, ctxt->sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)close(ctxt->pipe_wr[0]);
@@ -203,11 +208,14 @@ static int OPTIMIZE3 stress_vm_parent(stress_context_t *ctxt)
 	(void)close(ctxt->pipe_rd[0]);
 
 	do {
-		struct iovec local[1] ALIGN64, remote[1] ALIGN64;
-		uint8_t *ptr1, *ptr2;
+		struct iovec local[1] ALIGN64;
+		struct iovec remote[1] ALIGN64;
+		uint8_t *ptr1;
+		uint8_t *ptr2;
 		const uint8_t *end = localbuf + ctxt->sz;
 		ssize_t rwret;
-		size_t i, len;
+		size_t i;
+		size_t len;
 
 		/* Wait for address of child's buffer */
 redo_rd2:
@@ -373,7 +381,8 @@ static int stress_vm_rw(stress_args_t *args)
 	stress_context_t ctxt;
 	uint8_t stack[64*1024];
 	uint8_t *stack_top = (uint8_t *)stress_stack_top((void *)stack, STACK_SIZE);
-	size_t vm_rw_bytes, vm_rw_bytes_total = DEFAULT_VM_RW_BYTES;
+	size_t vm_rw_bytes;
+	size_t vm_rw_bytes_total = DEFAULT_VM_RW_BYTES;
 	int rc;
 
 	if (!stress_setting_get("vm-rw-bytes", &vm_rw_bytes_total)) {
@@ -432,12 +441,24 @@ again:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-write-miss"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("process_vm_readv"),
+	STRESS_EX_SYSCALL("process_vm_writev"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vm_rw_info = {
 	.stressor = stress_vm_rw,
 	.classifier = CLASS_VM | CLASS_MEMORY | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_vm_rw_info = {

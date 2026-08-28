@@ -35,7 +35,7 @@
  */
 static inline void stress_str_chop(char *str, const char ch)
 {
-	char *ptr = strchr(str, ch);
+	char * const ptr = shim_strchr(str, ch);
 
 	if (ptr)
 		*ptr = '\0';
@@ -55,21 +55,21 @@ static int stress_parse_run(
 {
 	if (argc < 3)
 		return 0;
-	if (strcmp(argv[1], "run"))
+	if (shim_strcmp(argv[1], "run"))
 		return 0;
 
-	if (!strcmp(argv[2], "sequential") ||
-	    !strcmp(argv[2], "sequentially") ||
-	    !strcmp(argv[2], "seq")) {
+	if (!shim_strcmp(argv[2], "sequential") ||
+	    !shim_strcmp(argv[2], "sequentially") ||
+	    !shim_strcmp(argv[2], "seq")) {
 		if (*flag & RUN_PARALLEL)
 			goto err;
 		*flag |= RUN_SEQUENTIAL;
 		g_opt_flags |= OPT_FLAGS_SEQUENTIAL;
 		return 1;
 	}
-	if (!strcmp(argv[2], "parallel") ||
-	    !strcmp(argv[2], "par") ||
-	    !strcmp(argv[2], "together")) {
+	if (!shim_strcmp(argv[2], "parallel") ||
+	    !shim_strcmp(argv[2], "par") ||
+	    !shim_strcmp(argv[2], "together")) {
 		if (*flag & RUN_SEQUENTIAL)
 			goto err;
 		*flag |= RUN_PARALLEL;
@@ -106,13 +106,13 @@ int stress_job_parse_file(
 	char **argv,
 	const char *jobfile)
 {
-	NOCLOBBER FILE *fp;
+	FILE * CLOBBERED fp;
 	char buf[4096];
 	char *new_argv[MAX_ARGS];
 	char txt[sizeof(buf)];
 	int ret;
 	uint32_t flag;
-	NOCLOBBER uint32_t lineno;
+	CLOBBERED uint32_t lineno;
 
 	lineno = 0;
 	(void)shim_memset(txt, 0, sizeof(txt));
@@ -180,13 +180,13 @@ int stress_job_parse_file(
 
 		/* managed to get any tokens? */
 		if (new_argc > 1) {
-			const size_t len = strlen(new_argv[1]) + 3;
+			const size_t len = shim_strlen(new_argv[1]) + 3;
 			int rc;
 			char *tmp;
 
 			/* Must check for --job -h option! */
-			if (!strcmp(new_argv[1], "job") ||
-			    !strcmp(new_argv[1], "j")) {
+			if (!shim_strcmp(new_argv[1], "job") ||
+			    !shim_strcmp(new_argv[1], "j")) {
 				(void)fprintf(stderr, "cannot read job file in from a job script!\n");
 				goto err;
 			}

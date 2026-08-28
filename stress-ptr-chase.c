@@ -51,16 +51,22 @@ static const stress_opt_t opts[] = {
 static int stress_ptr_chase(stress_args_t *args)
 {
 	uint64_t ptr_chase_pages = DEFAULT_NEXT_PTRS_SIZE;
-	size_t n, i;
-	int rc = EXIT_NO_RESOURCE;
+	uint64_t counter;
+	size_t n;
+	size_t i;
 	stress_ptrs_t **ptrs;
-	stress_ptrs_t *ptrs_heap, *ptrs_mmap;
+	stress_ptrs_t *ptrs_heap;
+	stress_ptrs_t *ptrs_mmap;
 	register uintptr_t ptr_mask = ~(uintptr_t)1;
 	register stress_ptrs_t *ptr;
-	size_t ptrs_size, total = 0, visited = 0;
+	size_t ptrs_size;
+	size_t total = 0;
+	size_t visited = 0;
 	size_t alloc_size;
-	double metric, t_start, duration;
-	uint64_t counter;
+	double metric;
+	double t_start;
+	double duration;
+	int rc = EXIT_NO_RESOURCE;
 
 	if (!stress_setting_get("ptr-chase-pages", &ptr_chase_pages)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -74,7 +80,7 @@ static int stress_ptr_chase(stress_args_t *args)
 
 	ptrs_heap = (stress_ptrs_t *)calloc(1, alloc_size);
 	if (!ptrs_heap) {
-		pr_inf("%s: failed to allocate heap of %zu bytes failed%s, "
+		pr_inf("%s: allocate heap of %zu bytes failed%s, "
 			"skipping stressor\n",
 			args->name, alloc_size, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -84,7 +90,7 @@ static int stress_ptr_chase(stress_args_t *args)
 					MAP_ANONYMOUS | MAP_PRIVATE,
 					-1, 0);
 	if (ptrs_mmap == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, "
+		pr_inf_skip("%s: mmap %zu bytes failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, n,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -98,7 +104,7 @@ static int stress_ptr_chase(stress_args_t *args)
 					MAP_ANONYMOUS | MAP_PRIVATE,
 					-1, 0);
 	if (ptrs == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu pointer entries%s, "
+		pr_inf_skip("%s: mmap %zu pointer entries failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, n,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -189,10 +195,21 @@ tidy_ptrs_heap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ptr_chase_info = {
 	.stressor = stress_ptr_chase,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

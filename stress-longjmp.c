@@ -60,10 +60,11 @@ static void OPTIMIZE1 NOINLINE NORETURN stress_longjmp_func(void)
 static int OPTIMIZE1 stress_longjmp(stress_args_t *args)
 {
 	int ret;
-	static uint32_t check0, check1;
+	static uint32_t check0;
+	static uint32_t check1;
 	static double t_total;
 	static uint64_t n = 0;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	/* assume OK unless proven otherwise */
 	longjmp_failed = false;
@@ -129,9 +130,18 @@ static int OPTIMIZE1 stress_longjmp(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_longjmp_info = {
 	.stressor = stress_longjmp,
 	.classifier = CLASS_CPU | CLASS_HOT,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

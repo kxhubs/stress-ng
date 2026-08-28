@@ -56,6 +56,7 @@ static const stress_opt_t opts[] = {
     defined(HAVE_LIBAIO_H) &&		\
     defined(HAVE_CLOCK_GETTIME) &&	\
     defined(HAVE_SYSCALL) &&		\
+    defined(HAVE_IOVEC) &&		\
     defined(__NR_io_setup) &&		\
     defined(__NR_io_destroy) &&		\
     defined(__NR_io_submit) &&		\
@@ -233,6 +234,7 @@ static int stress_aiol_submit(
 	const bool ignore_einval)
 {
 	int ret;
+
 	do {
 
 		errno = 0;
@@ -383,7 +385,8 @@ static void stress_aiol_free(stress_aiol_info_t *info)
  */
 static int stress_aiol(stress_args_t *args)
 {
-	int ret, rc = EXIT_FAILURE;
+	int ret;
+	int rc = EXIT_FAILURE;
 	int flags = O_DIRECT;
 	char filename[PATH_MAX];
 	char buf[1];
@@ -396,7 +399,9 @@ static int stress_aiol(stress_args_t *args)
 #if defined(__NR_io_cancel)
 	int bad_fd;
 #endif
-	double t, duration = 0.0, rate;
+	double t;
+	double duration = 0.0;
+	double rate;
 
 	(void)shim_memset(&info, 0, sizeof(info));
 
@@ -496,7 +501,7 @@ retry_open:
 			goto retry_open;
 		}
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		goto finish;
@@ -853,12 +858,36 @@ free_memory:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-async"),
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+#if defined(__NR_io_cancel)
+	STRESS_EX_SYSCALL("io_cancel"),
+#endif
+#if defined(__NR_io_pgetevents)
+	STRESS_EX_SYSCALL("io_pgetevents"),
+#endif
+	STRESS_EX_SYSCALL("io_setup"),
+	STRESS_EX_SYSCALL("io_submit"),
+	STRESS_EX_SYSCALL("io_destroy"),
+	STRESS_EX_SYSCALL("io_getevents"),
+
+	STRESS_EX_LIBRARY("aio"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_aiol_info = {
 	.stressor = stress_aiol,
 	.classifier = CLASS_IO | CLASS_INTERRUPT | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_aiol_info = {
@@ -867,6 +896,6 @@ const stressor_info_t stress_aiol_info = {
 	.opts = opts,
 	.help = help,
 	.verify = VERIFY_ALWAYS,
-	.unimplemented_reason = "built without libaio.h or poll.h"
+	.unimplemented_reason = "built without libaio.h or poll.h or struct iovec"
 };
 #endif

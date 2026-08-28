@@ -105,9 +105,11 @@ static inline void stress_schedmix_waste_time(
 	const uint32_t n_cpus,
 	const uint32_t *cpus)
 {
-	int i, n, status;
+	int i;
+	int n;
+	int status;
 	pid_t pid;
-	double min1, min5, min15;
+	stress_load_average_info_t load_average_info;
 	struct tms tms_buf;
 #if defined(HAVE_GETRUSAGE) &&	\
     (defined(RUSAGE_SELF) || defined(RUSAGE_CHILDREN))
@@ -223,7 +225,7 @@ redo:
 		getpid();
 		break;
 	case 19:
-		VOID_RET(int, stress_load_average_get(&min1, &min5, &min15));
+		VOID_RET(int, stress_load_average_get(&load_average_info));
 		break;
 	case 20:
 		pid = fork();
@@ -365,7 +367,8 @@ static int stress_schedmix_child(
 	const uint32_t n_cpus,
 	const uint32_t *cpus)
 {
-	int old_policy = -1, rc = EXIT_SUCCESS;
+	int old_policy = -1;
+	int rc = EXIT_SUCCESS;
 	const pid_t child_pid = getpid();
 
 #if defined(HAVE_SETITIMER) &&	\
@@ -383,8 +386,12 @@ static int stress_schedmix_child(
 		UNEXPECTED
 #endif
 		struct sched_param param;
-		int ret = 0, policy;
-		int max_prio, min_prio, rng_prio, new_policy;
+		int ret = 0;
+		int policy;
+		int max_prio;
+		int min_prio;
+		int rng_prio;
+		int new_policy;
 		const pid_t pid = stress_mwc1() ? 0 : args->pid;
 		const char *new_policy_name;
 
@@ -503,8 +510,7 @@ case_sched_fifo:
 			ret = sched_setscheduler(pid, new_policy, &param);
 			break;
 		default:
-			/* Should never get here */
-			break;
+			goto next;
 		}
 		if (UNLIKELY(ret < 0)) {
 			/*
@@ -525,13 +531,14 @@ case_sched_fifo:
 				rc = EXIT_FAILURE;
 			}
 		}
+		stress_schedmix_waste_time(args, n_cpus, cpus);
+		stress_bogo_inc(args);
+next:
 		if (cpus) {
 			const uint32_t idx = stress_mwc32modn(n_cpus);
 
 			stress_schedmix_setaffinity(child_pid, cpus[idx]);
 		}
-		stress_schedmix_waste_time(args, n_cpus, cpus);
-		stress_bogo_inc(args);
 	} while (stress_continue(args));
 
 #if defined(HAVE_SETITIMER) &&	\
@@ -544,7 +551,8 @@ case_sched_fifo:
 
 static int stress_schedmix(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	size_t i;
 	size_t schedmix_procs = DEFAULT_SCHEDMIX_PROCS;
 	int rc;
@@ -585,7 +593,7 @@ static int stress_schedmix(stress_args_t *args)
 
 	s_pids = stress_sync_s_pids_mmap(MAX_SCHEDMIX_PROCS);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %d PIDs failed%s, skipping stressor\n",
 			args->name, MAX_SCHEDMIX_PROCS, stress_memory_free_get());
 		rc = EXIT_NO_RESOURCE;
 		goto free_cpus;
@@ -646,8 +654,8 @@ static int stress_schedmix(stress_args_t *args)
 	do {
 		if (schedmix_cpumix && cpus) {
 			const uint32_t idx = stress_mwc32modn(n_cpus);
-			i = stress_mwcsizemodn(schedmix_procs);
 
+			i = stress_mwcsizemodn(schedmix_procs);
 			stress_schedmix_setaffinity(s_pids[i].pid, cpus[idx]);
 			if (stress_continue(args))
 				stress_random_small_sleep();
@@ -676,12 +684,48 @@ free_cpus:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("rcu-utilization"),
+
+	STRESS_EX_SYSCALL("fork"),
+#if defined(HAVE_GETRUSAGE)
+	STRESS_EX_SYSCALL("getrusage"),
+#endif
+	STRESS_EX_SYSCALL("gettimeofday"),
+	STRESS_EX_SYSCALL("nanosleep"),
+#if defined(HAVE_SYS_SELECT_H) &&       \
+    defined(HAVE_PSELECT) &&		\
+    defined(FD_SETSIZE)
+	STRESS_EX_SYSCALL("pselect"),
+#endif
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+	STRESS_EX_SYSCALL("sched_yield"),
+#if defined(HAVE_SYS_SELECT_H) &&       \
+    defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+#if defined(HAVE_SCHEDMIX_SEM)
+	STRESS_EX_SYSCALL("clock_gettime"),
+	STRESS_EX_SYSCALL("sem_timedwait"),
+	STRESS_EX_SYSCALL("sem_post"),
+#endif
+	STRESS_EX_SYSCALL("sleep"),
+	STRESS_EX_SYSCALL("times"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_schedmix_info = {
 	.stressor = stress_schedmix,
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_schedmix_info = {

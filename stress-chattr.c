@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-ioctl.h"
 
 static const stress_help_t help[] = {
 	{ NULL,	"chattr N",	"start N workers thrashing chattr file mode bits " },
@@ -25,7 +26,8 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,		NULL }
 };
 
-#if defined(__linux__)
+#if defined(__linux__) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 #include <sys/ioctl.h>
 
@@ -89,11 +91,9 @@ static char *stress_chattr_flags_str(const unsigned long int flags, char *str, c
 	size_t j = 0;
 
 	for (i = 0; i < SIZEOF_ARRAY(stress_chattr_flags); i++) {
-		if (flags & stress_chattr_flags[i].flag) {
-			if (j < str_len - 1) {
-				str[j] = stress_chattr_flags[i].attr;
-				j++;
-			}
+		if ((flags & stress_chattr_flags[i].flag) && (j < str_len - 1)) {
+			str[j] = stress_chattr_flags[i].attr;
+			j++;
 		}
 	}
 	str[j] = '\0';
@@ -112,15 +112,18 @@ static int do_chattr(
 	uint64_t *chattr_count)
 {
 	int i;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	for (i = 0; LIKELY((i < 128) && stress_continue(args)); i++) {
-		NOCLOBBER int fd, fdw;
+		CLOBBERED int fd;
+		CLOBBERED int fdw;
 		int ret;
-		unsigned long int zero = 0UL, tmp, check;
-		NOCLOBBER unsigned long int orig_flags;
-		NOCLOBBER unsigned int j;
-		NOCLOBBER uint8_t *page;
+		unsigned long int zero = 0UL;
+		unsigned long int tmp;
+		unsigned long int check;
+		CLOBBERED unsigned long int orig_flags;
+		CLOBBERED unsigned int j;
+		uint8_t * CLOBBERED page;
 
 		fd = open(filename, O_RDWR | O_NONBLOCK | O_CREAT, S_IRUSR | S_IWUSR);
 		if (fd < 0)
@@ -150,6 +153,8 @@ static int do_chattr(
 			rc = EXIT_NO_RESOURCE;
 			goto tidy_fd;
 		}
+		if (stress_ioctl_get_check(fd, SHIM_EXT2_IOC_GETFLAGS, sizeof(unsigned long int)) < 0)
+			pr_fail("%s: ioctl SHIM_EXT2_IOC_GETFLAGS failed, not getting value reliably\n", args->name);
 
 		if (UNLIKELY(!stress_continue(args)))
 			goto tidy_fd;
@@ -242,7 +247,8 @@ static int do_chattr(
 			if (args->instances == 1) {
 				tmp = mask & ~(SHIM_EXT3_JOURNAL_DATA_FL | SHIM_EXT4_EXTENTS_FL);
 				if (((flags & tmp) | (check & tmp)) != (flags & tmp)) {
-					char flags_str[65], check_str[65];
+					char flags_str[65];
+					char check_str[65];
 
 					stress_chattr_flags_str(flags & tmp, flags_str, sizeof(flags_str));
 					stress_chattr_flags_str(check & tmp, check_str, sizeof(check_str));
@@ -325,12 +331,17 @@ static int stress_chattr(stress_args_t *args)
 {
 	const pid_t ppid = getppid();
 	int rc = EXIT_SUCCESS;
-	char filename[PATH_MAX], pathname[PATH_MAX];
+	char filename[PATH_MAX];
+	char pathname[PATH_MAX];
 	unsigned long int mask = 0;
 	int *flag_perms = NULL;
-	size_t i, idx, flag_count;
+	size_t i;
+	size_t idx;
+	size_t flag_count;
 	uint64_t chattr_count = 0;
-	double rate, t, duration;
+	double rate;
+	double t;
+	double duration;
 
 	do_jmp = false;
 	if (stress_signal_handler(args->name, SIGSEGV, stress_chattr_fault_handler, NULL) < 0)
@@ -351,7 +362,7 @@ static int stress_chattr(stress_args_t *args)
 	if (mkdir(pathname, S_IRWXU) < 0) {
 		if (errno != EEXIST) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: mkdir of %s failed, errno=%d (%s)\n",
+			pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 				args->name, pathname, errno, strerror(errno));
 			free(flag_perms);
 			return rc;
@@ -398,7 +409,7 @@ static int stress_chattr(stress_args_t *args)
 		}
 
 		/* Try next flag permutation */
-		if ((flag_count > 0) && (flag_perms)) {
+		if ((flag_count > 0) && flag_perms) {
 			(void)do_chattr(args, filename, (unsigned long int)flag_perms[idx], mask, &chattr_count);
 			idx++;
 			if (idx >= flag_count)
@@ -422,11 +433,21 @@ static int stress_chattr(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_chattr_info = {
 	.stressor = stress_chattr,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -436,7 +457,7 @@ const stressor_info_t stress_chattr_info = {
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without Linux chattr() support"
+	.unimplemented_reason = "built without siglongjmp() or Linux chattr() support"
 };
 
 #endif

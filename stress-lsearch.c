@@ -37,9 +37,9 @@ typedef struct {
 	const lsearch_func_t lsearch_func;
 } stress_lsearch_method_t;
 
-#define MIN_LSEARCH_SIZE	(1 * KB)
-#define MAX_LSEARCH_SIZE	(64 * MB)
-#define DEFAULT_LSEARCH_SIZE	(8 * KB)
+#define MIN_LSEARCH_SIZE	(1 * STRESS_KB)
+#define MAX_LSEARCH_SIZE	(64 * STRESS_MB)
+#define DEFAULT_LSEARCH_SIZE	(8 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"lsearch N",		"start N workers that exercise a linear search" },
@@ -63,7 +63,7 @@ static inline void OPTIMIZE3 * lfind_nonlibc(
 		i++;
 		found += size;
 	}
-	return (i < *nmemb) ? (void *)shim_unconstify_ptr(found) : NULL;
+	return (i < *nmemb) ? shim_unconstify_ptr(found) : NULL;
 }
 
 static void * OPTIMIZE3 lsearch_nonlibc(
@@ -143,7 +143,7 @@ static const char *stress_lsearch_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_lsearch_method, "lsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_lsearch_method },
+	{ OPT_lsearch_method, "lsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_lsearch_method },
 	{ OPT_lsearch_size,   "lsearch-size",   TYPE_ID_UINT64, MIN_LSEARCH_SIZE, MAX_LSEARCH_SIZE, NULL },
 	END_OPT,
 };
@@ -163,10 +163,16 @@ static int32_t OPTIMIZE3 stress_lsearch_cmp_int32(const void *p1, const void *p2
  */
 static int stress_lsearch(stress_args_t *args)
 {
-	int32_t *data, *root;
-	size_t i, max, lsearch_method = 0;
+	int32_t *data;
+	int32_t *root;
+	size_t i;
+	size_t max;
+	size_t lsearch_method = 0;
 	uint64_t lsearch_size = DEFAULT_LSEARCH_SIZE;
-	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
+	double rate;
+	double duration = 0.0L;
+	double count = 0.0;
+	double sorted = 0.0;
 	lsearch_func_t lsearch_func;
 	lfind_func_t lfind_func;
 	int rc = EXIT_SUCCESS;
@@ -206,6 +212,7 @@ static int stress_lsearch(stress_args_t *args)
 	do {
 		double t;
 		size_t n = 0;
+		size_t min;
 
 		stress_sort_data_int32_shuffle(data, max);
 
@@ -213,13 +220,16 @@ static int stress_lsearch(stress_args_t *args)
 		for (i = 0; LIKELY(stress_continue_flag() && (i < max)); i++) {
 			VOID_RET(void *, lsearch_func(&data[i], root, &n, sizeof(*data), stress_lsearch_cmp_int32));
 		}
+
+		min = STRESS_MINIMUM(n, max);
+
 		/* Step #2, find */
 		stress_sort_compare_reset();
 		t = stress_time_now();
-		for (i = 0; LIKELY(stress_continue_flag() && (i < n)); i++) {
-			int32_t *result;
+		for (i = 0; LIKELY(stress_continue_flag() && (i < min)); i++) {
+			const int32_t *result;
 
-			result = (int32_t *)lfind_func(&data[i], root, &n, sizeof(*data), stress_lsearch_cmp_int32);
+			result = (const int32_t *)lfind_func(&data[i], root, &n, sizeof(*data), stress_lsearch_cmp_int32);
 			if (g_opt_flags & OPT_FLAGS_VERIFY) {
 				if (result == NULL) {
 					pr_fail("%s: element %zu could not be found\n", args->name, i);
@@ -253,10 +263,26 @@ static int stress_lsearch(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-read-miss"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_lsearch_info = {
 	.stressor = stress_lsearch,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

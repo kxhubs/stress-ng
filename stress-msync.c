@@ -22,11 +22,13 @@
 #include "core-mmap.h"
 #include "core-out-of-memory.h"
 
-#define MIN_MSYNC_BYTES		(1 * MB)  /* MUST NOT BE page size or less! */
+#define MIN_MSYNC_BYTES		(1 * STRESS_MB)  /* MUST NOT BE page size or less! */
 #define MAX_MSYNC_BYTES		(MAX_FILE_LIMIT)
-#define DEFAULT_MSYNC_BYTES	(256 * MB)
+#define DEFAULT_MSYNC_BYTES	(256 * STRESS_MB)
 
-#if defined(HAVE_MSYNC)
+#if defined(HAVE_MSYNC) &&	\
+    defined(HAVE_SIGLONGJMP)
+
 static sigjmp_buf jmp_env;
 static uint64_t sigbus_count;
 #endif
@@ -43,7 +45,8 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(HAVE_MSYNC)
+#if defined(HAVE_MSYNC) &&	\
+    defined(HAVE_SIGLONGJMP)
 /*
  *  stress_page_check()
  *	check if mmap'd data is sane, sz is a page size
@@ -95,15 +98,15 @@ static void MLOCKED_TEXT NORETURN stress_sigbus_handler(int signum)
  */
 static int stress_msync(stress_args_t *args)
 {
-	NOCLOBBER uint64_t *buf = NULL;
+	uint64_t * CLOBBERED buf = NULL;
 	uint64_t *data = NULL;
 	const size_t page_size = args->page_size;
 	const size_t min_size = 2 * page_size;
 	uint64_t msync_bytes, msync_bytes_total = DEFAULT_MSYNC_BYTES;
-	NOCLOBBER uint64_t sz;
+	CLOBBERED uint64_t sz;
 	ssize_t ret;
-	NOCLOBBER ssize_t rc = EXIT_SUCCESS;
-	NOCLOBBER int fd = -1;
+	CLOBBERED ssize_t rc = EXIT_SUCCESS;
+	CLOBBERED int fd = -1;
 	char filename[PATH_MAX];
 
 	ret = sigsetjmp(jmp_env, 1);
@@ -156,7 +159,7 @@ static int stress_msync(stress_args_t *args)
 
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -177,7 +180,7 @@ static int stress_msync(stress_args_t *args)
 	buf = (uint64_t *)stress_mmap_populate(NULL, sz,
 		PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (buf == MAP_FAILED) {
-		pr_err("%s: failed to mmap memory of size %" PRIu64 " bytes%s, errno=%d (%s)\n",
+		pr_err("%s: mmap memory of size %" PRIu64 " bytes failed%s, errno=%d (%s)\n",
 			args->name, sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
@@ -186,7 +189,7 @@ static int stress_msync(stress_args_t *args)
 	data = (uint64_t *)stress_mmap_populate(NULL, page_size,
 		PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED) {
-		pr_err("%s: failed to mmap memory of size %zu bytes%s, errno=%d (%s)\n",
+		pr_err("%s: mmap memory of size %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
@@ -323,12 +326,21 @@ err:
 	return (int)rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_msync_info = {
 	.stressor = stress_msync,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_msync_info = {
@@ -337,6 +349,6 @@ const stressor_info_t stress_msync_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without msync() system call support"
+	.unimplemented_reason = "built without msync() or siglongjmp()"
 };
 #endif

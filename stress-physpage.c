@@ -142,17 +142,17 @@ static int stress_virt_to_phys(
 
 	offset = (off_t)((virt_addr / page_size) * sizeof(uint64_t));
 	if (UNLIKELY(lseek(fd_pm, offset, SEEK_SET) != offset)) {
-		pr_err("%s: cannot seek on address %p in /proc/self/pagemap, errno=%d (%s)\n",
+		pr_err("%s: seek on address %p in '/proc/self/pagemap' failed, errno=%d (%s)\n",
 			args->name, (void *)virt_addr, errno, strerror(errno));
 		goto err;
 	}
 	n = read(fd_pm, &pageinfo, sizeof(pageinfo));
 	if (UNLIKELY(n < 0)) {
-		pr_err("%s: cannot read address %p in /proc/self/pagemap, errno=%d (%s)\n",
+		pr_err("%s: read address %p in '/proc/self/pagemap' failed, errno=%d (%s)\n",
 			args->name, (void *)virt_addr, errno, strerror(errno));
 		goto err;
 	} else if (UNLIKELY(n != (ssize_t)sizeof(pageinfo))) {
-		pr_fail("%s: read address %p in /proc/self/pagemap returned %zd bytes, expected %zu\n",
+		pr_fail("%s: read address %p in '/proc/self/pagemap' returned %zd bytes, expected %zu\n",
 			args->name, (void *)virt_addr, n, sizeof(pageinfo));
 		goto err;
 	}
@@ -171,12 +171,12 @@ static int stress_virt_to_phys(
 			return 0;
 
 		if (UNLIKELY(lseek(fd_pc, offset, SEEK_SET) != offset)) {
-			pr_err("%s: cannot seek on address %p in /proc/kpagecount, errno=%d (%s)\n",
+			pr_err("%s: seek on address %p in '/proc/kpagecount' failed, errno=%d (%s)\n",
 				args->name, (void *)virt_addr, errno, strerror(errno));
 			goto err;
 		}
 		if (UNLIKELY(read(fd_pc, &page_count, sizeof(page_count)) != sizeof(page_count))) {
-			pr_err("%s: cannot read page count for address %p in /proc/kpagecount, errno=%d (%s)\n",
+			pr_err("%s: read page count for address %p in '/proc/kpagecount' failed, errno=%d (%s)\n",
 				args->name, (void *)virt_addr, errno, strerror(errno));
 			goto err;
 		}
@@ -253,7 +253,9 @@ err:
  */
 static int stress_physpage(stress_args_t *args)
 {
-	int fd_pm, fd_pc, fd_mem;
+	int fd_pm;
+	int fd_pc;
+	int fd_mem;
 	const size_t page_size = args->page_size;
 	uint8_t *ptr = NULL;
 	bool success = true;
@@ -263,7 +265,7 @@ static int stress_physpage(stress_args_t *args)
 
 	fd_pm = open("/proc/self/pagemap", O_RDONLY);
 	if (fd_pm < 0) {
-		pr_err("%s: cannot open /proc/self/pagemap, errno=%d (%s)\n",
+		pr_err("%s: open '/proc/self/pagemap' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -274,7 +276,7 @@ static int stress_physpage(stress_args_t *args)
 	fd_pc = open("/proc/kpagecount", O_RDONLY);
 	if (fd_pc < 0) {
 		if (stress_instance_zero(args))
-			pr_dbg("%s: cannot open /proc/kpagecount, errno=%d (%s)\n",
+			pr_dbg("%s: open '/proc/kpagecount' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 		fd_pc = -1;
 	}
@@ -319,13 +321,25 @@ static int stress_physpage(stress_args_t *args)
 	return success ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache-ll-write"),
+	STRESS_EX_FEATURE("mmap-lock"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_physpage_info = {
 	.stressor = stress_physpage,
 	.supported = stress_physpage_supported,
 	.opts = opts,
 	.classifier = CLASS_VM,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_physpage_info = {

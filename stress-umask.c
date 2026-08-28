@@ -33,8 +33,11 @@ static const stress_help_t help[] = {
  */
 static int stress_umask(stress_args_t *args)
 {
-	int ret, rc = EXIT_FAILURE;
-	mode_t mask, prev_mask, orig_mask;
+	int ret;
+	int rc = EXIT_FAILURE;
+	mode_t mask;
+	mode_t prev_mask;
+	mode_t orig_mask;
 
 	orig_mask = umask(0);
 
@@ -74,11 +77,11 @@ static int stress_umask(stress_args_t *args)
 			(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 			fd = open(filename, O_CREAT | O_RDWR, 0777);
 			if (fd < 0) {
-				pr_fail("%s: cannot create file %s\n", args->name, filename);
+				pr_fail("%s: open '%s' failed\n", args->name, filename);
 				goto fail;
 			}
 			if (shim_fstat(fd, &statbuf) < 0) {
-				pr_fail("%s: cannot stat file %s\n", args->name, filename);
+				pr_fail("%s: stat '%s' failed\n", args->name, filename);
 				(void)close(fd);
 				(void)shim_unlink(filename);
 				goto fail;
@@ -93,7 +96,7 @@ static int stress_umask(stress_args_t *args)
 			}
 			(void)close(fd);
 			if (shim_unlink(filename) < 0) {
-				pr_fail("%s: cannot unlink file %s\n", args->name, filename);
+				pr_fail("%s: unlink '%s' failed\n", args->name, filename);
 				goto fail;
 			}
 		}
@@ -122,9 +125,19 @@ fail:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("umask"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_umask_info = {
 	.stressor = stress_umask,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

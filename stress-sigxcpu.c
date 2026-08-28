@@ -26,6 +26,8 @@ static const stress_help_t help[] = {
 };
 
 #if defined(SIGXCPU) &&		\
+    defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
     (defined(RLIMIT_CPU) ||	\
      defined(RLIMIT_RTTIME))
 
@@ -144,11 +146,28 @@ static int stress_sigxcpu(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("rcu-utilization"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("getrusage"),
+	STRESS_EX_SYSCALL("setrlimit"),
+	STRESS_EX_SYSCALL("sched_yield"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigxcpu_info = {
 	.stressor = stress_sigxcpu,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigxcpu_info = {
@@ -156,6 +175,6 @@ const stressor_info_t stress_sigxcpu_info = {
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without SIGXCPU or RLIMIT_FSIZE"
+	.unimplemented_reason = "built without setrlimit(), SIGXCPU or RLIMIT_FSIZE"
 };
 #endif

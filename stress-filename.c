@@ -68,7 +68,7 @@ static const char posix_allowed[] =
  */
 static int stress_filename_probe_length(
 	stress_args_t *args,
-	char *filename,
+	const char *filename,
 	char *ptr,
 	size_t *sz_max)
 {
@@ -115,12 +115,13 @@ static int stress_filename_probe_length(
  */
 static int stress_filename_probe(
 	stress_args_t *args,
-	char *filename,
+	const char *filename,
 	char *ptr,
 	size_t sz_max,
 	size_t *chars_allowed)
 {
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	/*
 	 *  Determine allowed char set for filenames
@@ -188,7 +189,8 @@ static int stress_filename_probe(
  */
 static void stress_filename_ext(size_t *chars_allowed)
 {
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	for (j = 0, i = 0; i < 256; i++) {
 		if ((i == 0) || (i == '/'))
@@ -383,7 +385,8 @@ static void stress_filename_generate_random_utf8_like(
 	char *filename,
 	const size_t sz_max)
 {
-	size_t i = 0, j = 0;
+	size_t i = 0;
+	size_t j = 0;
 
 	while (i < sz_max) {
 		const size_t residual = STRESS_MINIMUM(sz_max - i, 4);
@@ -483,7 +486,8 @@ static int stress_filename_readdir(
 	struct dirent *d;
 	static int count = 0;
 	struct stat sb_file;
-	int readdir_count = 0, rc = 0;
+	int readdir_count = 0;
+	int rc = 0;
 	static bool filename_differs = false;
 
 	/*
@@ -498,15 +502,14 @@ static int stress_filename_readdir(
 
 	(void)shim_memset(&sb_file, 0, sizeof(sb_file));
 	if (stat(filename, &sb_file) < 0) {
-		pr_fail("%s: failed: cannot stat file, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
 
 	dir = opendir(pathname);
 	if (!dir) {
-		pr_fail("%s: failed: cannot opendir directory '%s'\n",
-			args->name, pathname);
+		pr_fail("%s: opendir '%s' failed\n", args->name, pathname);
 		return -1;
 	}
 
@@ -522,7 +525,7 @@ static int stress_filename_readdir(
 		readdir_count++;
 
 		(void)snprintf(fullname, sizeof(fullname), "%s/%s", pathname, d->d_name);
-		name_cmp = strcmp(fullname, filename);
+		name_cmp = shim_strcmp(fullname, filename);
 
 		/*
 		 *  if the name differs, stat fails or stat'd files
@@ -531,8 +534,8 @@ static int stress_filename_readdir(
 		(void)shim_memset(&sb_readdir_file, 0, sizeof(sb_readdir_file));
 		if (name_cmp) {
 			if (stat(fullname, &sb_readdir_file) < 0) {
-				pr_fail("%s: failed: cannot stat readdir'd file, errno=%d (%s)\n",
-					args->name, errno, strerror(errno));
+				pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
+					args->name, fullname, errno, strerror(errno));
 				rc = -1;
 				continue;
 			}
@@ -714,8 +717,10 @@ static void stress_filename_test(
 static int stress_filename(stress_args_t *args)
 {
 	uint32_t utf8ch = 1;
-	int ret, rc = EXIT_SUCCESS;
-	size_t sz_left, sz_max;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	size_t sz_left;
+	size_t sz_max;
 	char pathname[PATH_MAX - 256];
 	char filename[PATH_MAX];
 	char *ptr;
@@ -723,7 +728,9 @@ static int stress_filename(stress_args_t *args)
 	struct statvfs buf;
 #endif
 	pid_t pid;
-	size_t i, chars_allowed = 0, sz;
+	size_t i;
+	size_t chars_allowed = 0;
+	size_t sz;
 #if defined(__APPLE__)
 	uint8_t filename_opt = STRESS_FILENAME_POSIX;
 #else
@@ -821,10 +828,8 @@ again:
 		rc = EXIT_SUCCESS;
 		goto tidy_dir;
 	}
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto tidy_dir;
@@ -998,8 +1003,16 @@ static const char *stress_filename_opts(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_filename_opts, "filename-opts", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_filename_opts },
+	{ OPT_filename_opts, "filename-opts", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_filename_opts },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("stat"),
+	STRESS_EX_SYSCALL("creat"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_filename_info = {
@@ -1007,5 +1020,6 @@ const stressor_info_t stress_filename_info = {
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -20,6 +20,9 @@
 #include "stress-ng.h"
 #include "core-limit.h"
 
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT)
+
 typedef struct {
 	const shim_rlimit_resource_t resource;	/* RLIMIT_* resource */
 	const char *opt;	/* stress-ng option to control resource */
@@ -73,13 +76,17 @@ static const stress_rlimit_t limits[] = {
 #endif
 };
 
-static void stress_limit_set(int resource, const char *opt)
+static void stress_limit_set(const int resource, const char *opt)
 {
 	struct rlimit rlim;
 	uint64_t val = 0;
 
 	/* User optional override for a specific limit? */
 	if (opt && stress_setting_get(opt, &val) && (val > 0)) {
+		/* round down to page boundary */
+		const size_t page_size = stress_memory_page_size_get();
+
+		val &= ~(uint64_t)(page_size - 1);
 		rlim.rlim_cur = (rlim_t)val;
 		rlim.rlim_max = (rlim_t)val;
 		(void)setrlimit(resource, &rlim);
@@ -113,11 +120,18 @@ void stress_limit_max_set(void)
 
 		(void)stress_setting_get("max-fd", &max_fd);
 		if (max_fd != 0) {
-			rlim.rlim_cur = (rlim_t)(max_fd + 1);
-			rlim.rlim_max = (rlim_t)(max_fd + 1);
+			rlim.rlim_cur = (rlim_t)max_fd;
+			rlim.rlim_max = (rlim_t)max_fd;
 			(void)setrlimit(RLIMIT_NOFILE, &rlim);
 		}
 	}
 #endif
 }
 
+#else
+
+void stress_limit_max_set(void)
+{
+}
+
+#endif

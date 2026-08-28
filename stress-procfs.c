@@ -23,6 +23,7 @@
 #include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-hash.h"
+#include "core-ioctl.h"
 #include "core-mmap.h"
 #include "core-pthread.h"
 #include "core-put.h"
@@ -87,7 +88,7 @@ typedef struct {
 #endif
 
 static sigset_t set;
-static shim_pthread_spinlock_t lock;
+static shim_pthread_spinlock_t proc_path_lock;
 static char proc_path[PATH_MAX];
 static uint32_t mixup;
 
@@ -97,7 +98,9 @@ static uint32_t mixup;
  */
 static int stress_dirent_proc_prune(struct dirent **dlist, const int n)
 {
-	int i, j, digit_count = 0;
+	int i;
+	int j;
+	int digit_count = 0;
 
 	for (i = 0, j = 0; i < n; i++) {
 		if (dlist[i]) {
@@ -201,7 +204,7 @@ static void stress_proc_self_mem(stress_args_t *args, const int fd)
 		ret = read(fd, buf, page_size);
 		if ((ret == (ssize_t)page_size) &&
 		    (buf[mem_offset] != page[mem_offset])) {
-			pr_inf("%s /proc/self/mem read/mmap failure at offset %p, mmap value 0x%2x vs read value 0x%2x\n",
+			pr_inf("%s '/proc/self/mem' read/mmap failed at offset %p, mmap value 0x%2x vs read value 0x%2x\n",
 				args->name, (void *)(page + mem_offset),
 				page[mem_offset], buf[mem_offset]);
 		}
@@ -343,26 +346,26 @@ static inline void stress_proc_rw(
 		ssize_t i;
 		int procfs_flag = PROCFS_FLAG_READ_WRITE;
 
-		ret = shim_pthread_spin_lock(&lock);
+		ret = shim_pthread_spin_lock(&proc_path_lock);
 		if (ret)
 			return;
 		(void)shim_strscpy(path, proc_path, sizeof(path));
-		(void)shim_pthread_spin_unlock(&lock);
+		(void)shim_pthread_spin_unlock(&proc_path_lock);
 
 redo:
 		if (UNLIKELY(!*path || !stress_continue_flag()))
 			break;
-		if (!strncmp(path, "/proc/self", 10))
+		if (!shim_strncmp(path, "/proc/self", 10))
 			procfs_flag &= ~PROCFS_FLAG_WRITE;
-		if (!strncmp(path, "/proc/", 6) && isdigit((unsigned char)path[6]))
+		if (!shim_strncmp(path, "/proc/", 6) && isdigit((unsigned char)path[6]))
 			procfs_flag &= ~PROCFS_FLAG_WRITE;
 #if defined(__CYGWIN__)
 		/*
 		 *  Concurrent access on /proc/$PID/maps and /proc/$PID/ctty
 		 *  on Cygwin causes issues (Jul 2025), so skip these
 		 */
-		if ((!strncmp(path, "/proc/", 6) && isdigit((unsigned char)path[6]))) {
-			if (strstr(path, "maps") || strstr(path, "ctty"))
+		if ((!shim_strncmp(path, "/proc/", 6) && isdigit((unsigned char)path[6]))) {
+			if (shim_strstr(path, "maps") || shim_strstr(path, "ctty"))
 				return;
 		}
 #endif
@@ -377,7 +380,7 @@ redo:
 		 *  Check if there any special features to exercise
 		 */
 		for (i = 0; i < (ssize_t)SIZEOF_ARRAY(stress_proc_info); i++) {
-			if (!strcmp(path, stress_proc_info[i].filename)) {
+			if (!shim_strcmp(path, stress_proc_info[i].filename)) {
 				stress_proc_info[i].stress_func(ctxt->args, fd);
 				break;
 			}
@@ -442,7 +445,7 @@ redo:
 		 *  with some special name space ioctls:
 		 */
 		if ((ret == 0) && (statbuf.st_mode & S_IFLNK)) {
-			if (!strncmp(path, "/proc/self", 10) && (strstr(path, "/ns/"))) {
+			if (!shim_strncmp(path, "/proc/self", 10) && (shim_strstr(path, "/ns/"))) {
 				int ns_fd;
 				uid_t uid;
 
@@ -465,7 +468,7 @@ redo:
 		 *  SIGBUS/SIGSEGV faults. Currently skip this test.
 		 */
 #if defined(STRESS_ARCH_SH4)
-		if (!strncmp(path, "/proc/bus/pci/00", 16))
+		if (!shim_strncmp(path, "/proc/bus/pci/00", 16))
 			goto next;
 #endif
 		/*
@@ -589,12 +592,12 @@ mmap_test:
 
 #if defined(FIONREAD)
 		{
-			int nbytes;
+			/* ioctl(), bytes ready to read */
+			if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0) {
+				pr_fail("%s: ioctl FIONREAD failed on %s, not getting value reliably\n",
+					ctxt->args->name, path);
+			}
 
-			/*
-			 *  ioctl(), bytes ready to read
-			 */
-			VOID_RET(int, ioctl(fd, FIONREAD, &nbytes));
 		}
 		if ((stress_time_now() - t_start) > threshold)
 			goto timeout_close;
@@ -753,7 +756,9 @@ static void stress_proc_dir(
 	stress_args_t *args = ctxt->args;
 	int32_t loops = args->instance < 8 ?
 			(int32_t)(args->instance + 1) : 8;
-	int i, n, ret;
+	int i;
+	int n;
+	int ret;
 	char tmp[PATH_MAX];
 
 	if (UNLIKELY(!stress_continue_flag()))
@@ -769,7 +774,7 @@ static void stress_proc_dir(
 	 * (>1M entries, >50K entries on depth 2) and the path names of the
 	 * NTDLL layer to /proc/sys, ignore both for now
 	 */
-	if (!strncmp(path, "/proc/registry", 14) || !strcmp(path, "/proc/sys"))
+	if (!shim_strncmp(path, "/proc/registry", 14) || !shim_strcmp(path, "/proc/sys"))
 		return;
 #endif
 
@@ -794,11 +799,11 @@ static void stress_proc_dir(
 
 		type = shim_dirent_type(path, d);
 		if ((type == SHIM_DT_REG) || (type == SHIM_DT_LNK)) {
-			ret = shim_pthread_spin_lock(&lock);
+			ret = shim_pthread_spin_lock(&proc_path_lock);
 			if (!ret) {
 				(void)stress_fs_make_filename(tmp, sizeof(tmp), path, d->d_name);
 				(void)shim_strscpy(proc_path, tmp, sizeof(proc_path));
-				(void)shim_pthread_spin_unlock(&lock);
+				(void)shim_pthread_spin_unlock(&proc_path_lock);
 
 				stress_proc_rw(ctxt, loops);
 				stress_bogo_inc(args);
@@ -838,7 +843,8 @@ static char *stress_random_pid(void)
 {
 	struct dirent **dlist = NULL;
 	static char path[PATH_MAX];
-	int i, n;
+	int i;
+	int n;
 	size_t j;
 
 	(void)shim_strscpy(path, "/proc/self", sizeof(path));
@@ -878,7 +884,7 @@ static char *stress_random_pid(void)
 static int stress_procfs_no_entries(stress_args_t *args)
 {
 	if (stress_instance_zero(args))
-		pr_inf_skip("%s: no /proc entries found, skipping stressor\n", args->name);
+		pr_inf_skip("%s: no '/proc' entries found, skipping stressor\n", args->name);
 	return EXIT_NO_RESOURCE;
 }
 
@@ -888,11 +894,13 @@ static int stress_procfs_no_entries(stress_args_t *args)
  */
 static int stress_procfs(stress_args_t *args)
 {
-	int i, n;
 	pthread_t pthreads[MAX_PROCFS_THREADS];
-	int rc, ret[MAX_PROCFS_THREADS];
 	stress_ctxt_t ctxt;
 	struct dirent **dlist = NULL;
+	int i;
+	int n;
+	int rc;
+	int ret[MAX_PROCFS_THREADS];
 
 	n = stress_proc_scandir("/proc", &dlist, NULL, mixup_sort);
 	if (n <= 0)
@@ -905,7 +913,7 @@ static int stress_procfs(stress_args_t *args)
 	ctxt.args = args;
 	ctxt.writeable = !stress_capabilities_check(SHIM_CAP_IS_ROOT);
 
-	rc = shim_pthread_spin_init(&lock, PTHREAD_PROCESS_PRIVATE);
+	rc = shim_pthread_spin_init(&proc_path_lock, PTHREAD_PROCESS_PRIVATE);
 	if (rc) {
 		pr_err("%s: pthread_spin_init failed, errno=%d (%s)\n",
 			args->name, rc, strerror(rc));
@@ -937,9 +945,9 @@ static int stress_procfs(stress_args_t *args)
 			stress_fs_make_filename(procfspath, sizeof(procfspath), "/proc", d->d_name);
 			type = shim_dirent_type("/proc", d);
 			if ((type == SHIM_DT_REG) || (type == SHIM_DT_LNK)) {
-				if (!shim_pthread_spin_lock(&lock)) {
+				if (!shim_pthread_spin_lock(&proc_path_lock)) {
 					(void)shim_strscpy(proc_path, procfspath, sizeof(proc_path));
-					(void)shim_pthread_spin_unlock(&lock);
+					(void)shim_pthread_spin_unlock(&proc_path_lock);
 
 					stress_proc_rw(&ctxt, 8);
 					stress_bogo_inc(args);
@@ -960,12 +968,12 @@ static int stress_procfs(stress_args_t *args)
 		stress_bogo_inc(args);
 	} while (stress_continue(args));
 
-	rc = shim_pthread_spin_lock(&lock);
+	rc = shim_pthread_spin_lock(&proc_path_lock);
 	if (rc) {
 		pr_dbg("%s: spin lock failed for %s\n", args->name, proc_path);
 	} else {
 		(void)shim_strscpy(proc_path, "", sizeof(proc_path));
-		VOID_RET(int, shim_pthread_spin_unlock(&lock));
+		VOID_RET(int, shim_pthread_spin_unlock(&proc_path_lock));
 	}
 
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -976,17 +984,43 @@ static int stress_procfs(stress_args_t *args)
 			(void)pthread_join(pthreads[i], NULL);
 		}
 	}
-	(void)shim_pthread_spin_destroy(&lock);
+	(void)shim_pthread_spin_destroy(&proc_path_lock);
 
 	stress_fs_dirent_list_free(dlist, n);
 
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_procfs_info = {
 	.stressor = stress_procfs,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_procfs_info = {

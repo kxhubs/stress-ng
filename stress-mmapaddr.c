@@ -21,6 +21,7 @@
 #include "core-madvise.h"
 #include "core-mmap.h"
 #include "core-out-of-memory.h"
+#include "core-put.h"
 
 static volatile bool page_fault = false;
 
@@ -45,13 +46,12 @@ static void MLOCKED_TEXT stress_fault_handler(int signum)
 static int stress_mmapaddr_check(stress_args_t *args, uint8_t *map_addr)
 {
 	unsigned char vec[1];
-	volatile uint8_t val;
+	volatile const uint8_t *vol_map_addr = (volatile const uint8_t *)map_addr;
 	int ret;
 
 	page_fault = false;
 	/* Should not fault! */
-	val = *map_addr;
-	(void)val;
+	stress_put_uint8(*vol_map_addr);
 
 	if (UNLIKELY(page_fault)) {
 		pr_fail("%s: read of mmap'd address %p SEGFAULTed\n",
@@ -125,7 +125,9 @@ static int stress_mmapaddr_child(stress_args_t *args, void *context)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		uint8_t *addr, *map_addr, *remap_addr;
+		uint8_t *addr;
+		uint8_t *map_addr;
+		uint8_t *remap_addr;
 		int flags = 0;
 		const uint8_t rnd = stress_mwc8();
 #if defined(MAP_POPULATE)
@@ -243,10 +245,28 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mincore"),
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MREMAP) &&	\
+    NEED_GLIBC(2,4,0) &&	\
+    defined(MREMAP_FIXED) &&	\
+    defined(MREMAP_MAYMOVE)
+	STRESS_EX_SYSCALL("mremap"),
+#endif
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmapaddr_info = {
 	.stressor = stress_mmapaddr,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

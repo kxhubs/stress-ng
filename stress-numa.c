@@ -29,9 +29,9 @@
 #include <linux/mempolicy.h>
 #endif
 
-#define MIN_NUMA_MMAP_BYTES	(1 * MB)
+#define MIN_NUMA_MMAP_BYTES	(1 * STRESS_MB)
 #define MAX_NUMA_MMAP_BYTES	(MAX_MEM_LIMIT)
-#define DEFAULT_NUMA_MMAP_BYTES	(4 * MB)
+#define DEFAULT_NUMA_MMAP_BYTES	(4 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"numa N",		"start N workers stressing NUMA interfaces" },
@@ -90,7 +90,7 @@ static void stress_numa_stats_read(stress_numa_stats_t *stats)
 
 		if (shim_dirent_type(path, d) != SHIM_DT_DIR)
 			continue;
-		if (strncmp(d->d_name, "node", 4))
+		if (shim_strncmp(d->d_name, "node", 4))
 			continue;
 
 		(void)snprintf(filename, sizeof(filename), "%s/%s/numastat", path, d->d_name);
@@ -102,7 +102,7 @@ static void stress_numa_stats_read(stress_numa_stats_t *stats)
 			size_t i;
 
 			for (i = 0; i < SIZEOF_ARRAY(numa_fields); i++) {
-				if (strncmp(buffer, numa_fields[i].name, numa_fields[i].len) == 0) {
+				if (shim_strncmp(buffer, numa_fields[i].name, numa_fields[i].len) == 0) {
 					uint64_t val = 0;
 
 					if (sscanf(buffer + numa_fields[i].len + 1, "%" SCNu64, &val) == 1) {
@@ -144,7 +144,7 @@ static void stress_numa_check_maps(
 		n = sscanf(buffer, "%" SCNxPTR, &addr);
 		if ((n == 1) && (ptr == (void *)addr)) {
 			/* find active= field */
-			const char *str = strstr(buffer, "active=");
+			const char *str = shim_strstr(buffer, "active=");
 
 			if (str) {
 				int node;
@@ -177,22 +177,31 @@ static void stress_numa_check_maps(
 static int stress_numa(stress_args_t *args)
 {
 	const size_t page_size = args->page_size;
-	size_t num_pages, numa_bytes, numa_bytes_total = DEFAULT_NUMA_MMAP_BYTES;
-
+	size_t num_pages;
+	size_t numa_bytes;
+	size_t numa_bytes_total = DEFAULT_NUMA_MMAP_BYTES;
 	uint8_t *buf;
 	int rc = EXIT_FAILURE;
 	const bool cap_sys_nice = stress_capabilities_check(SHIM_CAP_SYS_NICE);
-	int *status, *dest_nodes;
+	int *status;
+	int *dest_nodes;
 	int failed = 0;
 	void **pages;
 	size_t k;
-	bool numa_shuffle_addr = false, numa_shuffle_node = false;
-	stress_numa_stats_t stats_begin, stats_end;
-	size_t status_size, dest_nodes_size, pages_size;
+	stress_numa_stats_t stats_begin;
+	stress_numa_stats_t stats_end;
+	size_t status_size;
+	size_t dest_nodes_size;
+	size_t pages_size;
 	double t, duration, metric;
-	uint64_t correct_nodes = 0, total_nodes = 0;
-	stress_numa_mask_t *numa_mask, *old_numa_mask, *numa_nodes;
+	uint64_t correct_nodes = 0;
+	uint64_t total_nodes = 0;
+	stress_numa_mask_t *numa_mask;
+	stress_numa_mask_t *old_numa_mask;
+	stress_numa_mask_t *numa_nodes;
 	long int node;
+	bool numa_shuffle_addr = false;
+	bool numa_shuffle_node = false;
 
 	if (!stress_setting_get("numa-bytes", &numa_bytes_total)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -246,7 +255,7 @@ static int stress_numa(stress_args_t *args)
 		char str[32];
 
 		stress_uint64_to_str(str, sizeof(str), (uint64_t)numa_bytes, 1, true);
-		pr_inf("%s: system has %ld of a maximum %ld memory NUMA nodes. Using %s mappings for each instance.\n",
+		pr_inf("%s: system has %ld of a maximum %ld memory NUMA nodes, using %s mappings for each instance.\n",
 			args->name, numa_mask->nodes, numa_mask->max_nodes, str);
 	}
 
@@ -255,7 +264,7 @@ static int stress_numa(stress_args_t *args)
 					PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	if (status == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap status array of %zu elements%s, "
+		pr_inf_skip("%s: mmap status array of %zu elements failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, num_pages,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -269,7 +278,7 @@ static int stress_numa(stress_args_t *args)
 					PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	if (dest_nodes == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap dest_nodes array of %zu elements%s, "
+		pr_inf_skip("%s: mmap dest_nodes array of %zu elements failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, num_pages,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -283,7 +292,7 @@ static int stress_numa(stress_args_t *args)
 					PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	if (pages == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap pages array of %zu elements%s, "
+		pr_inf_skip("%s: mmap pages array of %zu elements failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, num_pages,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -299,7 +308,7 @@ static int stress_numa(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap a region of %zu bytes%s, "
+		pr_inf_skip("%s: mmap a region of %zu bytes failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, numa_bytes,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -323,11 +332,14 @@ static int stress_numa(stress_args_t *args)
 	k = 0;
 	t = stress_time_now();
 	do {
-		int j, mode, ret;
+		int j;
+		int mode;
+		int ret;
 		long int lret;
 		unsigned long int i;
 		uint8_t *ptr;
-		unsigned int cpu, curr_node;
+		unsigned int cpu;
+		unsigned int curr_node;
 		struct shim_getcpu_cache cache;
 
 		(void)shim_memset(numa_mask->mask, 0x00, numa_mask->mask_size);
@@ -760,12 +772,34 @@ deinit:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-bus"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("getcpu"),
+	STRESS_EX_SYSCALL("get_mempolicy"),
+	STRESS_EX_SYSCALL("mbind"),
+	STRESS_EX_SYSCALL("migrate_pages"),
+	STRESS_EX_SYSCALL("move_pages"),
+	STRESS_EX_SYSCALL("set_mempolicy"),
+	STRESS_EX_SYSCALL("set_mempolicy_home_node"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_numa_info = {
 	.stressor = stress_numa,
 	.classifier = CLASS_CPU | CLASS_MEMORY | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_numa_info = {

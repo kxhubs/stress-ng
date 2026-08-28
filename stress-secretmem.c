@@ -124,7 +124,7 @@ static int stress_secretmem_child(stress_args_t *args, void *context)
 
 	mappings = (secretmem_mapping_t *)calloc(MAPPINGS_MAX, sizeof(*mappings));
 	if (UNLIKELY(!mappings)) {
-		pr_inf_skip("%s: failed to allocate %zu bytes%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu bytes failed%s, skipping stressor\n",
 			args->name, (size_t)MAPPINGS_MAX * sizeof(*mappings),
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -215,11 +215,24 @@ static int stress_secretmem(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_secretmem_child, STRESS_OOMABLE_QUIET);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("filemap-page-cache"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("memfd_secret"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_secretmem_info = {
 	.stressor = stress_secretmem,
 	.classifier = CLASS_CPU,
 	.help = help,
-	.supported = stress_secretmem_supported
+	.supported = stress_secretmem_supported,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_secretmem_info = {

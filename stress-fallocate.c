@@ -19,9 +19,9 @@
  */
 #include "stress-ng.h"
 
-#define MIN_FALLOCATE_BYTES	(1 * MB)
+#define MIN_FALLOCATE_BYTES	(1 * STRESS_MB)
 #define MAX_FALLOCATE_BYTES	(MAX_FILE_LIMIT)
-#define DEFAULT_FALLOCATE_BYTES	(1 * GB)
+#define DEFAULT_FALLOCATE_BYTES	(1 * STRESS_GB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"fallocate N",		"start N workers fallocating 16MB files" },
@@ -92,16 +92,22 @@ static const int illegal_modes[] = {
  */
 static int stress_fallocate(stress_args_t *args)
 {
-	int fd_async = -1, ret, pipe_ret = -1, pipe_fds[2] = { -1, -1 };
+	int fd_async = -1;
+	int ret;
+	int pipe_ret = -1;
+	int pipe_fds[2] = { -1, -1 };
 #if defined(O_SYNC)
 	int fd_sync = -1;
 #endif
 	const int bad_fd = stress_fs_bad_fd_get();
 	char filename[PATH_MAX];
 	uint64_t ftrunc_errs = 0;
-	off_t fallocate_bytes, fallocate_bytes_total = DEFAULT_FALLOCATE_BYTES;
-	int *mode_perms = NULL, all_modes;
-	size_t i, mode_count;
+	off_t fallocate_bytes;
+	off_t fallocate_bytes_total = DEFAULT_FALLOCATE_BYTES;
+	int *mode_perms = NULL;
+	int all_modes;
+	size_t i;
+	size_t mode_count;
 	const char *fs_type;
 	int rc = EXIT_SUCCESS;
 #if defined(O_SYNC)
@@ -136,7 +142,7 @@ static int stress_fallocate(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd_async = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		ret = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		free(mode_perms);
@@ -248,7 +254,7 @@ static int stress_fallocate(stress_args_t *args)
 				const size_t j = stress_mwc32modn((uint32_t)SIZEOF_ARRAY(modes));
 				const off_t offset = (off_t)stress_mwc64modn((uint64_t)fallocate_bytes) & ~0xfff;
 
-				if (shim_fallocate(fd, modes[j], offset, 64 * KB) == 0)
+				if (shim_fallocate(fd, modes[j], offset, 64 * STRESS_KB) == 0)
 					(void)shim_fsync(fd);
 				if (UNLIKELY(!stress_continue_flag()))
 					break;
@@ -257,7 +263,7 @@ static int stress_fallocate(stress_args_t *args)
 			for (i = 0; i < mode_count; i++) {
 				const off_t offset = (off_t)stress_mwc64modn((uint64_t)fallocate_bytes) & ~0xfff;
 
-				if (shim_fallocate(fd, mode_perms[i], offset, 4 * KB) == 0)
+				if (shim_fallocate(fd, mode_perms[i], offset, 4 * STRESS_KB) == 0)
 					(void)shim_fsync(fd);
 				if (UNLIKELY(!stress_continue_flag()))
 					break;
@@ -337,12 +343,28 @@ static int stress_fallocate(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-folio"),
+
+#if defined(HAVE_POSIX_FALLOCATE)
+	STRESS_EX_SYSCALL("posix_fallocate"),
+#endif
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fallocate_info = {
 	.stressor = stress_fallocate,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fallocate_info = {

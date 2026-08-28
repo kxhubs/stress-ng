@@ -166,9 +166,9 @@ static int stress_vecwide(stress_args_t *args)
 {
 	static vec_args_t *vec_args;
 	size_t i;
-	double total_duration = 0.0;
 	size_t total_bytes = 0;
 	const size_t vec_args_size = (sizeof(*vec_args) + args->page_size - 1) & ~(args->page_size - 1);
+	double total_duration = 0.0;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	int rc = EXIT_SUCCESS;
 
@@ -178,7 +178,7 @@ static int stress_vecwide(stress_args_t *args)
 					PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (vec_args == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte vector%s "
+		pr_inf_skip("%s: mmap %zu byte vector failed%s "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, vec_args_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -207,7 +207,9 @@ static int stress_vecwide(stress_args_t *args)
 
 	do {
 		for (i = 0; i < SIZEOF_ARRAY(stress_vecwide_funcs); i++) {
-			double t1, t2, dt;
+			double t1;
+			double t2;
+			double dt;
 
 			vec_args->res = vec_args->res1;
 			t1 = stress_time_now();
@@ -249,7 +251,9 @@ static int stress_vecwide(stress_args_t *args)
 		pr_block_begin();
 		pr_dbg("%s: Bits  %% Dur  %% Exp (x Win) (> 1.0 is better than expected)\n", args->name);
 		for (i = 0; i < SIZEOF_ARRAY(stress_vecwide_funcs); i++) {
-			double dur_pc, exp_pc, win;
+			double dur_pc;
+			double exp_pc;
+			double win;
 
 			dur_pc = stress_vecwide_metrics[i].duration / total_duration * 100.0;
 			exp_pc = (double)stress_vecwide_funcs[i].byte_size / (double)total_bytes * 100.0;
@@ -280,13 +284,28 @@ static int stress_vecwide(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-vector"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("registers"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vecwide_info = {
 	.stressor = stress_vecwide,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE | CLASS_VECTOR,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
+
 #else
+
 const stressor_info_t stress_vecwide_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE | CLASS_VECTOR,

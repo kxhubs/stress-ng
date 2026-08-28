@@ -149,7 +149,7 @@ static int stress_mtx(stress_args_t *args)
 	}
 
 	if (!created) {
-		pr_inf("%s: could not create any pthreads\n", args->name);
+		pr_inf("%s: pthreads create failed\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -176,12 +176,30 @@ static int stress_mtx(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("memory-loads"),
+
+	STRESS_EX_SYSCALL("mtx_destroy"),
+	STRESS_EX_SYSCALL("mtx_init"),
+	STRESS_EX_SYSCALL("mtx_lock"),
+	STRESS_EX_SYSCALL("mtx_unlock"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mtx_info = {
 	.stressor = stress_mtx,
 	.classifier = CLASS_OS | CLASS_SCHEDULER,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mtx_info = {

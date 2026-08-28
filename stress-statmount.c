@@ -161,12 +161,14 @@ static int stress_statmount_listroot(
 
 static int stress_statmount(stress_args_t *args)
 {
-	uint64_t id;
 	shim_statx_t sx;
-	int ret, rc = EXIT_SUCCESS;
+	uint64_t id;
 	ssize_t max_mounts = 0;
-
-	double duration = 0.0, count = 0.0, rate;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	if (shim_statmount(0, 0, NULL, 0, 0) < 0) {
 		if (errno == ENOSYS) {
@@ -178,7 +180,7 @@ static int stress_statmount(stress_args_t *args)
 
 	ret = shim_statx(AT_FDCWD, "/", 0, STATX_MNT_ID_UNIQUE, &sx);
 	if (UNLIKELY(ret < 0)) {
-		pr_inf_skip("%s: statx on / failed, errno=%d (%s), skipping stressor",
+		pr_inf_skip("%s: statx on '/' failed, errno=%d (%s), skipping stressor",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -211,11 +213,22 @@ static int stress_statmount(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("listmount"),
+	STRESS_EX_SYSCALL("statmount"),
+	STRESS_EX_SYSCALL("statx"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_statmount_info = {
 	.stressor = stress_statmount,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_statmount_info = {

@@ -42,6 +42,7 @@ static const stress_help_t help[] = {
 
 #if defined(HAVE_LINUX_RSEQ_HEADER) &&		\
     defined(HAVE_ASM_NOP) &&			\
+    defined(HAVE_TYPEOF) &&			\
     defined(__NR_rseq) &&			\
     defined(HAVE___RSEQ_OFFSET) &&		\
     defined(HAVE_SYSCALL) &&			\
@@ -51,7 +52,7 @@ static const stress_help_t help[] = {
     !defined(HAVE_COMPILER_ICC) &&		\
     !defined(HAVE_COMPILER_ICX)
 
-#define STRESS_ACCESS_ONCE(x)     (*(__volatile__  __typeof__(x) *)&(x))
+#define STRESS_ACCESS_ONCE(x)     (*(__volatile__  typeof(x) *)&(x))
 
 #if !defined(OPTIMIZE0)
 #define OPTIMIZE0       __attribute__((optimize("-O0")))
@@ -191,7 +192,7 @@ static int stress_rseq_oomable(stress_args_t *args, void *context)
 	(void)shim_memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sigsegv_handler;
 	if (sigaction(SIGSEGV, &sa, NULL) < 0) {
-		pr_inf("%s: failed to set SIGSEGV handler\n", args->name);
+		pr_inf("%s: set SIGSEGV handler failed\n", args->name);
 		_exit(EXIT_FAILURE);
 	}
 
@@ -200,6 +201,7 @@ static int stress_rseq_oomable(stress_args_t *args, void *context)
 
 		for (i = 0; i < 10000; i++) {
 			uint32_t cpu;
+
 			cpu = STRESS_ACCESS_ONCE(rseq_area->cpu_id_start);
 			rseq_test(cpu);
 		}
@@ -223,7 +225,7 @@ static int stress_rseq(stress_args_t *args)
 	 */
 	rseq_info = (rseq_info_t *)stress_mmap_anon_shared(sizeof(*rseq_info), PROT_READ | PROT_WRITE);
 	if (rseq_info == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte shared page%s, "
+		pr_inf_skip("%s: mmap %zu byte shared page failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*rseq_info),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -237,7 +239,7 @@ static int stress_rseq(stress_args_t *args)
 
 	/* sanity check to keep static analysis happy */
 	if (UNLIKELY(rseq_area == NULL)) {
-		pr_inf_skip("%s: failed to find rseq_area, skipping stressor\n",
+		pr_inf_skip("%s: find rseq_area failed, skipping stressor\n",
 			args->name);
 		ret = EXIT_NO_RESOURCE;
 		goto err;
@@ -262,11 +264,20 @@ err:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("i-tlb-read-miss"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rseq_info = {
 	.stressor = stress_rseq,
 	.supported = stress_rseq_supported,
 	.classifier = CLASS_CPU,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rseq_info = {

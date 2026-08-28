@@ -456,7 +456,8 @@ static int stress_mcontend(stress_args_t *args)
 	char filename[PATH_MAX];
 	stress_pthread_args_t pa;
 	bool mcontend_numa = false;
-	int fd, rc;
+	int fd;
+	int rc;
 #if defined(HAVE_LINUX_MEMPOLICY_H)
 	stress_numa_mask_t *numa_mask = NULL;
 	stress_numa_mask_t *numa_nodes = NULL;
@@ -480,8 +481,8 @@ static int stress_mcontend(stress_args_t *args)
 
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_inf("%s: open failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_inf("%s: open '%s' failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		(void)stress_fs_temp_dir_rm_args(args);
 #if defined(HAVE_SCHED_SETAFFINITY)
@@ -601,11 +602,29 @@ static int stress_mcontend(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("memory-bus"),
+
+#if defined(HAVE_SCHED_SETAFFINITY)
+	STRESS_EX_SYSCALL("sched_affinity"),
+#endif
+	STRESS_EX_SYSCALL("msync"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mcontend_info = {
 	.stressor = stress_mcontend,
 	.classifier = CLASS_MEMORY,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mcontend_info = {

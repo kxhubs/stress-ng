@@ -97,7 +97,8 @@ static void exercise_inotify_add_watch(
 	const char *watchname,
 	const int bad_fd)
 {
-	int fd, wd;
+	int fd;
+	int wd;
 #if defined(IN_MASK_CREATE) &&	\
     defined(IN_MASK_ADD)
 	int wd2;
@@ -212,7 +213,10 @@ static int inotify_exercise(
 	void *private_data,	/* Helper func private data */
 	const int bad_fd)	/* A bad file descriptor */
 {
-	int fd, wd, n = 0, rc = EXIT_SUCCESS;
+	int fd;
+	int wd;
+	int n = 0;
+	int rc = EXIT_SUCCESS;
 	uint32_t check_flags = flags;
 	char buffer[1024];
 
@@ -257,7 +261,8 @@ retry:
 		ssize_t len, i = 0;
 		struct timeval tv;
 		fd_set rfds;
-		int err, nbytes;
+		int err;
+		int nbytes;
 
 		/* We give inotify TIME_OUT seconds to report back */
 		tv.tv_sec = TIME_OUT;
@@ -270,7 +275,7 @@ retry:
 		err = select(fd + 1, &rfds, NULL, NULL, &tv);
 		if (err == -1) {
 			if (errno != EINTR)
-				pr_err("%s: select error, errno=%d (%s)\n",
+				pr_err("%s: select failed, errno=%d (%s)\n",
 					args->name, errno, strerror(errno));
 			break;
 		} else if (err == 0) {
@@ -324,7 +329,7 @@ redo:
 						    IN_MOVED_FROM |
 						    IN_ATTRIB);
 			if (event->len &&
-			    strcmp(event->name, matchname) == 0 &&
+			    shim_strcmp(event->name, matchname) == 0 &&
 			    flags & event->mask)
 				check_flags &= ~(flags & event->mask);
 			else if (flags & f)
@@ -351,7 +356,7 @@ cleanup:
 static int rm_file(stress_args_t *args, const char *path)
 {
 	if ((shim_unlink(path) < 0) && (errno != ENOENT)) {
-		pr_err("%s: cannot remove file %s, errno=%d (%s)\n",
+		pr_err("%s: remove '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -384,7 +389,7 @@ static int rm_dir(stress_args_t *args, const char *path)
 	}
 	ret = shim_rmdir(path);
 	if ((ret < 0) && (errno != ENOENT))
-		pr_err("%s: cannot remove directory %s, errno=%d (%s)\n",
+		pr_err("%s: remove directory '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 	return ret;
 }
@@ -398,7 +403,7 @@ static int mk_dir(stress_args_t *args, const char *path)
 	if (mkdir(path, DIR_FLAGS) < 0) {
 		if ((errno == ENOMEM) || (errno == ENOSPC))
 			return -1;
-		pr_err("%s: cannot mkdir %s, errno=%d (%s)\n",
+		pr_err("%s: mkdir '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -420,7 +425,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 	if ((fd = open(filename, O_CREAT | O_RDWR, FILE_FLAGS)) < 0) {
 		if ((errno == ENFILE) || (errno == ENOMEM) || (errno == ENOSPC))
 			return -1;
-		pr_err("%s: cannot create file %s, errno=%d (%s)\n",
+		pr_err("%s: open file '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
@@ -434,7 +439,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 		if (ret < 0) {
 			if (errno == ENOSPC)
 				break;
-			pr_err("%s: error writing to file %s, errno=%d (%s)\n",
+			pr_err("%s: write to '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			(void)close(fd);
 			return -1;
@@ -443,7 +448,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 	}
 
 	if (close(fd) < 0) {
-		pr_err("%s: cannot close file %s, errno=%d (%s)\n",
+		pr_err("%s: close '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
@@ -458,7 +463,7 @@ static int inotify_attrib_helper(
 {
 	(void)signum;
 	if (chmod(path, S_IRUSR | S_IWUSR) < 0) {
-		pr_err("%s: cannot chmod file %s, errno=%d (%s)\n",
+		pr_err("%s: chmod '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -499,7 +504,7 @@ static int inotify_access_helper(
 
 	(void)signum;
 	if ((fd = open(path, O_RDONLY)) < 0) {
-		pr_err("%s: cannot open file %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -509,7 +514,7 @@ do_access:
 	if (stress_continue(args) && (read(fd, buffer, 1) < 0)) {
 		if ((errno == EAGAIN) || (errno == EINTR))
 			goto do_access;
-		pr_err("%s: cannot read file %s, errno=%d (%s)\n",
+		pr_err("%s: read from '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = -1;
 	}
@@ -545,14 +550,15 @@ static int inotify_modify_helper(
 	const char *path,
 	void *signum)
 {
-	int fd, rc = 0;
+	int fd;
+	int rc = 0;
 	char buffer[1] = { 0 };
 
 	(void)signum;
 	if (mk_file(args, path, 4096) < 0)
 		return -1;
 	if ((fd = open(path, O_RDWR)) < 0) {
-		pr_err("%s: cannot open file %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = -1;
 		goto remove;
@@ -561,7 +567,7 @@ do_modify:
 	if (stress_continue(args) && (write(fd, buffer, 1) < 0)) {
 		if ((errno == EAGAIN) || (errno == EINTR))
 			goto do_modify;
-		pr_err("%s: cannot write to file %s, errno=%d (%s)\n",
+		pr_err("%s: write to '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = -1;
 	}
@@ -598,7 +604,7 @@ static int inotify_creat_helper(
 	(void)signum;
 
 	if ((fd = creat(path, FILE_FLAGS)) < 0) {
-		pr_err("%s: cannot create file %s, errno=%d (%s)\n",
+		pr_err("%s: creat '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -635,7 +641,7 @@ static int inotify_open_helper(
 
 	(void)signum;
 	if ((fd = open(path, O_RDONLY)) < 0) {
-		pr_err("%s: cannot open file %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -739,7 +745,7 @@ static int inotify_move_self_helper(
 	const char *newpath = (const char *)private_data;
 
 	if (rename(oldpath, newpath) < 0) {
-		pr_err("%s: cannot rename %s to %s, errno=%d (%s)\n",
+		pr_err("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 			args->name, oldpath, newpath, errno, strerror(errno));
 		return -1;
 	}
@@ -754,7 +760,8 @@ static int inotify_move_self(
 	const char *path,
 	const int bad_fd)
 {
-	char filepath[PATH_MAX], newpath[PATH_MAX];
+	char filepath[PATH_MAX];
+	char newpath[PATH_MAX];
 	int rc;
 
 	stress_fs_make_filename(filepath, sizeof(filepath), path, "inotify_dir");
@@ -779,7 +786,7 @@ static int inotify_moved_to_helper(
 	const char *oldpath = (const char *)private_data;
 
 	if (rename(oldpath, newpath) < 0) {
-		pr_err("%s: cannot rename %s to %s, errno=%d (%s)\n",
+		pr_err("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 			args->name, oldpath, newpath, errno, strerror(errno));
 		return -1;
 	}
@@ -791,7 +798,9 @@ static int inotify_moved_to(
 	const char *path,
 	const int bad_fd)
 {
-	char olddir[PATH_MAX - 16], oldfile[PATH_MAX], newfile[PATH_MAX];
+	char olddir[PATH_MAX - 16];
+	char oldfile[PATH_MAX];
+	char newfile[PATH_MAX];
 	int rc;
 
 	stress_fs_make_filename(olddir, sizeof(olddir), path, "new_dir");
@@ -823,7 +832,7 @@ static int inotify_moved_from_helper(
 	const char *newpath = (const char *)private_data;
 
 	if (rename(oldpath, newpath) < 0) {
-		pr_err("%s: cannot rename %s to %s, errno=%d (%s)\n",
+		pr_err("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 			args->name, oldpath, newpath, errno, strerror(errno));
 		return -1;
 	}
@@ -835,7 +844,9 @@ static int inotify_moved_from(
 	const char *path,
 	const int bad_fd)
 {
-	char oldfile[PATH_MAX], newdir[PATH_MAX - 16], newfile[PATH_MAX];
+	char oldfile[PATH_MAX];
+	char newdir[PATH_MAX - 16];
+	char newfile[PATH_MAX];
 	int rc;
 
 	stress_fs_make_filename(oldfile, sizeof(oldfile), path, "inotify_file");
@@ -880,14 +891,15 @@ static int inotify_close_write_file(
 	const int bad_fd)
 {
 	char filepath[PATH_MAX];
-	int fd, rc;
+	int fd;
+	int rc;
 
 	stress_fs_make_filename(filepath, sizeof(filepath), path, "inotify_file");
 	if (mk_file(args, filepath, 4096) < 0)
 		return EXIT_SUCCESS;
 
 	if ((fd = open(filepath, O_RDWR)) < 0) {
-		pr_err("%s: cannot re-open %s, errno=%d (%s)\n",
+		pr_err("%s: re-open '%s' failed, errno=%d (%s)\n",
 			args->name, filepath, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -926,14 +938,15 @@ static int inotify_close_nowrite_file(
 	const int bad_fd)
 {
 	char filepath[PATH_MAX];
-	int fd, rc;
+	int fd;
+	int rc;
 
 	stress_fs_make_filename(filepath, sizeof(filepath), path, "inotify_file");
 	if (mk_file(args, filepath, 4096) < 0)
 		return EXIT_SUCCESS;
 
 	if ((fd = open(filepath, O_RDONLY)) < 0) {
-		pr_err("%s: cannot re-open %s, errno=%d (%s)\n",
+		pr_err("%s: re-open '%s' failed, errno=%d (%s)\n",
 			args->name, filepath, errno, strerror(errno));
 		(void)rm_file(args, filepath);
 		return EXIT_FAILURE;
@@ -997,7 +1010,9 @@ static const stress_inotify_t inotify_stressors[] = {
 static int stress_inotify(stress_args_t *args)
 {
 	char pathname[PATH_MAX - 16];
-	int ret, i, rc = EXIT_SUCCESS;
+	int ret;
+	int i;
+	int rc = EXIT_SUCCESS;
 	const int bad_fd = stress_fs_bad_fd_get();
 
 	stress_fs_temp_dir_args(args, pathname, sizeof(pathname));
@@ -1028,11 +1043,39 @@ static int stress_inotify(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+
+#if defined(IN_ATTRIB)
+	STRESS_EX_SYSCALL("chmod"),
+#endif
+	STRESS_EX_SYSCALL("close"),
+#if defined(IN_CREATE)
+	STRESS_EX_SYSCALL("creat"),
+#endif
+	STRESS_EX_SYSCALL("inotify_add_watch"),
+	STRESS_EX_SYSCALL("inotify_init1"),
+	STRESS_EX_SYSCALL("inotify_init1"),
+	STRESS_EX_SYSCALL("inotify_rm_watch"),
+	STRESS_EX_SYSCALL("ioctl"),
+#if defined(HAVE_EPOLL_CREATE1)
+	STRESS_EX_SYSCALL("epoll_create1"),
+#endif
+	STRESS_EX_SYSCALL("mkdir"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("rmdir"),
+	STRESS_EX_SYSCALL("select"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_inotify_info = {
 	.stressor = stress_inotify,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_inotify_info = {

@@ -73,7 +73,7 @@ static const stress_opt_t opts[] = {
 #if !defined(TMPFS_MAGIC)
 #define TMPFS_MAGIC		(0x01021994)
 #endif
-#define MAX_TMPFS_SIZE		(512 * MB)
+#define MAX_TMPFS_SIZE		(512 * STRESS_MB)
 
 /* Misc randomly chosen mmap flags */
 static const int mmap_flags[] = {
@@ -114,7 +114,9 @@ static int stress_tmpfs_open(stress_args_t *args, off_t *len)
 	const uint32_t rnd = stress_mwc32();
 	char path[PATH_MAX];
 	char *mnts[MAX_MOUNTS];
-	int i, n, fd = -1;
+	int i;
+	int n;
+	int fd = -1;
 
 	(void)shim_memset(mnts, 0, sizeof(mnts));
 
@@ -129,11 +131,11 @@ static int stress_tmpfs_open(stress_args_t *args, off_t *len)
 		if (UNLIKELY(!mnts[i]))
 			continue;
 		/* Some paths should be avoided... */
-		if (!strncmp(mnts[i], "/dev", 4))
+		if (!shim_strncmp(mnts[i], "/dev", 4))
 			continue;
-		if (!strncmp(mnts[i], "/sys", 4))
+		if (!shim_strncmp(mnts[i], "/sys", 4))
 			continue;
-		if (!strncmp(mnts[i], "/run/lock", 9))
+		if (!shim_strncmp(mnts[i], "/run/lock", 9))
 			continue;
 		(void)shim_memset(&buf, 0, sizeof(buf));
 		if (statfs(mnts[i], &buf) < 0)
@@ -149,7 +151,8 @@ static int stress_tmpfs_open(stress_args_t *args, off_t *len)
 		fd = open(path, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
 		if (LIKELY(fd >= 0)) {
 			const char data = 0;
-			off_t rc, max_size = (off_t)buf.f_bsize * (off_t)buf.f_bavail;
+			off_t rc;
+			off_t max_size = (off_t)buf.f_bsize * (off_t)buf.f_bavail;
 
 			/*
 			 * Don't use all the tmpfs, just 98% for all instance
@@ -215,7 +218,7 @@ static int stress_tmpfs_child(stress_args_t *args, void *ctxt)
 
 	mappings = (mapping_info_t *)calloc(pages, sizeof(*mappings));
 	if (UNLIKELY(!mappings)) {
-		pr_inf_skip("%s: failed to allocate %zu byte mapping array%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu byte mapping array failed%s, skipping stressor\n",
 			args->name, pages * sizeof(*mappings),
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -454,12 +457,38 @@ static int stress_tmpfs(stress_args_t *args)
 
 	return ret;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+#if (defined(HAVE_SYS_XATTR_H) ||       \
+     defined(HAVE_ATTR_XATTR_H)) &&     \
+    defined(HAVE_FREMOVEXATTR) &&       \
+    defined(HAVE_FSETXATTR)
+	STRESS_EX_SYSCALL("fremovexattr"),
+	STRESS_EX_SYSCALL("fstetxattr"),
+#endif
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mincore"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("statfs"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tmpfs_info = {
 	.stressor = stress_tmpfs,
 	.classifier = CLASS_MEMORY | CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_tmpfs_info = {

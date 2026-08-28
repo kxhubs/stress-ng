@@ -18,11 +18,12 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-pragma.h"
 
-#define MIN_REVIO_BYTES		(1 * MB)
+#define MIN_REVIO_BYTES		(1 * STRESS_MB)
 #define MAX_REVIO_BYTES		(MAX_FILE_LIMIT)
-#define DEFAULT_REVIO_BYTES	(1 * GB)
+#define DEFAULT_REVIO_BYTES	(1 * STRESS_GB)
 
 #define BUF_ALIGNMENT		(4096)
 
@@ -138,7 +139,7 @@ static const stress_revio_opts_t revio_opts[] = {
  */
 static ssize_t stress_revio_write(
 	const int fd,
-	uint8_t *buf,
+	const uint8_t *buf,
 	const size_t count,
 	const int revio_flags)
 {
@@ -182,8 +183,10 @@ static ssize_t stress_revio_write(
  */
 static void stress_revio_opts(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
 {
-	char *str, *ptr;
+	char *str;
+	char *ptr;
 	const char *token;
+	char *saveptr = NULL;
 	int revio_flags = 0;
 	int revio_oflags = 0;
 	bool opts_set = false;
@@ -198,12 +201,12 @@ static void stress_revio_opts(const char *opt_name, const char *opt_arg, stress_
 		stress_no_return();
 	}
 
-	for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
+	for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
 		size_t i;
 		bool opt_ok = false;
 
 		for (i = 0; i < SIZEOF_ARRAY(revio_opts); i++) {
-			if (!strcmp(token, revio_opts[i].opt)) {
+			if (!shim_strcmp(token, revio_opts[i].opt)) {
 				const int exclude = revio_flags & revio_opts[i].exclude;
 
 				if (exclude) {
@@ -294,10 +297,13 @@ static int stress_revio(stress_args_t *args)
 	ssize_t ret;
 	char filename[PATH_MAX];
 	size_t opt_index = 0;
-	uint64_t revio_bytes, revio_bytes_total = DEFAULT_REVIO_BYTES;
+	uint64_t revio_bytes;
+	uint64_t revio_bytes_total = DEFAULT_REVIO_BYTES;
 	uint32_t iterations = 0;
-	int revio_flags = 0, revio_oflags = 0;
-	int flags, fadvise_flags;
+	int revio_flags = 0;
+	int revio_oflags = 0;
+	int flags;
+	int fadvise_flags;
 	bool opts_set = false;
 	double avg_extents = 0.0;
 
@@ -334,7 +340,7 @@ static int stress_revio(stress_args_t *args)
 	ret = posix_memalign((void **)&alloc_buf, BUF_ALIGNMENT, (size_t)DEFAULT_REVIO_WRITE_SIZE);
 	if (ret || !alloc_buf) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: failed to allocate %zu byte buffer%s\n",
+		pr_err("%s: allocate %zu byte buffer failed%s\n",
 			args->name, (size_t)DEFAULT_REVIO_WRITE_SIZE,
 			stress_memory_free_get());
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -345,7 +351,7 @@ static int stress_revio(stress_args_t *args)
 	/* Work around lack of posix_memalign */
 	alloc_buf = malloc((size_t)DEFAULT_REVIO_WRITE_SIZE + BUF_ALIGNMENT);
 	if (!alloc_buf) {
-		pr_err("%s: failed to allocate %zu buffer%s\n",
+		pr_err("%s: allocate %zu buffer failed%s\n",
 			args->name, (size_t)DEFAULT_REVIO_WRITE_SIZE + BUF_ALIGNMENT,
 			stress_memory_free_get());
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -384,7 +390,7 @@ static int stress_revio(stress_args_t *args)
 		if (UNLIKELY((fd = open(filename, flags, S_IRUSR | S_IWUSR)) < 0)) {
 			if ((errno == ENOSPC) || (errno == ENOMEM))
 				continue;	/* Retry */
-			pr_fail("%s: open %s failed, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			goto finish;
@@ -467,8 +473,7 @@ PRAGMA_UNROLL_N(4)
 
 	if ((iterations > 0) && (avg_extents > 0.0)) {
 		avg_extents /= (double)iterations;
-		stress_metrics_set(args, "extents",
-			(double)avg_extents, STRESS_METRIC_GEOMETRIC_MEAN);
+		stress_metrics_set(args, "extents", avg_extents, STRESS_METRIC_GEOMETRIC_MEAN);
 	}
 
 	rc = EXIT_SUCCESS;
@@ -480,11 +485,25 @@ finish:
 	return rc;
 }
 
-
 static const stress_opt_t opts[] = {
 	{ OPT_revio_bytes, "revio-bytes", TYPE_ID_UINT64_BYTES_VM, MIN_REVIO_BYTES, MAX_REVIO_BYTES, NULL },
-	{ OPT_revio_opts,  "revio-opts",  TYPE_ID_CALLBACK, 0, 0, (void *)stress_revio_opts },
+	{ OPT_revio_opts,  "revio-opts",  TYPE_ID_CALLBACK, 0, 0, stress_revio_opts },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_POSIX_FADVISE)
+	STRESS_EX_SYSCALL("posix_fadvise"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_revio_info = {
@@ -492,5 +511,6 @@ const stressor_info_t stress_revio_info = {
 	.classifier = CLASS_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

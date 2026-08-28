@@ -29,17 +29,17 @@
 #include <malloc.h>
 #endif
 
-#define MIN_MALLOC_BYTES	(1 * KB)
+#define MIN_MALLOC_BYTES	(1 * STRESS_KB)
 #define MAX_MALLOC_BYTES	(MAX_MEM_LIMIT)
-#define DEFAULT_MALLOC_BYTES	(64 * KB)
+#define DEFAULT_MALLOC_BYTES	(64 * STRESS_KB)
 
 #define MIN_MALLOC_MAX		(32)
-#define MAX_MALLOC_MAX		(256 * 1024)
-#define DEFAULT_MALLOC_MAX	(64 * KB)
+#define MAX_MALLOC_MAX		(256 * STRESS_KB)
+#define DEFAULT_MALLOC_MAX	(64 * STRESS_KB)
 
 #define MIN_MALLOC_THRESHOLD	(1)
-#define MAX_MALLOC_THRESHOLD	(256 * MB)
-#define DEFAULT_MALLOC_THRESHOLD (128 * KB)
+#define MAX_MALLOC_THRESHOLD	(256 * STRESS_MB)
+#define DEFAULT_MALLOC_THRESHOLD (128 * STRESS_KB)
 
 #define MIN_MALLOC_PTHREADS	(0)
 #define MAX_MALLOC_PTHREADS	(32)
@@ -194,7 +194,7 @@ static void *stress_malloc_loop(void *ptr)
 			MAP_PRIVATE | MAP_ANONYMOUS,
 			-1, 0);
 	if (info == MAP_FAILED) {
-		pr_inf("%s: failed to mmap address buffer of size %zu bytes%s, errno=%d (%s)\n",
+		pr_inf("%s: mmap address buffer of size %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, info_size, stress_memory_free_get(),
 			errno, strerror(errno));
 		malloc_args->rc = EXIT_FAILURE;
@@ -385,7 +385,7 @@ static void MLOCKED_TEXT stress_malloc_sigsegv_handler(int signum)
 static int stress_malloc_child(stress_args_t *args, void *context)
 {
 	int ret;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	/*
 	 *  pthread instance 0 is actually the main child process,
 	 *  instances 1..N are pthreads 0..N-1
@@ -537,12 +537,25 @@ static int stress_malloc(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("heap"),
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("user-time"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_malloc_info = {
 	.stressor = stress_malloc,
 	.classifier = CLASS_CPU_CACHE | CLASS_MEMORY | CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -553,7 +566,7 @@ const stressor_info_t stress_malloc_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

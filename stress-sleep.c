@@ -131,10 +131,12 @@ static void *stress_pthread_func(void *c)
 
 	while (stress_continue(args) && !thread_terminate) {
 		bool eintr;
-		cpu_cstate_t *cc;
+		const cpu_cstate_t *cc;
 		struct timespec tv;
-		double delta, expected;
-		stress_sleep_times_t t1, t2;
+		double delta;
+		double expected;
+		stress_sleep_times_t t1;
+		stress_sleep_times_t t2;
 #if defined(HAVE_SYS_SELECT_H) &&	\
     defined(HAVE_SELECT)
 		struct timeval timeout;
@@ -376,7 +378,9 @@ skip_pselect:
  */
 static int stress_sleep(stress_args_t *args)
 {
-	uint64_t i, n, limited = 0;
+	uint64_t i;
+	uint64_t n;
+	uint64_t limited = 0;
 	uint64_t sleep_max = DEFAULT_SLEEP;
 	uint64_t underruns = 0;
 	static stress_ctxt_t ctxts[MAX_SLEEP];
@@ -391,7 +395,7 @@ static int stress_sleep(stress_args_t *args)
 
 	stress_sleep_counter_lock = stress_lock_create("counter");
 	if (!stress_sleep_counter_lock) {
-		pr_inf("%s: cannot create counter lock, skipping stressor\n", args->name);
+		pr_inf("%s: create counter lock failed, skipping stressor\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -463,12 +467,32 @@ tidy:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("nanosleep"),
+#if defined(HAVE_PSELECT)
+	STRESS_EX_SYSCALL("pselect"),
+#endif
+#if defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sleep_info = {
 	.stressor = stress_sleep,
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sleep_info = {

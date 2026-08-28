@@ -64,8 +64,8 @@ static int stress_eth_sniff_supported(const char *name)
 #define PROTO_MAX	(256)
 
 typedef struct common_proto {
-	uint8_t proto;		/* protocol number */
-	char *name;		/* name of protocol */
+	const uint8_t proto;	/* protocol number */
+	const char *name;	/* name of protocol */
 } common_proto_t;
 
 /* commonly used protocols */
@@ -177,12 +177,19 @@ static int stress_eth_sniff(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("recvfrom"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_eth_sniff_info = {
 	.stressor = stress_eth_sniff,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.supported = stress_eth_sniff_supported,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_eth_sniff_info = {

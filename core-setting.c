@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-setting.h"
 #include "core-sort.h"
 
@@ -71,14 +72,18 @@ static void stress_setting_show_setting(
 			setting->u.int16, show_type ? " (int16_t)" : "");
 		break;
 	case TYPE_ID_UINT32:
+	case TYPE_ID_UINT32_TIME:
 		pr_func(" %-20.20s %" PRIu32 "%s\n", setting->name,
 			setting->u.uint32, show_type ? " (uint32_t)" : "");
 		break;
 	case TYPE_ID_INT32:
+	case TYPE_ID_INT32_TIME:
+	case TYPE_ID_INT32_CPU_PERCENT:
 		pr_func(" %-20.20s %" PRId32 "%s\n", setting->name,
 			setting->u.int32, show_type ? " (int32_t)" : "");
 		break;
 	case TYPE_ID_UINT64:
+	case TYPE_ID_UINT64_TIME:
 		pr_func(" %-20.20s %" PRIu64 "%s\n", setting->name,
 			setting->u.uint64, show_type ? " (uint64_t)" : "");
 		break;
@@ -87,6 +92,7 @@ static void stress_setting_show_setting(
 			stress_uint64_to_str(tmp, sizeof(tmp), setting->u.uint64, 1, false),
 			show_type ? " (uint64_t)" : "");
 		break;
+	case TYPE_ID_UINT64_BYTES:
 	case TYPE_ID_UINT64_BYTES_FS:
 	case TYPE_ID_UINT64_BYTES_VM:
 		pr_func(" %-20.20s %s %s\n", setting->name,
@@ -107,6 +113,7 @@ static void stress_setting_show_setting(
 			stress_uint64_to_str(tmp, sizeof(tmp), (uint64_t)setting->u.size, 1, false),
 			show_type ? " (size_t)" : "");
 		break;
+	case TYPE_ID_SIZE_T_BYTES:
 	case TYPE_ID_SIZE_T_BYTES_FS:
 	case TYPE_ID_SIZE_T_BYTES_VM:
 		pr_func(" %-20.20s %s %s\n", setting->name,
@@ -152,14 +159,15 @@ static int stress_setting_cmp(const void *p1, const void *p2)
 	const stress_setting_t *s1 = *(stress_setting_t * const *)p1;
 	const stress_setting_t *s2 = *(stress_setting_t * const *)p2;
 
-	return strcmp(s1->name, s2->name);
+	return shim_strcmp(s1->name, s2->name);
 }
 
 void stress_setting_show(void)
 {
 	stress_setting_t *setting;
 	stress_setting_t **settings;
-	size_t i, n;
+	size_t i;
+	size_t n;
 
 	if (!(g_opt_flags & OPT_FLAGS_SETTINGS))
 		return;
@@ -167,6 +175,9 @@ void stress_setting_show(void)
 	pr_inf("stress-ng settings:\n");
 	for (n = 0, setting = setting_head; setting; setting = setting->next)
 		n++;
+
+	if (!n)
+		return;
 
 	settings = (stress_setting_t **)calloc(n, sizeof(*settings));
 	if (UNLIKELY(!settings))
@@ -186,10 +197,11 @@ void stress_setting_dbg(const char *name)
 {
 	stress_setting_t *setting;
 	stress_setting_t **settings;
-	size_t i, n;
+	size_t i;
+	size_t n;
 
 	for (n = 0, setting = setting_head; setting; setting = setting->next) {
-		if (strcmp(setting->stressor_name, name) == 0)
+		if (shim_strcmp(setting->stressor_name, name) == 0)
 			n++;
 	}
 
@@ -201,8 +213,8 @@ void stress_setting_dbg(const char *name)
 		return;
 
 	pr_dbg("%s: %zu setting%s:\n", name, n, n == 1 ? "" : "s");
-	for (i = 0, setting = setting_head; setting; setting = setting->next) {
-		if (strcmp(setting->stressor_name, name) == 0)
+	for (i = 0, setting = setting_head; (i < n) && setting; setting = setting->next) {
+		if (shim_strcmp(setting->stressor_name, name) == 0)
 			settings[i++] = setting;
 	}
 	shim_qsort(settings, n, sizeof(*settings), stress_setting_cmp);
@@ -220,28 +232,39 @@ static int stress_setting_generic_set(
 	const char *stressor_name,
 	const char *name,
 	const stress_type_id_t type_id,
-	const void *value,
-	const bool global)
+	const void *value)
 {
 	stress_setting_t *setting;
+	bool new_setting = true;
 
 	if (!value) {
 		(void)fprintf(stderr, "invalid setting '%s' value address (null)\n", name);
 		_exit(EXIT_NOT_SUCCESS);
 	}
-	setting = (stress_setting_t *)calloc(1, sizeof *setting);
-	if (UNLIKELY(!setting))
-		goto err;
+	if (!name) {
+		(void)fprintf(stderr, "invalid setting name (null)\n");
+		_exit(EXIT_NOT_SUCCESS);
+	}
+
+	for (setting = setting_head; setting; setting = setting->next) {
+		if ((shim_strcmp(setting->stressor_name, stressor_name) == 0) &&
+		    (shim_strcmp(setting->name, name) == 0)) {
+			new_setting = false;
+			break;
+		}
+	}
+
+	if (!setting) {
+		setting = (stress_setting_t *)calloc(1, sizeof *setting);
+		if (UNLIKELY(!setting))
+			goto err;
+	}
 
 	setting->stressor_name = stressor_name;
 	setting->name = name;
 	setting->item = g_item_current;
 	setting->type_id = type_id;
-	setting->global = global;
-	if (!setting->name) {
-		free(setting);
-		goto err;
-	}
+	setting->global = !shim_strcmp(stressor_name, "global");
 
 	switch (type_id) {
 	case TYPE_ID_UINT8:
@@ -257,21 +280,29 @@ static int stress_setting_generic_set(
 		setting->u.int16 = *(const int16_t *)value;
 		break;
 	case TYPE_ID_UINT32:
+	case TYPE_ID_UINT32_TIME:
+		setting->u.uint32 = *(const uint32_t *)value;
+		break;
+	case TYPE_ID_INT32_CPU_PERCENT:
 		setting->u.uint32 = *(const uint32_t *)value;
 		break;
 	case TYPE_ID_INT32:
+	case TYPE_ID_INT32_TIME:
 		setting->u.int32 = *(const int32_t *)value;
 		break;
-	case TYPE_ID_UINT64_BYTES_FS_PERCENT:
 	case TYPE_ID_UINT64:
+	case TYPE_ID_UINT64_BYTES:
 	case TYPE_ID_UINT64_BYTES_FS:
+	case TYPE_ID_UINT64_BYTES_FS_PERCENT:
 	case TYPE_ID_UINT64_BYTES_VM:
+	case TYPE_ID_UINT64_TIME:
 		setting->u.uint64 = *(const uint64_t *)value;
 		break;
 	case TYPE_ID_INT64:
 		setting->u.int64 = *(const int64_t *)value;
 		break;
 	case TYPE_ID_SIZE_T:
+	case TYPE_ID_SIZE_T_BYTES:
 	case TYPE_ID_SIZE_T_BYTES_FS:
 	case TYPE_ID_SIZE_T_BYTES_FS_PERCENT:
 	case TYPE_ID_SIZE_T_BYTES_VM:
@@ -293,6 +324,8 @@ static int stress_setting_generic_set(
 		setting->u.off = *(const off_t *)value;
 		break;
 	case TYPE_ID_STR:
+		if (setting->u.str)
+			free(setting->u.str);
 		setting->u.str = stress_const_optdup((const char *)value);
 		if (!setting->u.str) {
 			free(setting);
@@ -310,12 +343,14 @@ static int stress_setting_generic_set(
 	stress_setting_show_setting(setting, pr_dbg, true);
 #endif
 
-	if (setting_tail) {
-		setting_tail->next = setting;
-	} else {
-		setting_head = setting;
+	if (new_setting) {
+		if (setting_tail) {
+			setting_tail->next = setting;
+		} else {
+			setting_head = setting;
+		}
+		setting_tail = setting;
 	}
-	setting_tail = setting;
 
 	return 0;
 err:
@@ -334,7 +369,7 @@ int stress_setting_set(
 	const stress_type_id_t type_id,
 	const void *value)
 {
-	return stress_setting_generic_set(stressor_name, name, type_id, value, false);
+	return stress_setting_generic_set(stressor_name, name, type_id, value);
 }
 
 /*
@@ -346,7 +381,7 @@ int stress_setting_global_set(
 	const stress_type_id_t type_id,
 	const void *value)
 {
-	return stress_setting_generic_set("global", name, type_id, value, true);
+	return stress_setting_generic_set("global", name, type_id, value);
 }
 
 /*
@@ -365,7 +400,7 @@ bool stress_setting_get(const char *name, void *value)
 		if (found && ((setting->item != g_item_current) && (!setting->global)))
 			break;
 
-		if (!strcmp(setting->name, name)) {
+		if (!shim_strcmp(setting->name, name)) {
 			switch (setting->type_id) {
 			case TYPE_ID_UINT8:
 				set = true;
@@ -384,16 +419,24 @@ bool stress_setting_get(const char *name, void *value)
 				*(int16_t *)value = setting->u.int16;
 				break;
 			case TYPE_ID_UINT32:
+			case TYPE_ID_UINT32_TIME:
 				set = true;
 				*(uint32_t *)value = setting->u.uint32;
 				break;
 			case TYPE_ID_INT32:
+			case TYPE_ID_INT32_TIME:
+				set = true;
+				*(int32_t *)value = setting->u.int32;
+				break;
+			case TYPE_ID_INT32_CPU_PERCENT:
 				set = true;
 				*(int32_t *)value = setting->u.int32;
 				break;
 			case TYPE_ID_UINT64:
+			case TYPE_ID_UINT64_BYTES:
 			case TYPE_ID_UINT64_BYTES_FS:
 			case TYPE_ID_UINT64_BYTES_VM:
+			case TYPE_ID_UINT64_TIME:
 				set = true;
 				*(uint64_t *)value = setting->u.uint64;
 				break;
@@ -406,6 +449,7 @@ bool stress_setting_get(const char *name, void *value)
 				*(int64_t *)value = setting->u.int64;
 				break;
 			case TYPE_ID_SIZE_T:
+			case TYPE_ID_SIZE_T_BYTES:
 			case TYPE_ID_SIZE_T_BYTES_FS:
 			case TYPE_ID_SIZE_T_BYTES_VM:
 			case TYPE_ID_SIZE_T_METHOD:

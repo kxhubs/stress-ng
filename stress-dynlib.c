@@ -33,6 +33,7 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_LIB_DL) &&	\
+    defined(HAVE_SIGLONGJMP) &&	\
     !defined(BUILD_STATIC)
 
 static sigjmp_buf jmp_env;
@@ -120,7 +121,8 @@ static void NORETURN MLOCKED_TEXT stress_segvhandler(int signum)
 static int stress_dynlib(stress_args_t *args)
 {
 	void *handles[MAX_LIBNAMES];
-	NOCLOBBER double count = 0.0, duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double duration = 0.0;
 	double rate;
 
 	(void)shim_memset(handles, 0, sizeof(handles));
@@ -190,16 +192,29 @@ tidy:
 
 	return EXIT_SUCCESS;
 }
+
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-major"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+
+	STRESS_EX_LIBRARY("dl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dynlib_info = {
 	.stressor = stress_dynlib,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_dynlib_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_OS,
 	.help = help,
-	.unimplemented_reason = "built without dynamic library libdl support"
+	.unimplemented_reason = "built without siglongjmp() or dynamic library libdl support"
 };
 #endif

@@ -71,7 +71,7 @@ static int stress_personality(stress_args_t *args)
 
 	failed = (bool *)calloc(n, sizeof(*failed));
 	if (!failed) {
-		pr_inf_skip("%s: cannot allocate %zu boolean flags%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu boolean flags failed%s, skipping stressor\n",
 			args->name, n, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -84,7 +84,8 @@ static int stress_personality(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		size_t i, fails = 0;
+		size_t i;
+		size_t fails = 0;
 
 		for (i = 0; i < n; i++) {
 			const unsigned long int p = personalities[i];
@@ -132,12 +133,22 @@ static int stress_personality(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("personality"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_personality_info = {
 	.stressor = stress_personality,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.supported = stress_personality_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_personality_info = {

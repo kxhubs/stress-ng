@@ -97,7 +97,8 @@ static int stress_mlockmany_child(stress_args_t *args, void *context)
 {
 	stress_pid_t *s_pids;
 	int ret;
-#if defined(RLIMIT_MEMLOCK)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_MEMLOCK)
 	struct rlimit rlim;
 #endif
 	size_t mlock_size, mlockmany_procs = UNSET_MLOCKMANY_PROCS;
@@ -124,20 +125,21 @@ static int stress_mlockmany_child(stress_args_t *args, void *context)
 
 	s_pids = stress_sync_s_pids_mmap(mlockmany_procs);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu PIDs failed%s, skipping stressor\n",
 			args->name, mlockmany_procs, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 
-#if defined(RLIMIT_MEMLOCK)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_MEMLOCK)
 	ret = getrlimit(RLIMIT_MEMLOCK, &rlim);
 	if (ret < 0) {
-		mlock_size = 8 * MB;
+		mlock_size = 8 * STRESS_MB;
 	} else {
 		mlock_size = rlim.rlim_cur;
 	}
 #else
-	mlock_size = args->page_size * 1024;
+	mlock_size = args->page_size * STRESS_KB;
 #endif
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
@@ -145,11 +147,13 @@ static int stress_mlockmany_child(stress_args_t *args, void *context)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
+		stress_memory_info_t info;
 		unsigned int n;
-		size_t shmall, freemem, totalmem, freeswap, totalswap, last_freeswap, last_totalswap;
+		size_t last_freeswap;
 
 		stress_sync_init_pids(s_pids, mlockmany_procs);
-		stress_memory_limits_get(&shmall, &freemem, &totalmem, &last_freeswap, &last_totalswap);
+		stress_memory_info_get(&info);
+		last_freeswap = info.freeswap;
 
 		for (n = 0; LIKELY(stress_continue(args) && (n < mlockmany_procs)); n++) {
 			pid_t pid;
@@ -160,15 +164,15 @@ static int stress_mlockmany_child(stress_args_t *args, void *context)
 				break;
 			}
 
-			stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+			stress_memory_info_get(&info);
 
 			/* We detected swap being used, bail out */
-			if (last_freeswap > freeswap)
+			if (last_freeswap > info.freeswap)
 				break;
 
 			/* Keep track of expanding free swap space */
-			if (freeswap > last_freeswap)
-				last_freeswap = freeswap;
+			if (info.freeswap > last_freeswap)
+				last_freeswap = info.freeswap;
 
 			pid = fork();
 			if (pid == 0) {
@@ -192,9 +196,9 @@ static int stress_mlockmany_child(stress_args_t *args, void *context)
 				/* unlock all mlocked memory */
 				shim_munlockall();
 
-				stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+				stress_memory_info_get(&info);
 				/* We detected swap being used, bail out */
-				if (last_freeswap > freeswap)
+				if (last_freeswap > info.freeswap)
 					_exit(0);
 
 				while (mmap_size > args->page_size) {
@@ -280,11 +284,25 @@ static int stress_mlockmany(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_mlockmany_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("mlock"),
+	STRESS_EX_SYSCALL("mlockall"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munlock"),
+	STRESS_EX_SYSCALL("munlockall"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mlockmany_info = {
 	.stressor = stress_mlockmany,
 	.classifier = CLASS_VM | CLASS_OS | CLASS_PATHOLOGICAL,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

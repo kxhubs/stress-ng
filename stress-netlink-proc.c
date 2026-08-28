@@ -51,7 +51,9 @@ static const stress_help_t help[] = {
 #if defined (__linux__) && 		\
     defined(HAVE_LINUX_CONNECTOR_H) &&	\
     defined(HAVE_LINUX_NETLINK_H) &&	\
-    defined(HAVE_LINUX_CN_PROC_H)
+    defined(HAVE_LINUX_CN_PROC_H) &&	\
+    defined(HAVE_SYS_UIO_H) &&		\
+    defined(HAVE_IOVEC)
 
 #ifndef LINUX_VERSION_CODE
 #define LINUX_VERSION_CODE KERNEL_VERSION(2,0,0)
@@ -279,11 +281,20 @@ static int stress_netlink_proc(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("recv"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_netlink_proc_info = {
 	.stressor = stress_netlink_proc,
 	.supported = stress_netlink_proc_supported,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_netlink_proc_info = {

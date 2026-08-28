@@ -141,6 +141,7 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_timermix_timer_action(int sig, siginfo
 	size_t i;
 
 	(void)sig;
+	(void)siginfo;
 	(void)ucontext;
 
 	if (sigpending(&mask) == 0)
@@ -158,6 +159,9 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_timermix_timer_action(int sig, siginfo
 		stress_timer_info_t *info = (stress_timer_info_t *)siginfo->si_value.sival_ptr;
 		info->count++;
 	}
+#elif defined(__gnu_hurd__)
+	/* Currently no ptr field to use */
+	(void)siginfo;
 #else
 	if (LIKELY(siginfo && siginfo->si_ptr)) {
 		stress_timer_info_t *info = (stress_timer_info_t *)siginfo->si_ptr;
@@ -299,7 +303,8 @@ static int stress_timermix(stress_args_t *args)
 	int rc = EXIT_SUCCESS;
 	size_t i;
 	bool timer_created = false;
-	double t_start, duration = 0.0;
+	double t_start;
+	double duration = 0.0;
 
 	s_args = args;
 
@@ -382,8 +387,18 @@ static int stress_timermix(stress_args_t *args)
 	stress_timermix_itimer_set(&itimer);
 	for (i = 0; i < SIZEOF_ARRAY(itimer_info); i++) {
 		if (setitimer(itimer_info[i].itimer_id, &itimer, NULL) < 0) {
-			pr_fail("%s: setitimer failed, errno=%d (%s)\n",
-				args->name, errno, strerror(errno));
+#if defined(__CYGWIN__)
+			/*
+			 *  Cygwin don't currently support SIGVTALRM or
+			 *  SIGPROF so silently ignore EINVALs on these
+			 *  for now.
+			 *  https://github.com/ColinIanKing/stress-ng/issues/618
+			 */
+			if (errno == EINVAL)
+				continue;
+#endif
+			pr_fail("%s: setitimer using %s failed, errno=%d (%s)\n",
+				args->name, itimer_info[i].itimer_name, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			goto stop_timers;
 		}
@@ -439,15 +454,19 @@ stop_timers:
 #if defined(EXERCISE_ITIMER)
 	/* stop itimers */
 	for (i = 0; i < SIZEOF_ARRAY(itimer_info); i++) {
+#if !defined(__gnu_hurd__)
 		double rate;
 		char str[80];
+#endif
 
 		(void)shim_memset(&itimer, 0, sizeof(itimer));
 		(void)setitimer(itimer_info[i].itimer_id, &itimer, NULL);
 
+#if !defined(__gnu_hurd__)
 		(void)snprintf(str, sizeof(str), "%s ticks per sec", itimer_info[i].itimer_name);
 		rate = (duration > 0.0) ? (double)itimer_info[i].count / duration : 0.0;
 		stress_metrics_set(args, str, rate, STRESS_METRIC_HARMONIC_MEAN);
+#endif
 	}
 #endif
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -455,12 +474,30 @@ stop_timers:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("timer_create"),
+	STRESS_EX_SYSCALL("timer_delete"),
+	STRESS_EX_SYSCALL("timer_settime"),
+	STRESS_EX_SYSCALL("setitimer"),
+	STRESS_EX_SYSCALL("sched_yield"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_timermix_info = {
 	.stressor = stress_timermix,
 	.classifier = CLASS_SIGNAL | CLASS_INTERRUPT | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = TIMER_INFO_SIZE + ITIMER_INFO_SIZE
+	.max_metrics_items = TIMER_INFO_SIZE + ITIMER_INFO_SIZE,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_timermix_info = {

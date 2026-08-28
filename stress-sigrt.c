@@ -43,17 +43,20 @@ static int stress_sigrt(stress_args_t *args)
 {
 	stress_pid_t *s_pids;
 	union sigval s ALIGN64;
-	int i, rc = EXIT_SUCCESS;
+	int i;
+	int rc = EXIT_SUCCESS;
 	stress_metrics_t *stress_sigrt_metrics;
 	size_t stress_sigrt_metrics_size = sizeof(*stress_sigrt_metrics) * MAX_RTSIGS;
-	double count, duration, rate;
+	double count;
+	double duration;
+	double rate;
 
 	stress_sigrt_metrics = (stress_metrics_t *)
 		stress_mmap_populate(NULL, stress_sigrt_metrics_size,
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (stress_sigrt_metrics == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu bytes%s, errno=%d (%s), "
+		pr_inf("%s: mmap %zu bytes failed%s, errno=%d (%s), "
 			"skipping stressor\n",
 			args->name, stress_sigrt_metrics_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -62,7 +65,7 @@ static int stress_sigrt(stress_args_t *args)
 	stress_memory_anon_name_set(stress_sigrt_metrics, stress_sigrt_metrics_size, "metrics");
 	s_pids = (stress_pid_t *)calloc((size_t)MAX_RTSIGS, sizeof(*s_pids));
 	if (!s_pids) {
-		pr_inf_skip("%s: failed to allocate array of %zu pids%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate array of %zu pids failed%s, skipping stressor\n",
 			args->name, (size_t)MAX_RTSIGS, stress_memory_free_get());
 		(void)munmap((void *)stress_sigrt_metrics, stress_sigrt_metrics_size);
 		return EXIT_NO_RESOURCE;
@@ -83,11 +86,8 @@ static int stress_sigrt(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	for (i = 0; i < MAX_RTSIGS; i++) {
-again:
-		s_pids[i].pid = fork();
+		s_pids[i].pid = stress_retry_fork(args, 0);
 		if (s_pids[i].pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto reap;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -192,11 +192,26 @@ reap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("stack"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("sigqueue"),
+	STRESS_EX_SYSCALL("sigwaitinfo"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigrt_info = {
 	.stressor = stress_sigrt,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigrt_info = {

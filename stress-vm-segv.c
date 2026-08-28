@@ -110,11 +110,8 @@ static int stress_vm_segv(stress_args_t *args)
 			return EXIT_NO_RESOURCE;
 		}
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args))) {
 				(void)close(fd[0]);
 				(void)close(fd[1]);
@@ -126,7 +123,8 @@ again:
 			(void)close(fd[1]);
 			return EXIT_NO_RESOURCE;
 		} else if (pid > 0) {
-			int status, msg;
+			int status;
+			int msg;
 			ssize_t rret;
 
 			(void)close(fd[1]);
@@ -205,9 +203,22 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("vmalloc"),
+
+#if defined(HAVE_MPROTECT) &&	\
+    defined(PROT_READ)
+	STRESS_EX_SYSCALL("mprotect"),
+#endif
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vm_segv_info = {
 	.stressor = stress_vm_segv,
 	.classifier = CLASS_VM | CLASS_MEMORY | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

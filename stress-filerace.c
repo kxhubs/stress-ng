@@ -850,7 +850,8 @@ static void stress_filerace_fchdir(const int fd, const char *filename)
 	VOID_RET(int, chdir(cwdpath));
 }
 
-#if defined(MS_ASYNC) &&	\
+#if defined(HAVE_SIGLONGJMP) &&	\
+    defined(MS_ASYNC) &&	\
     defined(MS_SYNC) &&		\
     defined(HAVE_FALLOCATE) &&	\
     defined(FALLOC_FL_ZERO_RANGE)
@@ -863,8 +864,8 @@ static void NORETURN MLOCKED_TEXT stress_filerace_mmap_sigbus_handler(int signum
 
 static void stress_filerace_mmap(const int fd, const char *filename)
 {
-	NOCLOBBER void *ptr;
-	NOCLOBBER size_t mmap_size;
+	void * CLOBBERED ptr;
+	CLOBBERED size_t mmap_size;
 	off_t offset;
 	struct sigaction new_action, old_sigbus_action, old_sigsegv_action;
 
@@ -1121,7 +1122,8 @@ static void stress_filerace_sendfile_fd(const int fd, const char *filename)
 #if defined(HAVE_NAME_TO_HANDLE_AT)
 static void stress_filerace_name_to_handle_at(const int fd, const char *filename)
 {
-	struct file_handle fhp, *handle;
+	struct file_handle fhp;
+	struct file_handle *handle;
 	int mount_id = 0;
 	const int dir_fd = (*filename == '.') ? AT_FDCWD : 0;
 
@@ -1165,9 +1167,7 @@ static const stress_filerace_fops_t stress_filerace_fops[] = {
 #endif
 	stress_filerace_fchmod,
 	stress_filerace_fchown,
-#if defined(F_GETFL)
 	stress_filerace_fcntl,
-#endif
 #if defined(HAVE_FSYNC)
 	stress_filerace_fsync,
 #endif
@@ -1295,7 +1295,8 @@ static const stress_filerace_fops_t stress_filerace_fops[] = {
 #endif
 	stress_filerace_chdir,
 	stress_filerace_fchdir,
-#if defined(MS_ASYNC) &&	\
+#if defined(HAVE_SIGLONGJMP) &&	\
+    defined(MS_ASYNC) &&	\
     defined(MS_SYNC) &&		\
     defined(HAVE_FALLOCATE) &&	\
     defined(FALLOC_FL_ZERO_RANGE)
@@ -1595,7 +1596,8 @@ static int stress_filerace(stress_args_t *args)
 	int rc = EXIT_SUCCESS;
 	char pathname[PATH_MAX - 256];
 	stress_pid_t s_pids[MAX_FILERACE_PROCS];
-	size_t i, children = 0;
+	size_t i;
+	size_t children = 0;
 	size_t filerace_procs = DEFAULT_FILERACE_PROCS;
 
 	stress_sync_init_pids(s_pids, MAX_FILERACE_PROCS);
@@ -1619,7 +1621,7 @@ static int stress_filerace(stress_args_t *args)
 	stress_fs_temp_dir_args(args, pathname, sizeof(pathname));
 	if (mkdir(pathname, S_IRWXU) < 0) {
 		if (errno != EEXIST) {
-			pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
+			pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 				args->name, pathname, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
@@ -1663,10 +1665,101 @@ tidy_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("page-faults-major"),
+
+	STRESS_EX_SYSCALL("access"),
+	STRESS_EX_SYSCALL("chdir"),
+	STRESS_EX_SYSCALL("chmod"),
+	STRESS_EX_SYSCALL("chown"),
+	STRESS_EX_SYSCALL("creat"),
+#if defined(HAVE_FACCESSAT)
+	STRESS_EX_SYSCALL("faccessat"),
+#endif
+#if defined(HAVE_FALLOCATE)
+	STRESS_EX_SYSCALL("fallocate"),
+#endif
+	STRESS_EX_SYSCALL("fchdir"),
+	STRESS_EX_SYSCALL("fchmod"),
+	STRESS_EX_SYSCALL("fchown"),
+#if defined(F_GETFL)
+	STRESS_EX_SYSCALL("fcntl"),
+#endif
+#if defined(HAVE_FDATASYNC)
+	STRESS_EX_SYSCALL("fdatasync"),
+#endif
+#if defined(HAVE_FLOCK)
+	STRESS_EX_SYSCALL("flock"),
+#endif
+	STRESS_EX_SYSCALL("fstat"),
+#if defined(HAVE_FSYNC)
+	STRESS_EX_SYSCALL("fsync"),
+#endif
+	STRESS_EX_SYSCALL("ftruncate"),
+#if defined(HAVE_FUTIMES)
+	STRESS_EX_SYSCALL("futimes"),
+#endif
+#if defined(__linux__) &&	\
+    defined(__NR_getdents)
+	STRESS_EX_SYSCALL("getdents"),
+#endif
+	STRESS_EX_SYSCALL("lchown"),
+#if defined(HAVE_LOCKF)
+	STRESS_EX_SYSCALL("lockf"),
+#endif
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("lstat"),
+#if defined(HAVE_NAME_TO_HANDLE_AT)
+	STRESS_EX_SYSCALL("name_to_handle_at"),
+#endif
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_POSIX_FADVISE)
+	STRESS_EX_SYSCALL("posix_fadvise"),
+#endif
+#if defined(HAVE_POSIX_FALLOCATE)
+	STRESS_EX_SYSCALL("posix_fallocate"),
+#endif
+#if defined(HAVE_PREAD)
+	STRESS_EX_SYSCALL("pread"),
+#endif
+#if defined(HAVE_PWRITE)
+	STRESS_EX_SYSCALL("pwrite"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+#if defined(HAVE_READAHEAD)
+	STRESS_EX_SYSCALL("readahead"),
+#endif
+	STRESS_EX_SYSCALL("readlink"),
+#if defined(HAVE_READLINKAT)
+	STRESS_EX_SYSCALL("readlinkat"),
+#endif
+	STRESS_EX_SYSCALL("rename"),
+	STRESS_EX_SYSCALL("rmdir"),
+#if defined(HAVE_SENDFILE)
+	STRESS_EX_SYSCALL("sendfile"),
+#endif
+	STRESS_EX_SYSCALL("stat"),
+#if defined(HAVE_STATX)
+	STRESS_EX_SYSCALL("statx"),
+#endif
+	STRESS_EX_SYSCALL("truncate"),
+	STRESS_EX_SYSCALL("unlink"),
+#if defined(HAVE_UTIMES)
+	STRESS_EX_SYSCALL("utimes"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_LIBRARY("acl"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_filerace_info = {
 	.stressor = stress_filerace,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_NONE,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

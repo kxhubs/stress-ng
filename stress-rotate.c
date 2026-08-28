@@ -40,16 +40,6 @@ static double stress_rotate_all(stress_args_t *args, const bool verify, bool *su
 #define put_uint64_(x)	stress_put_uint64(x)
 #define put_uint128_(x)	stress_put_uint128(x)
 
-#if defined(HAVE_INT128_T)
-static __uint128_t stress_mwc128(void)
-{
-	const uint64_t hi = stress_mwc64();
-	const uint64_t lo = stress_mwc64();
-
-	return ((__uint128_t)hi << 64) | lo;
-}
-#endif
-
 /*
  *  stress_{ror|rol}{size}helper()
  *	helper function to perform looped rotates, note that
@@ -73,7 +63,6 @@ stress_ ## fname ## size ## helper(stress_args_t *args, type *checksum)\
 	put_uint ## size ## _(*checksum);			\
 								\
 	t1 = stress_time_now();					\
-PRAGMA_UNROLL_N(8)						\
 	for (i = 0; i < ROTATE_LOOPS; i++) {			\
 		v0 = rotate_macro ## size(v0);			\
 		v1 = rotate_macro ## size(v1);			\
@@ -234,8 +223,19 @@ static const char *stress_rotate_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-        { OPT_rotate_method, "rotate-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_rotate_method },
+        { OPT_rotate_method, "rotate-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_rotate_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-shift"),
+	STRESS_EX_FEATURE("frontend-bound-bandwidth"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("registers"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_rotate_info = {
@@ -244,5 +244,6 @@ const stressor_info_t stress_rotate_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_rotate_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(stress_rotate_funcs),
+	.exercises = exercises,
 };

@@ -87,7 +87,8 @@ static inline int stress_getdents_rand(
 {
 	int ret = -ENOSYS;
 	const size_t n = SIZEOF_ARRAY(getdents_funcs);
-	size_t i, j = stress_mwc32modn(n);
+	size_t i;
+	size_t j = stress_mwc32modn(n);
 
 	for (i = 0; i < n; i++) {
 		const stress_getdents_func func = getdents_funcs[j];
@@ -113,12 +114,12 @@ static inline int stress_getdents_rand(
  *  stress_gendent_offset()
  *	increment ptr by offset
  */
-static inline void *stress_gendent_offset(void *ptr, const int offset)
+static inline const void *stress_gendent_offset(const void *ptr, const int offset)
 {
 	register uintptr_t u = (uintptr_t)ptr;
 
 	u += (uintptr_t)offset;
-	return (void *)u;
+	return (const void *)u;
 }
 
 #if defined(HAVE_GETDENTS)
@@ -135,7 +136,9 @@ static int stress_getdents_dir(
 	double *duration,
 	double *count)
 {
-	int fd, rc = 0, nread;
+	int fd;
+	int rc = 0;
+	int nread;
 	struct shim_linux_dirent *buf;
 	unsigned int buf_sz;
 	const size_t page_size = args->page_size;
@@ -163,7 +166,7 @@ static int stress_getdents_dir(
 	VOID_RET(int, shim_getdents((unsigned int)fd, buf, 0));
 
 	do {
-		struct shim_linux_dirent *ptr = buf;
+		const struct shim_linux_dirent *ptr = buf;
 		const struct shim_linux_dirent *end;
 		double t;
 
@@ -186,15 +189,14 @@ static int stress_getdents_dir(
 		if (!recurse || (depth < 1))
 			continue;
 
-		end = (struct shim_linux_dirent *)stress_gendent_offset((void *)buf, nread);
+		end = (const struct shim_linux_dirent *)stress_gendent_offset((void *)buf, nread);
 		while (ptr < end) {
 			const struct shim_linux_dirent *d = ptr;
 			unsigned char d_type;
 
 			if ((d->d_reclen <= 0) || (ptr + d->d_reclen > end))
 				break;
-		       
-			d_type = (unsigned char)*((char *)ptr + d->d_reclen - 1);
+			d_type = (unsigned char)*((const char *)ptr + d->d_reclen - 1);
 			if (d_type == SHIM_DT_DIR &&
 			    !stress_fs_filename_dotty(d->d_name)) {
 				char newpath[PATH_MAX];
@@ -204,7 +206,7 @@ static int stress_getdents_dir(
 				if (rc < 0)
 					goto exit_free;
 			}
-			ptr = (struct shim_linux_dirent *)stress_gendent_offset((void *)ptr, d->d_reclen);
+			ptr = (const struct shim_linux_dirent *)stress_gendent_offset((const void *)ptr, d->d_reclen);
 		}
 	} while (stress_continue(args));
 exit_free:
@@ -230,7 +232,8 @@ static int stress_getdents64_dir(
 	double *duration,
 	double *count)
 {
-	int fd, rc = 0;
+	int fd;
+	int rc = 0;
 	struct shim_linux_dirent64 *buf;
 	unsigned int buf_sz;
 	const size_t page_size = args->page_size;
@@ -258,7 +261,7 @@ static int stress_getdents64_dir(
 	VOID_RET(int, shim_getdents64((unsigned int)fd, buf, 0));
 
 	do {
-		struct shim_linux_dirent64 *ptr = (struct shim_linux_dirent64 *)buf;
+		const struct shim_linux_dirent64 *ptr = (struct shim_linux_dirent64 *)buf;
 		const struct shim_linux_dirent64 *end;
 		int nread;
 		double t;
@@ -279,7 +282,7 @@ static int stress_getdents64_dir(
 		if (!recurse || (depth < 1))
 			continue;
 
-		end = (struct shim_linux_dirent64 *)stress_gendent_offset((void *)buf, nread);
+		end = (const struct shim_linux_dirent64 *)stress_gendent_offset((void *)buf, nread);
 		while (ptr < end) {
 			const struct shim_linux_dirent64 *d = ptr;
 
@@ -295,7 +298,7 @@ static int stress_getdents64_dir(
 				if (rc < 0)
 					goto exit_free;
 			}
-			ptr = (struct shim_linux_dirent64 *)stress_gendent_offset((void *)ptr, d->d_reclen);
+			ptr = (const struct shim_linux_dirent64 *)stress_gendent_offset((const void *)ptr, d->d_reclen);
 		}
 	} while (stress_continue(args));
 exit_free:
@@ -314,7 +317,9 @@ exit_close:
 static int stress_getdent(stress_args_t *args)
 {
 	const int bad_fd = stress_fs_bad_fd_get();
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
@@ -349,11 +354,25 @@ static int stress_getdent(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(HAVE_GETDENTS)
+	STRESS_EX_SYSCALL("getdents"),
+#endif
+#if defined(HAVE_GETDENTS64)
+	STRESS_EX_SYSCALL("getdents64"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_getdent_info = {
 	.stressor = stress_getdent,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_getdent_info = {

@@ -48,14 +48,8 @@ typedef struct {
 	uint64_t regs[16];
 } smi_regs_t;
 
-/*
- *  Stringification macros
- */
-#define XSTRINGIFY(s) STRINGIFY(s)
-#define STRINGIFY(s) #s
-
 #define SAVE_REG(r, reg, idx)			\
-	__asm__ __volatile__("mov %%" XSTRINGIFY(reg) ", %0\n" : "+m" (r.regs[idx]))
+	__asm__ __volatile__("mov %%" STRESS_XSTRINGIFY(reg) ", %0\n" : "+m" (r.regs[idx]))
 
 static const char * const reg_names[] = {
 	"r8",	/* 0 */
@@ -159,15 +153,17 @@ static int stress_smi_count(const int cpus, uint64_t *count)
  */
 static int stress_smi(stress_args_t *args)
 {
+	uint64_t s1 = 0;
+	uint64_t val;
 	int rc = EXIT_SUCCESS;
 	bool already_loaded = false;
 	bool read_msr_ok = true;
 	bool load_module = false;
-	uint64_t s1 = 0, val;
 	double d1 = 0.0;
 	const int cpus = stress_cpus_online_get();
 #if defined(STRESS_ARCH_X86_64)
-	static smi_regs_t r1, r2;
+	static smi_regs_t r1;
+	static smi_regs_t r2;
 #endif
 
 	/*
@@ -275,12 +271,21 @@ static int stress_smi(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("ioport-write"),
+	STRESS_EX_FEATURE("registers"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_smi_info = {
 	.stressor = stress_smi,
 	.classifier = CLASS_CPU | CLASS_PATHOLOGICAL,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.supported = stress_smi_supported
+	.supported = stress_smi_supported,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_smi_info = {

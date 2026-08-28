@@ -115,6 +115,9 @@ static const uint64_t all_flags =
 #if defined(CLONE_PIDFD_AUTOKILL)
 	CLONE_PIDFD_AUTOKILL |
 #endif
+#if defined(CLONE_AUTOREAP)
+	 CLONE_AUTOREAP |
+#endif
 	0;
 
 
@@ -219,6 +222,9 @@ static const uint64_t flags[] = {
 #endif
 #if defined(CLONE_PIDFD_AUTOKILL)
 	CLONE_PIDFD_AUTOKILL,
+#endif
+#if defined(CLONE_AUTOREAP)
+	 CLONE_AUTOREAP,
 #endif
 };
 
@@ -405,7 +411,7 @@ static int clone_func(void *arg)
 		stress_lock_release(metrics->lock);
 	}
 
-	if ((g_opt_flags & OPT_FLAGS_OOM_AVOID) && stress_memory_low_check((size_t)(1 * MB))) {
+	if ((g_opt_flags & OPT_FLAGS_OOM_AVOID) && stress_memory_low_check((size_t)(1 * STRESS_MB))) {
 		return 0;
 	}
 
@@ -505,7 +511,7 @@ static int stress_clone_child(stress_args_t *args, void *context)
 
 	do {
 		const bool low_mem_reap = ((g_opt_flags & OPT_FLAGS_OOM_AVOID) &&
-					   stress_memory_low_check((size_t)(1 * MB)));
+					   stress_memory_low_check((size_t)(1 * STRESS_MB)));
 
 		if (!low_mem_reap && (clones.length < clone_max)) {
 			static size_t idx;
@@ -514,7 +520,9 @@ static int stress_clone_child(stress_args_t *args, void *context)
 			const uint32_t rnd = stress_mwc32();
 			uint64_t flag;
 			const bool try_clone3 = rnd >> 31;
-			pid_t child_tid = -1, parent_tid = -1;
+			pid_t child_tid = -1;
+			pid_t parent_tid = -1;
+
 			clone_info = stress_clone_new();
 			if (!clone_info)
 				break;
@@ -651,12 +659,34 @@ static int stress_clone(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+	STRESS_EX_SYSCALL("clone"),
+#if defined(__NR_exit) && \
+    defined(HAVE_SYSCALL)
+	STRESS_EX_SYSCALL("exit"),
+#endif
+#if defined(HAVE_SETNS)
+	STRESS_EX_SYSCALL("setns"),
+#endif
+#if defined(HAVE_MODIFY_LDT) &&	\
+    defined(__NR_modify_ldt)
+	STRESS_EX_SYSCALL("modify_ldt"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_clone_info = {
 	.stressor = stress_clone,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_clone_info = {

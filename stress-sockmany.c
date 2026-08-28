@@ -88,10 +88,11 @@ static int OPTIMIZE3 stress_sockmany_client(
 	stress_sock_fds_t *sock_fds,
 	const char *sockmany_if)
 {
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 	static int fds[SOCKET_MANY_FDS];
 	int i;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 
@@ -126,19 +127,19 @@ retry:
 				stress_sockmany_cleanup(fds, i);
 				return EXIT_FAILURE;
 			}
-
 			if (UNLIKELY(stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 								AF_INET, sockmany_port, sockmany_if,
 								&addr, &addr_len, NET_ADDR_ANY) < 0)) {
 				return EXIT_FAILURE;
 			}
-			if (UNLIKELY(connect(fds[i], addr, addr_len) < 0)) {
+			if (UNLIKELY(connect(fds[i], (struct sockaddr *)&addr, addr_len) < 0)) {
 				int save_errno = errno;
 
 				(void)close(fds[i]);
 
 				/* Run out of resources? */
-				if (save_errno == EADDRNOTAVAIL)
+				if ((save_errno == EADDRNOTAVAIL) ||
+				    (save_errno == ECONNREFUSED))
 					break;
 
 				(void)shim_usleep(10000);
@@ -181,16 +182,19 @@ static int OPTIMIZE3 stress_sockmany_server(
 	const size_t sockmany_max_size)
 {
 	char ALIGN64 buf[MAX_SOCKMANY_MAX_SIZE];
-	int fd;
+	struct sockaddr_storage addr;
 	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
 	uint64_t msgs = 0;
 	int rc = EXIT_SUCCESS;
+	int fd;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (stress_signal_stop_stressing(args->name, SIGALRM) < 0) {
 		rc = EXIT_FAILURE;
 		goto die;
 	}
+
+retry:
 	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		rc = stress_exit_status(errno);
 		pr_fail("%s: socket failed, errno=%d (%s)\n",
@@ -227,14 +231,22 @@ static int OPTIMIZE3 stress_sockmany_server(
 		(void)setsockopt(fd, SOL_TCP, TCP_USER_TIMEOUT, &timeout_ms, sizeof(timeout_ms));
 	}
 #endif
-
 	if (stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 				       AF_INET, sockmany_port, sockmany_if,
 				       &addr, &addr_len, NET_ADDR_ANY) < 0) {
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
+		if (LIKELY(errno == EADDRINUSE)) {
+			if (stress_continue(args)) {
+				(void)close(fd);
+				stress_random_small_sleep();
+				goto retry;
+			}
+			rc = EXIT_NO_RESOURCE;
+			goto die_close;
+		}
 		rc = stress_exit_status(errno);
 		pr_fail("%s: bind failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
@@ -319,12 +331,15 @@ die:
  */
 static int stress_sockmany(stress_args_t *args)
 {
-	pid_t pid, ppid = getppid();
 	stress_sock_fds_t *sock_fds;
-	int sockmany_port = DEFAULT_SOCKET_MANY_PORT;
-	int rc = EXIT_SUCCESS, reserved_port, parent_cpu;
 	char *sockmany_if = NULL;
 	size_t sockmany_max_size = DEFAULT_SOCKMANY_MAX_SIZE;
+	pid_t pid;
+	const pid_t ppid = getppid();
+	int sockmany_port = DEFAULT_SOCKET_MANY_PORT;
+	int rc = EXIT_SUCCESS;
+	int reserved_port;
+	int parent_cpu;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -367,7 +382,7 @@ static int stress_sockmany(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (sock_fds == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu byte shared memory%s, errno=%d (%s), "
+		pr_inf("%s: mmap %zu byte shared memory failed%s, errno=%d (%s), "
 			"skipping stressor\n",
 			args->name, sizeof(*sock_fds),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -383,12 +398,10 @@ static int stress_sockmany(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto finish;
@@ -419,10 +432,27 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("getsockname"),
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("recv"),
+	STRESS_EX_SYSCALL("send"),
+	STRESS_EX_SYSCALL("shutdown"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sockmany_info = {
 	.stressor = stress_sockmany,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

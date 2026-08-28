@@ -1282,8 +1282,31 @@ static const char *stress_funccall_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_funccall_method, "funccall-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_funccall_method },
+	{ OPT_funccall_method, "funccall-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_funccall_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+#if (defined(HAVE_Decimal32) ||		\
+     defined(HAVE_Decimal64) ||		\
+     defined(HAVE_Decimal128)) &&	\
+    !defined(HAVE_COMPILER_CLANG)
+	STRESS_EX_FEATURE("fp-decimal"),
+#endif
+
+	STRESS_EX_FEATURE("fp"),
+#if defined(HAVE_COMPLEX_H)
+	STRESS_EX_FEATURE("fp-complex"),
+#endif
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_funccall_info = {
@@ -1292,5 +1315,6 @@ const stressor_info_t stress_funccall_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_funccall_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_funccall_methods),
+	.exercises = exercises,
 };

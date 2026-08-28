@@ -29,8 +29,8 @@
 #include <linux/memfd.h>
 #endif
 
-#define MIN_MEMFD_BYTES		(2 * MB)
-#define DEFAULT_MEMFD_BYTES	(256 * MB)
+#define MIN_MEMFD_BYTES		(2 * STRESS_MB)
+#define DEFAULT_MEMFD_BYTES	(256 * STRESS_MB)
 
 #define MIN_MEMFD_FDS		(8)
 #define MAX_MEMFD_FDS		(4096)
@@ -170,21 +170,27 @@ static inline bool stress_memfd_check(
  */
 static int stress_memfd_child(stress_args_t *args, void *context)
 {
-	int *fds, rc = EXIT_SUCCESS;
+	int *fds;
+	int rc = EXIT_SUCCESS;
 	register int fd;
 	void **maps;
 	int32_t i;
 	const size_t page_size = args->page_size;
 	const size_t min_size = 2 * page_size;
-	size_t size, flag_index = 0;
+	size_t size;
+	size_t flag_index = 0;
 	size_t memfd_bytes = DEFAULT_MEMFD_BYTES;
 	int32_t memfd_fds = DEFAULT_MEMFD_FDS;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 	bool memfd_madvise = false;
 	bool memfd_mlock = false;
 	bool memfd_numa = false;
 	bool memfd_zap_pte = false;
-	char filename_rndstr[64], filename_unusual[64], filename_pid[64];
+	char filename_rndstr[64];
+	char filename_unusual[64];
+	char filename_pid[64];
 #if defined(HAVE_LINUX_MEMPOLICY_H)
 	stress_numa_mask_t *numa_mask = NULL;
 	stress_numa_mask_t *numa_nodes = NULL;
@@ -243,13 +249,13 @@ static int stress_memfd_child(stress_args_t *args, void *context)
 
 	fds = (int *)calloc(memfd_fds, sizeof(*fds));
 	if (!fds) {
-		pr_inf("%s: cannot allocate fds buffer, errno=%d (%s)\n",
+		pr_inf("%s: allocate fds buffer failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
 	maps = (void **)calloc(memfd_fds, sizeof(*maps));
 	if (!maps) {
-		pr_inf("%s: cannot allocate maps buffer, errno=%d (%s)\n",
+		pr_inf("%s: allocate maps buffer failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		free(fds);
 		return EXIT_NO_RESOURCE;
@@ -560,10 +566,7 @@ buf_unmap:
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 	free(maps);
 	free(fds);
@@ -580,12 +583,25 @@ static int stress_memfd(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_memfd_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("memfd_create"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_memfd_info = {
 	.stressor = stress_memfd,
 	.classifier = CLASS_OS | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_memfd_info = {

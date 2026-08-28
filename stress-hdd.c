@@ -31,15 +31,15 @@
 #include <utime.h>
 #endif
 
-#define MIN_HDD_BYTES		(1 * MB)
+#define MIN_HDD_BYTES		(1 * STRESS_MB)
 #define MAX_HDD_BYTES		(MAX_FILE_LIMIT)
-#define DEFAULT_HDD_BYTES	(1 * GB)
+#define DEFAULT_HDD_BYTES	(1 * STRESS_GB)
 
 #define MIN_HDD_WRITE_SIZE	(1)
-#define MAX_HDD_WRITE_SIZE	(4 * MB)
-#define DEFAULT_HDD_WRITE_SIZE	(64 * 1024)
+#define MAX_HDD_WRITE_SIZE	(4 * STRESS_MB)
+#define DEFAULT_HDD_WRITE_SIZE	(64 * STRESS_KB)
 
-#define BUF_ALIGNMENT		(4096)
+#define BUF_ALIGNMENT		(4 * STRESS_KB)
 #define HDD_IO_VEC_MAX		(16)		/* Must be power of 2 */
 
 #define MIN_HDD_SLEEP		(0)
@@ -155,7 +155,8 @@ static const stress_hdd_opts_t hdd_opts[] = {
 #if defined(HAVE_FDATASYNC)
 	{ "fdatasync",	HDD_OPT_FDATASYNC, 0, 0, 0 },
 #endif
-#if defined(HAVE_SYS_UIO_H)
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC)
 	{ "iovec",	HDD_OPT_IOVEC, 0, 0, 0 },
 #endif
 #if defined(HAVE_SYNCFS)
@@ -213,6 +214,7 @@ static ssize_t stress_hdd_write(
 	errno = 0;
 	if (hdd_flags & HDD_OPT_IOVEC) {
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PWRITEV2) ||	\
      defined(HAVE_PWRITEV) ||	\
      defined(HAVE_WRITEV))
@@ -344,6 +346,7 @@ static ssize_t stress_hdd_read(
 	errno = 0;
 	if (hdd_flags & HDD_OPT_IOVEC) {
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PREADV2) ||	\
      defined(HAVE_PREADV) ||	\
      defined(HAVE_READV))
@@ -424,6 +427,7 @@ static ssize_t stress_hdd_read(
 static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 {
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PREADV2) ||	\
      defined(HAVE_PREADV) ||	\
      defined(HAVE_READV))
@@ -434,6 +438,7 @@ static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 	(void)fd;
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PREADV2) ||	\
      defined(HAVE_PREADV) ||	\
      defined(HAVE_READV))
@@ -445,6 +450,7 @@ static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
 	/* invalid preadv2 fd */
 	VOID_RET(ssize_t, preadv2(-1, iov, HDD_IO_VEC_MAX, 0, 0));
@@ -459,6 +465,7 @@ static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
 	/* invalid preadv fd */
 	VOID_RET(ssize_t, preadv(-1, iov, HDD_IO_VEC_MAX, 0));
@@ -470,6 +477,7 @@ static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_READV)
 	/* invalid readv fd */
 	VOID_RET(ssize_t, readv(-1, iov, HDD_IO_VEC_MAX));
@@ -486,6 +494,7 @@ static void stress_hdd_invalid_read(const int fd, uint8_t *buf)
 static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
 {
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PWRITEV2) ||	\
      defined(HAVE_PWRITEV) ||	\
      defined(HAVE_WRITEV))
@@ -496,6 +505,7 @@ static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
 	(void)fd;
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     (defined(HAVE_PWRITEV2) ||	\
      defined(HAVE_PWRITEV) ||	\
      defined(HAVE_WRITEV))
@@ -509,6 +519,7 @@ static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
 	/* invalid pwritev2 fd */
 	VOID_RET(ssize_t, pwritev2(-1, iov, HDD_IO_VEC_MAX, 0, 0));
@@ -523,6 +534,7 @@ static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
 	/* invalid pwritev fd */
 	VOID_RET(ssize_t, pwritev(-1, iov, HDD_IO_VEC_MAX, 0));
@@ -534,6 +546,7 @@ static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_WRITEV)
 	/* invalid writev fd */
 	VOID_RET(ssize_t, writev(-1, iov, HDD_IO_VEC_MAX));
@@ -551,7 +564,10 @@ static void stress_hdd_invalid_write(const int fd, uint8_t *buf)
  */
 static void stress_hdd_opts(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
 {
-	char *str, *ptr, *token;
+	char *str;
+	char *ptr;
+	char *token;
+	char *saveptr = NULL;
 	int hdd_flags = 0;
 	int hdd_oflags = 0;
 	bool opts_set = false;
@@ -567,12 +583,12 @@ static void stress_hdd_opts(const char *opt_name, const char *opt_arg, stress_ty
 		stress_no_return();
 	}
 
-	for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
+	for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
 		size_t i;
 		bool opt_ok = false;
 
 		for (i = 0; i < SIZEOF_ARRAY(hdd_opts); i++) {
-			if (!strcmp(token, hdd_opts[i].opt)) {
+			if (!shim_strcmp(token, hdd_opts[i].opt)) {
 				const int exclude = hdd_flags & hdd_opts[i].exclude;
 
 				if (exclude) {
@@ -683,21 +699,30 @@ static int stress_hdd(stress_args_t *args)
 {
 	uint8_t *buf = NULL;
 	void *alloc_buf;
-	uint64_t i, min_size, size_remainder;
+	uint64_t i;
+	uint64_t min_size;
+	uint64_t size_remainder;
 	int rc = EXIT_FAILURE;
 	ssize_t ret;
 	char filename[PATH_MAX];
-	size_t opt_index = 0, max_extents = 0;
-	uint64_t hdd_bytes, hdd_bytes_total = DEFAULT_HDD_BYTES;
+	size_t opt_index = 0;
+	size_t max_extents = 0;
+	uint64_t hdd_bytes;
+	uint64_t hdd_bytes_total = DEFAULT_HDD_BYTES;
 	uint64_t hdd_write_size = DEFAULT_HDD_WRITE_SIZE;
 	unsigned int hdd_sleep = DEFAULT_HDD_SLEEP;
 	const uint32_t instance = args->instance;
-	int hdd_flags = 0, hdd_oflags = 0;
-	int flags, fadvise_flags;
+	int hdd_flags = 0;
+	int hdd_oflags = 0;
+	int flags;
+	int fadvise_flags;
 	bool opts_set = false;
-	double hdd_read_bytes = 0.0, hdd_read_duration = 0.0;
-	double hdd_write_bytes = 0.0, hdd_write_duration = 0.0;
-	double hdd_rdwr_bytes, hdd_rdwr_duration;
+	double hdd_read_bytes = 0.0;
+	double hdd_read_duration = 0.0;
+	double hdd_write_bytes = 0.0;
+	double hdd_write_duration = 0.0;
+	double hdd_rdwr_bytes;
+	double hdd_rdwr_duration;
 	double rate;
 
 	(void)stress_setting_get("hdd-flags", &hdd_flags);
@@ -788,7 +813,7 @@ static int stress_hdd(stress_args_t *args)
 	ret = posix_memalign((void **)&alloc_buf, BUF_ALIGNMENT, (size_t)hdd_write_size);
 	if (ret || !alloc_buf) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: cannot allocate %zu byte buffer%s\n",
+		pr_err("%s: allocate failed for %zu byte buffer%s\n",
 			args->name, (size_t)hdd_write_size,
 			stress_memory_free_get());
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -799,7 +824,7 @@ static int stress_hdd(stress_args_t *args)
 	/* Work around lack of posix_memalign */
 	alloc_buf = malloc((size_t)hdd_write_size + BUF_ALIGNMENT);
 	if (!alloc_buf) {
-		pr_err("%s: cannot allocate %zu byte buffer%s\n",
+		pr_err("%s: allocate failed for %zu byte buffer%s\n",
 			args->name, (size_t)hdd_write_size + BUF_ALIGNMENT,
 			stress_memory_free_get());
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -842,7 +867,7 @@ static int stress_hdd(stress_args_t *args)
 		if ((fd = open(filename, flags, S_IRUSR | S_IWUSR)) < 0) {
 			if ((errno == ENOSPC) || (errno == ENOMEM))
 				continue;	/* Retry */
-			pr_fail("%s: open %s failed, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			/*
 			 *  Unlink is necessary as Linux can leave stale files
@@ -1135,17 +1160,17 @@ finish:
 
 	rate = (hdd_read_duration > 0.0) ? hdd_read_bytes / hdd_read_duration : 0.0;
 	stress_metrics_set(args, "MB/sec read rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (hdd_write_duration > 0.0) ? hdd_write_bytes / hdd_write_duration : 0.0;
 	stress_metrics_set(args, "MB/sec write rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	hdd_rdwr_duration = hdd_read_duration + hdd_write_duration;
 	hdd_rdwr_bytes = hdd_read_bytes + hdd_write_bytes;
 
 	rate = (hdd_rdwr_duration > 0.0) ? hdd_rdwr_bytes / hdd_rdwr_duration : 0.0;
 	stress_metrics_set(args, "MB/sec read/write combined rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	stress_metrics_set(args, "max extents per file",
 		(double)max_extents, STRESS_METRIC_GEOMETRIC_MEAN);
@@ -1157,10 +1182,23 @@ finish:
 
 static const stress_opt_t opts[] = {
 	{ OPT_hdd_bytes,      "hdd-bytes",      TYPE_ID_UINT64_BYTES_FS, MIN_HDD_BYTES, MAX_HDD_BYTES, NULL },
-	{ OPT_hdd_opts,       "hdd-opts",       TYPE_ID_CALLBACK, 0, 0, (void *)stress_hdd_opts },
+	{ OPT_hdd_opts,       "hdd-opts",       TYPE_ID_CALLBACK, 0, 0, stress_hdd_opts },
 	{ OPT_hdd_sleep,      "hdd-sleep",	TYPE_ID_UINT, MIN_HDD_SLEEP, MAX_HDD_SLEEP, NULL },
 	{ OPT_hdd_write_size, "hdd-write-size", TYPE_ID_UINT64_BYTES_FS, MIN_HDD_WRITE_SIZE, MAX_HDD_WRITE_SIZE, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_hdd_info = {
@@ -1168,5 +1206,6 @@ const stressor_info_t stress_hdd_info = {
 	.classifier = CLASS_IO | CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

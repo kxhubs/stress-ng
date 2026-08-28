@@ -99,7 +99,9 @@ static void stress_switch_delay(
 	 *  delay infrequently (at THRESH_FREQ HZ)
 	 */
 	if (++i >= threshold) {
-		double overrun, overrun_by, t;
+		double overrun;
+		double overrun_by;
+		double t;
 		const uint64_t counter = stress_bogo_get(args);
 
 		i = 0;
@@ -133,7 +135,8 @@ static int stress_switch_pipe(
 	const uint64_t threshold)
 {
 	pid_t pid;
-	int pipefds[2], parent_cpu;
+	int pipefds[2];
+	int parent_cpu;
 	size_t buf_size;
 	char *buf;
 
@@ -167,7 +170,7 @@ static int stress_switch_pipe(
 			PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (UNLIKELY(buf == MAP_FAILED)) {
-		pr_fail("%s: failed to mmap %zu byte pipe read/write buffer%s, errno=%d (%s)\n",
+		pr_fail("%s: mmap %zu byte pipe read/write buffer failed%s, errno=%d (%s)\n",
 			args->name, buf_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)close(pipefds[0]);
@@ -192,12 +195,10 @@ static int stress_switch_pipe(
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		(void)close(pipefds[0]);
 		(void)close(pipefds[1]);
 		if (UNLIKELY(!stress_continue(args)))
@@ -295,7 +296,9 @@ static int stress_switch_sem_sysv(
 	const uint64_t threshold)
 {
 	pid_t pid;
-	int i, sem_id = -1, parent_cpu;
+	int i;
+	int sem_id = -1;
+	int parent_cpu;
 
 	for (i = 0; i < 100; i++) {
 		key_t key_id = (key_t)stress_mwc16();
@@ -313,12 +316,10 @@ static int stress_switch_sem_sysv(
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -433,12 +434,10 @@ static int stress_switch_mq(
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -506,11 +505,14 @@ static const stress_switch_method_t stress_switch_methods[] = {
  */
 static int stress_switch(stress_args_t *args)
 {
-	uint64_t switch_freq = 0, switch_delay, threshold;
-	size_t switch_method = 0, i;
+	uint64_t switch_freq = 0;
+	uint64_t switch_delay;
+	uint64_t threshold;
+	size_t switch_method = 0;
+	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(stress_switch_methods); i++) {
-		if (strcmp(stress_switch_methods[i].name, "pipe") == 0) {
+		if (shim_strcmp(stress_switch_methods[i].name, "pipe") == 0) {
 			switch_method = i;
 			break;
 		}
@@ -533,8 +535,30 @@ static const char *stress_switch_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_switch_freq,   "switch-freq",   TYPE_ID_UINT64, 0, STRESS_NANOSECOND, NULL },
-	{ OPT_switch_method, "switch-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)stress_switch_method },
+	{ OPT_switch_method, "switch-method", TYPE_ID_SIZE_T_METHOD, 0, 1, stress_switch_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("frontend-bound-bandwidth"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("rcu-utilization"),
+	STRESS_EX_FEATURE("registers"),
+	STRESS_EX_FEATURE("tlb-flush"),
+
+	/* Default */
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_switch_info = {
@@ -542,5 +566,6 @@ const stressor_info_t stress_switch_info = {
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

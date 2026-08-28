@@ -223,7 +223,10 @@ static int stress_seccomp_set_huge_filter(stress_args_t *args)
 	struct sock_fprog huge_prog;
 	const size_t bits = sizeof(huge_prog.len) * 8 > 31 ? 31 : sizeof(huge_prog.len) * 8;
 	const size_t n_max = ((size_t)1 << bits) - 1;
-	size_t i, j, n = 32, max = 1;
+	size_t i;
+	size_t j;
+	size_t n = 32;
+	size_t max = 1;
 
 	(void)shim_memset(&huge_prog, 0, sizeof(huge_prog));
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
@@ -414,13 +417,13 @@ static int stress_seccomp(stress_args_t *args)
 			if (stress_seccomp_set_filter(args, allow_write, do_random) < 0)
 				_exit(EXIT_FAILURE);
 			if ((fd = open("/dev/null", O_WRONLY)) < 0) {
-				pr_err("%s: open failed on /dev/null, "
+				pr_err("%s: open '/dev/null' failed, "
 					"errno=%d (%s)\n",
 					args->name, errno, strerror(errno));
 				_exit(EXIT_FAILURE);
 			}
 			if (write(fd, "TEST\n", 5) < 0) {
-				pr_err("%s: write to /dev/null failed, "
+				pr_err("%s: write to '/dev/null' failed, "
 					"errno=%d (%s)\n",
 					args->name, errno, strerror(errno));
 				rc = EXIT_FAILURE;
@@ -474,12 +477,25 @@ static int stress_seccomp(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("prctl"),
+	STRESS_EX_SYSCALL("seccomp"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_seccomp_info = {
 	.stressor = stress_seccomp,
 	.supported = stress_seccomp_supported,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_seccomp_info = {

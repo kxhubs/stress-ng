@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 #include "core-filesystem.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
@@ -34,9 +35,9 @@
 #include <sys/sendfile.h>
 #endif
 
-#define MIN_IOMIX_BYTES		(1 * MB)
+#define MIN_IOMIX_BYTES		(1 * STRESS_MB)
 #define MAX_IOMIX_BYTES		(MAX_FILE_LIMIT)
-#define DEFAULT_IOMIX_BYTES	(1 * GB)
+#define DEFAULT_IOMIX_BYTES	(1 * STRESS_GB)
 
 typedef void (*stress_iomix_func)(stress_args_t *args, const int fd, const char *fs_type, const off_t iomix_bytes);
 
@@ -131,7 +132,8 @@ static void stress_iomix_wr_seq_bursts(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn;
+		off_t ret;
+		off_t posn;
 		const int n = stress_mwc8();
 		int i;
 
@@ -202,7 +204,8 @@ static void stress_iomix_wr_rnd_bursts(
 			char buffer[512];
 			ssize_t rc;
 			const size_t len = 1 + (stress_mwc32() & (sizeof(buffer) - 1));
-			off_t ret, posn;
+			off_t ret;
+			off_t posn;
 
 			posn = stress_iomix_rnd_offset(iomix_bytes);
 			ret = lseek(fd, posn, SEEK_SET);
@@ -244,7 +247,8 @@ static void stress_iomix_wr_seq_slow(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn = 0;
+		off_t ret;
+		off_t posn = 0;
 
 		ret = lseek(fd, 0, SEEK_SET);
 		if (UNLIKELY(ret == (off_t)-1)) {
@@ -298,7 +302,8 @@ static void stress_iomix_rd_seq_bursts(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn;
+		off_t ret;
+		off_t posn;
 		const int n = stress_mwc8();
 		int i;
 
@@ -361,7 +366,8 @@ static void stress_iomix_rd_rnd_bursts(
 			char buffer[512];
 			ssize_t rc;
 			const size_t len = 1 + (stress_mwc32() & (sizeof(buffer) - 1));
-			off_t ret, posn;
+			off_t ret;
+			off_t posn;
 
 			posn = stress_iomix_rnd_offset(iomix_bytes);
 
@@ -403,7 +409,8 @@ static void stress_iomix_rd_seq_slow(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn = 0;
+		off_t ret;
+		off_t posn = 0;
 
 		ret = lseek(fd, 0, SEEK_SET);
 		if (UNLIKELY(ret == (off_t)-1)) {
@@ -580,7 +587,8 @@ static void stress_iomix_wr_bytes(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn = 0;
+		off_t ret;
+		off_t posn = 0;
 
 		ret = lseek(fd, 0, SEEK_SET);
 		if (UNLIKELY(ret == (off_t)-1)) {
@@ -624,7 +632,8 @@ static void stress_iomix_wr_rev_bytes(
 	const off_t iomix_bytes)
 {
 	do {
-		off_t ret, posn = iomix_bytes;
+		off_t ret;
+		off_t posn = iomix_bytes;
 
 		ret = lseek(fd, 0, SEEK_SET);
 		if (UNLIKELY(ret == (off_t)-1)) {
@@ -733,6 +742,10 @@ static void stress_iomix_inode_ioctl(
 
 	if (UNLIKELY(!stress_continue(args)))
 		return;
+
+	if (stress_ioctl_get_check(fd, FS_IOC_GETFLAGS, sizeof(int)) < 0)
+		pr_fail("%s: ioctl Fs_IOC_GETFLAGS, failed, not getting flags reliably\n", args->name);
+
 
 	ret = ioctl(fd, FS_IOC_GETFLAGS, &attr);
 	if (UNLIKELY(ret < 0))
@@ -1089,13 +1102,17 @@ static const stress_iomix_func iomix_funcs[] = {
  */
 static int stress_iomix(stress_args_t *args)
 {
-	int fd, ret;
+	int fd;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	char filename[PATH_MAX];
-	off_t iomix_bytes, iomix_bytes_total;
+	off_t iomix_bytes;
+	off_t iomix_bytes_total;
 	uint64_t iomix_bytes_u64 = DEFAULT_IOMIX_BYTES;
 	const size_t page_size = args->page_size;
 	size_t i;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	const char *fs_type;
 	int oflags = O_CREAT | O_RDWR;
 	bool iomix_bytes_shrunk = false;
@@ -1116,8 +1133,8 @@ static int stress_iomix(stress_args_t *args)
 
 	counter_lock = stress_lock_create("counter");
 	if (!counter_lock) {
-		pr_inf_skip("%s: failed to create counter lock. skipping stressor\n", args->name);
-		ret = EXIT_NO_RESOURCE;
+		pr_inf_skip("%s: create counter lock failed, skipping stressor\n", args->name);
+		rc = EXIT_NO_RESOURCE;
 		goto tidy_s_pids;
 	}
 
@@ -1142,15 +1159,15 @@ static int stress_iomix(stress_args_t *args)
 
 	ret = stress_fs_temp_dir_make_args(args);
 	if (ret < 0) {
-		ret = stress_exit_status(-ret);
+		rc = stress_exit_status(-ret);
 		goto lock_destroy;
 	}
 
 	(void)stress_fs_temp_filename_args(args,
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, oflags, S_IRUSR | S_IWUSR)) < 0) {
-		ret = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		rc = stress_exit_status(errno);
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto lock_destroy;
 	}
@@ -1165,6 +1182,10 @@ static int stress_iomix(stress_args_t *args)
 #endif
 		if (UNLIKELY(ret < 0)) {
 			switch (errno) {
+			case EINTR:
+				rc = EXIT_SUCCESS;
+				goto tidy;
+				break;
 			case EFBIG:
 			case ENOSPC:
 				if (iomix_bytes > (off_t)MIN_IOMIX_BYTES) {
@@ -1173,14 +1194,14 @@ static int stress_iomix(stress_args_t *args)
 				} else {
 					pr_fail("%s: fallocate failed, no free space, errno=%d (%s)%s, skipping stressor\n",
 						args->name, errno, strerror(errno), fs_type);
-					ret = EXIT_NO_RESOURCE;
+					rc = EXIT_NO_RESOURCE;
 					goto tidy;
 				}
 				break;
 			default:
 				pr_fail("%s: fallocate failed, errno=%d (%s)%s\n",
 					args->name, errno, strerror(errno), fs_type);
-				ret = EXIT_FAILURE;
+				rc = EXIT_FAILURE;
 				goto tidy;
 			}
 		}
@@ -1223,7 +1244,7 @@ static int stress_iomix(stress_args_t *args)
 		(void)shim_pause();
 	} while (stress_bogo_inc_lock(args, counter_lock, false));
 
-	ret = EXIT_SUCCESS;
+	rc = EXIT_SUCCESS;
 reap:
 	stress_kill_and_wait_many(args, s_pids, MAX_IOMIX_PROCS, SIGALRM, true);
 tidy:
@@ -1236,7 +1257,7 @@ lock_destroy:
 tidy_s_pids:
 	(void)stress_sync_s_pids_munmap(s_pids, MAX_IOMIX_PROCS);
 
-	return ret;
+	return rc;
 }
 
 static const stress_opt_t opts[] = {
@@ -1244,10 +1265,48 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("io-thermal"),
+
+#if defined(__linux__) &&	\
+    defined(__NR_cachestat)
+	STRESS_EX_SYSCALL("cachestat"),
+#endif
+#if defined(HAVE_COPY_FILE_RANGE)
+	STRESS_EX_SYSCALL("copy_file_range"),
+#endif
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("fdatasync"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("ioctl"),
+#endif
+	STRESS_EX_SYSCALL("lseek"),
+#if defined(HAVE_POSIX_FADVISE)
+	STRESS_EX_SYSCALL("posix_fadvise"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+#if defined(HAVE_READAHEAD)
+	STRESS_EX_SYSCALL("readahead"),
+#endif
+#if defined(HAVE_SENDFILE)
+	STRESS_EX_SYSCALL("sendfile"),
+#endif
+	STRESS_EX_SYSCALL("sync"),
+#if defined(HAVE_SYNC_FILE_RANGE)
+	STRESS_EX_SYSCALL("sync_file_range"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_iomix_info = {
 	.stressor = stress_iomix,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

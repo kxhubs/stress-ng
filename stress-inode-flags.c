@@ -155,7 +155,8 @@ static void stress_inode_flags_ioctl(
 	const int fd,
 	const int flag)
 {
-	int ret, attr;
+	int ret;
+	int attr;
 
 	if (UNLIKELY(!(keep_running && stress_continue(args))))
 		return;
@@ -199,7 +200,7 @@ static int stress_inode_flags_stressor(
 	const stress_data_t *data)
 {
 	size_t idx = 0;
-	char *file_name;
+	const char *file_name;
 #if defined(AT_EMPTY_PATH)
 	char *two_pages;
 
@@ -207,7 +208,7 @@ static int stress_inode_flags_stressor(
 #endif
 
 	/* Find basename */
-	file_name = strrchr(data->file_name, '/');
+	file_name = shim_strrchr(data->file_name, '/');
 	if (file_name)
 		file_name++;
 
@@ -278,7 +279,7 @@ static int stress_inode_flags_stressor(
 
 #if defined(AT_EMPTY_PATH)
 		/* Invalid size, E2BIG */
-		if (two_pages) 
+		if (two_pages)
 			VOID_RET(int, shim_file_getattr(data->dir_fd, NULL,
 				(struct shim_file_attr *)shim_assume_aligned(two_pages, 1),
 				args->page_size * 2, AT_EMPTY_PATH));
@@ -321,15 +322,18 @@ static int stress_inode_flags(stress_args_t *args)
 {
 	size_t i;
 	pthread_t pthreads[MAX_INODE_FLAG_THREADS];
-	int rc, ret[MAX_INODE_FLAG_THREADS], all_inode_flags;
+	int rc;
+	int ret[MAX_INODE_FLAG_THREADS];
+	int all_inode_flags;
 	stress_pthread_args_t pa[MAX_INODE_FLAG_THREADS];
 	stress_data_t data;
-	char tmp[PATH_MAX], file_name[PATH_MAX];
+	char tmp[PATH_MAX];
+	char file_name[PATH_MAX];
 	char *dir_name;
 
 	inode_flags_counter_lock = stress_lock_create("counter");
 	if (!inode_flags_counter_lock) {
-		pr_inf("%s: failed to create lock, skipping stressor\n", args->name);
+		pr_inf("%s: create lock failed, skipping stressor\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -359,14 +363,14 @@ static int stress_inode_flags(stress_args_t *args)
 
 	data.dir_fd = open(dir_name, O_RDONLY | O_DIRECTORY);
 	if (data.dir_fd < 0) {
-		pr_err("%s: cannot open %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, dir_name, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_unlink;
 	}
 	data.file_fd = open(file_name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 	if (data.file_fd < 0) {
-		pr_err("%s: cannot open %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, file_name, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_dir_fd;
@@ -423,10 +427,30 @@ tidy_lock:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("fsync"),
+#if defined(__NR_file_getattr)
+	STRESS_EX_SYSCALL("file_getattr"),
+#endif
+#if defined(__NR_file_setattr)
+	STRESS_EX_SYSCALL("file_setattr"),
+#endif
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_inode_flags_info = {
 	.stressor = stress_inode_flags,
 	.classifier = CLASS_OS | CLASS_FILESYSTEM,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_inode_flags_info = {

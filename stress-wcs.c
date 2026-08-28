@@ -66,22 +66,48 @@ typedef struct {
 } stress_wcs_method_info_t;
 
 /*
- *  stress_wcs_fill
+ *  stress_rndwstr_case()
+ *	generate upper or lower case (and misc chars) randomized strings, note
+ *	that upper must contain chars that are not in lower and visa-versa. Also
+ *	upper and lower must not contain '+'.
  */
-static void stress_wcs_fill(wchar_t *wcstr, const size_t len)
+static void OPTIMIZE3 stress_wrndstr_case(wchar_t *str, const size_t len, bool uppercase)
 {
-	register size_t i;
-	static const wchar_t letters[32] ALIGN64 = {
+	static const wchar_t upper[32] ALIGNED(64) = {
+		L'A', L'B', L'C', L'D', L'E', L'F', L'G', L'H',
+		L'I', L'J', L'K', L'L', L'M', L'N', L'O', L'P',
+		L'Q', L'R', L'S', L'T', L'U', L'V', L'W', L'X',
+		L'Y', L'Z', L'[', L']', L'^', L'_', L'/', L'-'
+	};
+	static const wchar_t lower[32] ALIGNED(64) = {
 		L'a', L'b', L'c', L'd', L'e', L'f', L'g', L'h',
 		L'i', L'j', L'k', L'l', L'm', L'n', L'o', L'p',
 		L'q', L'r', L's', L't', L'u', L'v', L'w', L'x',
-		L'y', L'z', L'~', L'+', L'!', L'#', L'*', L'+',
+		L'y', L'z', L'!', L'#', L'$', L'%', L'&', L'*',
 	};
 
-	for (i = 0; i < (len - 1); i++) {
-		*wcstr++ = letters[stress_mwc8() & 31];
+	register const wchar_t *alphabet;
+	register wchar_t *ptr;
+	register const wchar_t *ptr_end;
+	register const uint32_t mask = 0xc0000000;
+	register uint32_t v = stress_mwc32() | mask;
+
+	if (UNLIKELY(len == 0))
+		return;
+
+	alphabet = uppercase ? upper : lower;
+	ptr = str;
+	ptr_end = str + len - 1;
+
+	while (ptr < ptr_end) {
+		*ptr++ = alphabet[v & 0x1f];
+		v >>= 5;
+
+		/* out of random bits, get more... */
+		if (UNLIKELY(v == 3))
+			v = stress_mwc32() | mask;
 	}
-	*wcstr = L'\0';
+	*ptr = L'\0';
 }
 
 #if (defined(HAVE_WCSCASECMP) || 	\
@@ -176,11 +202,11 @@ static size_t stress_wcsncasecmp(stress_args_t *args, stress_wcs_args_t *info)
 		WCSCHK(info, 0 != test_wcsncasecmp(str2, str1, len2));
 		WCSCHK(info, 0 != test_wcsncasecmp(str1, str2, len1));
 
-		WCSCHK(info, 0 != test_wcsncasecmp(str1 + i, str1, len1));
-		WCSCHK(info, 0 != test_wcsncasecmp(str1, str1 + i, len1));
-		WCSCHK(info, 0 == test_wcsncasecmp(str1 + i, str1 + i, len1));
+		WCSCHK(info, 0 != test_wcsncasecmp(str1 + i, str1, len1 - i));
+		WCSCHK(info, 0 != test_wcsncasecmp(str1, str1 + i, len1 - i));
+		WCSCHK(info, 0 == test_wcsncasecmp(str1 + i, str1 + i, len1 - i));
 
-		WCSCHK(info, 0 != test_wcsncasecmp(str1 + i, str2, len1));
+		WCSCHK(info, 0 != test_wcsncasecmp(str1 + i, str2, len1 - i));
 		WCSCHK(info, 0 != test_wcsncasecmp(str2, str1 + i, len2));
 	}
 	stress_bogo_add(args, 9);
@@ -369,10 +395,10 @@ static size_t stress_wcschr(stress_args_t *args, stress_wcs_args_t *info)
 	register size_t i;
 
 	for (i = 0; LIKELY(stress_continue_flag() && (i < len1 - 1)); i++) {
-		WCSCHK(info, NULL == test_wcschr(str1, '_'));
+		WCSCHK(info, NULL == test_wcschr(str1, '+'));
 		WCSCHK(info, NULL != test_wcschr(str1, str1[0]));
 
-		WCSCHK(info, NULL == test_wcschr(str2, '_'));
+		WCSCHK(info, NULL == test_wcschr(str2, '+'));
 		WCSCHK(info, NULL != test_wcschr(str2, str2[0]));
 	}
 	stress_bogo_add(args, 4);
@@ -397,10 +423,10 @@ static size_t stress_wcsrchr(stress_args_t *args, stress_wcs_args_t *info)
 	register size_t i;
 
 	for (i = 0; LIKELY(stress_continue_flag() && (i < len1 - 1)); i++) {
-		WCSCHK(info, NULL == test_wcsrchr(str1, '_'));
+		WCSCHK(info, NULL == test_wcsrchr(str1, '+'));
 		WCSCHK(info, NULL != test_wcsrchr(str1, str1[0]));
 
-		WCSCHK(info, NULL == test_wcsrchr(str2, '_'));
+		WCSCHK(info, NULL == test_wcsrchr(str2, '+'));
 		WCSCHK(info, NULL != test_wcsrchr(str2, str2[0]));
 	}
 	stress_bogo_add(args, 4);
@@ -468,11 +494,11 @@ static size_t stress_wcsncmp(stress_args_t *args, stress_wcs_args_t *info)
 		WCSCHK(info, 0 != test_wcsncmp(str2, str1, len2));
 		WCSCHK(info, 0 != test_wcsncmp(str1, str2, len1));
 
-		WCSCHK(info, 0 != test_wcsncmp(str1 + i, str1, len1));
-		WCSCHK(info, 0 != test_wcsncmp(str1, str1 + i, len1));
-		WCSCHK(info, 0 == test_wcsncmp(str1 + i, str1 + i, len1));
+		WCSCHK(info, 0 != test_wcsncmp(str1 + i, str1, len1 - i));
+		WCSCHK(info, 0 != test_wcsncmp(str1, str1 + i, len1 - i));
+		WCSCHK(info, 0 == test_wcsncmp(str1 + i, str1 + i, len1 - i));
 
-		WCSCHK(info, 0 != test_wcsncmp(str1 + i, str2, len2));
+		WCSCHK(info, 0 != test_wcsncmp(str1 + i, str2, len1 - i));
 		WCSCHK(info, 0 != test_wcsncmp(str2, str1 + i, len2));
 	}
 	stress_bogo_add(args, 9);
@@ -685,12 +711,15 @@ static size_t stress_wcs_all(stress_args_t *args, stress_wcs_args_t *info)
  */
 static int stress_wcs(stress_args_t *args)
 {
-	size_t i, wcs_method = 0;
+	size_t i;
+	size_t wcs_method = 0;
 	const stress_wcs_method_info_t *wcs_method_info;
-	wchar_t ALIGN64 str1[STR1LEN], ALIGN64 str2[STR2LEN];
+	wchar_t ALIGN64 str1[STR1LEN];
+	wchar_t ALIGN64 str2[STR2LEN];
 	wchar_t strdst[STRDSTLEN];
 	stress_wcs_args_t info;
 	int metrics_count = 0;
+	bool toggle = false;
 
 	/* No wcs* functions available on this system? */
 	if (SIZEOF_ARRAY(wcs_methods) < 2)
@@ -708,7 +737,8 @@ static int stress_wcs(stress_args_t *args)
 	info.failed = false;
 	info.name = args->name;
 
-	stress_wcs_fill(info.str1, info.len1);
+	stress_wrndstr_case(info.str1, info.len1, toggle);
+	toggle = !toggle;
 	stress_zero_metrics(metrics, SIZEOF_ARRAY(metrics));
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
@@ -719,7 +749,8 @@ static int stress_wcs(stress_args_t *args)
 		register wchar_t *tmpptr;
 		register size_t tmplen;
 
-		stress_wcs_fill(info.str2, info.len2);
+		stress_wrndstr_case(info.str2, info.len2, toggle);
+		toggle = !toggle;
 		if (UNLIKELY(metrics_count++ > 1000)) {
 			double t;
 
@@ -765,8 +796,21 @@ static const char *stress_wcs_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_wcs_method, "wcs-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_wcs_method },
+	{ OPT_wcs_method, "wcs-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_wcs_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("string"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_wcs_info = {
@@ -775,5 +819,6 @@ const stressor_info_t stress_wcs_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(wcs_methods)
+	.max_metrics_items = SIZEOF_ARRAY(wcs_methods),
+	.exercises = exercises,
 };

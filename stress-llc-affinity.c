@@ -29,8 +29,8 @@
 
 #include <sched.h>
 
-#define MIN_LLC_SIZE	(4 * KB)
-#define MAX_LLC_SIZE	(4 * GB)
+#define MIN_LLC_SIZE	(4 * STRESS_KB)
+#define MAX_LLC_SIZE	(4 * STRESS_GB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"llc-affinity N",	"start N workers exercising low level cache over all CPUs" },
@@ -63,7 +63,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_64(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 
@@ -93,7 +94,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_64_ppc64_dcbst(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 
@@ -125,7 +127,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_64_ppc_dcbst(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 
@@ -156,7 +159,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_64_x86_clfsh(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 
@@ -187,7 +191,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_64_x86_clfshopt(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 
@@ -217,14 +222,16 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_n(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n, val++) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			*cptr = val;
@@ -242,14 +249,16 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_n_ppc64_dcbst(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n, val++) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			*cptr = val;
@@ -269,14 +278,16 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_n_ppc_dcbst(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n, val++) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			*cptr = val;
@@ -295,14 +306,16 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_n_x86_clfsh(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n, val++) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			*cptr = val;
@@ -321,14 +334,16 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_write_cache_line_n_x86_clfshopt(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	static uint64_t val = 0;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n, val++) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			*cptr = val;
@@ -346,7 +361,8 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_read_cache_line_64(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	register volatile uint64_t *ptr;
 
 	(void)cache_line_size;
@@ -374,13 +390,15 @@ static void TARGET_CLONES OPTIMIZE3 stress_llc_read_cache_line_n(
 	double *duration,
 	const size_t cache_line_size)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	register uint64_t *ptr;
 	const size_t n = cache_line_size / sizeof(uint64_t);
 
 	t1 = stress_time_now();
 	for (ptr = buf; ptr < buf_end; ptr += n) {
-		register uint64_t *cptr, *cptr_end;
+		register uint64_t *cptr;
+		register const uint64_t *cptr_end;
 
 		for (cptr = ptr, cptr_end = ptr + n; cptr < cptr_end; cptr++)
 			(void)*(volatile uint64_t *)cptr;
@@ -400,15 +418,24 @@ static int stress_llc_affinity(stress_args_t *args)
 	const uint32_t n_cpus = stress_affinity_cpus_get(&cpus, true);
 	const size_t page_size = args->page_size;
 	uint32_t cpu_idx = args->instance;
-	size_t llc_affinity_size = 0, cache_line_size = 64, mmap_sz;
+	size_t llc_affinity_size = 0;
+	size_t cache_line_size = 64;
+	size_t mmap_sz;
 	uint64_t *buf, *buf_end;
 	uint64_t affinity_changes = 0;
-	double write_duration, read_duration, rate, writes, reads, t_start, duration;
-	cache_line_func_t write_func, read_func;
+	double write_duration;
+	double read_duration;
+	double rate;
+	double writes;
+	double reads;
+	double t_start;
+	double duration;
+	cache_line_func_t read_func;
+	cache_line_func_t write_func;
 	bool llc_affinity_mlock = false;
 	bool llc_affinity_clflush = false;
 	bool llc_affinity_numa = false;
-	char *clflush_op = NULL;
+	const char *clflush_op = NULL;
 	long int n_numa_nodes = stress_numa_nodes();
 #if defined(HAVE_LINUX_MEMPOLICY_H)
         stress_numa_mask_t *numa_mask = NULL;
@@ -455,7 +482,7 @@ static int stress_llc_affinity(stress_args_t *args)
 	buf = (uint64_t *)stress_mmap_populate(NULL, mmap_sz, PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap region of %zu bytes%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap region of %zu bytes failed%s, errno=%d (%s), "
 			"skipping stressor\n", args->name, mmap_sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		stress_affinity_cpus_free(&cpus);
@@ -585,11 +612,11 @@ static int stress_llc_affinity(stress_args_t *args)
 
 	duration = stress_time_now() - t_start;
 
-	writes /= (double)MB;
+	writes /= (double)STRESS_MB;
 	rate = write_duration > 0.0 ? (double)writes / write_duration : 0.0;
 	stress_metrics_set(args, "MB per sec memory write rate",
 		rate, STRESS_METRIC_HARMONIC_MEAN);
-	reads /= (double)MB;
+	reads /= (double)STRESS_MB;
 	rate = read_duration > 0.0 ? (double)reads / read_duration : 0.0;
 	stress_metrics_set(args, "MB per sec memory read rate",
 		rate, STRESS_METRIC_HARMONIC_MEAN);
@@ -606,12 +633,24 @@ static int stress_llc_affinity(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("d-cache-ll-write"),
+	STRESS_EX_FEATURE("memory-bus"),
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_llc_affinity_info = {
 	.stressor = stress_llc_affinity,
 	.classifier = CLASS_CPU_CACHE,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

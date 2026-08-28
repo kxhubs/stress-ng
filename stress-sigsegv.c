@@ -42,7 +42,7 @@
 
 #define BAD_ADDR	((void *)(0x10))
 #define ADDR_PAGE_MASK(virt_addr, page_size)	\
-	(volatile uint8_t *)((uintptr_t)(virt_addr) & ~(page_size - 1))
+	(uint8_t * volatile)((uintptr_t)(virt_addr) & ~(page_size - 1))
 
 static const stress_help_t help[] = {
 	{ NULL,	"sigsegv N",	 "start N workers generating segmentation faults" },
@@ -54,14 +54,14 @@ static const stress_help_t help[] = {
 
 static sigjmp_buf jmp_env;
 #if defined(SA_SIGINFO)
-static volatile uint8_t *fault_addr;
-static volatile uint8_t *expected_addr;
+static uint8_t * volatile fault_addr;
+static uint8_t * volatile expected_addr;
 static volatile int signo;
 static volatile int code;
 #endif
 
 #if defined(__FreeBSD__) ||	\
-    defined(__NetNBSD__) ||	\
+    defined(__NetBSD__) ||	\
     defined(__OpenBSD__) ||	\
     defined(__sun__)
 #define MAX_MASK_SHIFT	(46)
@@ -275,7 +275,7 @@ static int stress_sigsegv(stress_args_t *args)
 #endif
 	static uint32_t mask_shift;
 	static uintptr_t mask, last_mask;
-	NOCLOBBER int rc = EXIT_FAILURE;
+	CLOBBERED int rc = EXIT_FAILURE;
 #if defined(SA_SIGINFO)
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #endif
@@ -292,7 +292,7 @@ static int stress_sigsegv(stress_args_t *args)
 	ro_ptr = (uint8_t *)mmap(NULL, args->page_size, PROT_READ,
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (ro_ptr == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte read only page%s, "
+		pr_inf_skip("%s: mmap %zu byte read only page failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, args->page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -304,7 +304,7 @@ static int stress_sigsegv(stress_args_t *args)
 	none_ptr = (uint8_t *)mmap(NULL, args->page_size, PROT_NONE,
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (none_ptr == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte PROT_NONE page%s, "
+		pr_inf_skip("%s: mmap %zu byte PROT_NONE page failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, args->page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -319,7 +319,7 @@ static int stress_sigsegv(stress_args_t *args)
 	guard_ptr = (uint8_t *)mmap(NULL, args->page_size, PROT_READ | PROT_WRITE,
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (guard_ptr == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte guard page%s, "
+		pr_inf_skip("%s: mmap %zu byte guard page failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, args->page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -401,6 +401,10 @@ static int stress_sigsegv(stress_args_t *args)
 			fault_addr = ADDR_PAGE_MASK(fault_addr, args->page_size);
 #endif
 			if (UNLIKELY(verify && (code != 128) && expected_addr && fault_addr &&
+#if defined(__CYGWIN__)
+				     /* Windows may return -1 if very large addresses are used. */
+				     (fault_addr != (void *)(uintptr_t)-1) &&
+#endif
 				     ((fault_addr < expected_addr) ||
 				      (fault_addr > (expected_addr + 8))))) {
 				pr_fail("%s: expecting fault address %p, got %p instead\n",
@@ -481,7 +485,7 @@ retry:
 				/* Illegal address passed to VDSO system call  */
 #if defined(SA_SIGINFO)
 				expected_addr = (uint8_t *)BAD_ADDR;
-				stress_cpu_cache_data_flush((char *)&expected_addr, (int)sizeof(*expected_addr));
+				stress_cpu_cache_data_flush((char *)shim_unvolatile_ptr(&expected_addr), (int)sizeof(*expected_addr));
 #endif
 				stress_sigsegv_vdso();
 				/*
@@ -496,7 +500,7 @@ retry:
 #if defined(SA_SIGINFO)
 				/* Write to read-only address */
 				expected_addr = (uint8_t *)ro_ptr;
-				stress_cpu_cache_data_flush((char *)&expected_addr, (int)sizeof(*expected_addr));
+				stress_cpu_cache_data_flush((char *)shim_unvolatile_ptr(&expected_addr), (int)sizeof(*expected_addr));
 #endif
 				*ro_ptr = 0;
 				goto retry;
@@ -577,13 +581,23 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("sigaction"),
+	STRESS_EX_SYSCALL("sigprocmask"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigsegv_info = {
 	.stressor = stress_sigsegv,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 #if defined(SA_SIGINFO)
 	.verify = VERIFY_OPTIONAL,
 #endif
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -592,7 +606,7 @@ const stressor_info_t stress_sigsegv_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

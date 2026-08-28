@@ -86,8 +86,8 @@ typedef void (*ipsec_func_t)(
 typedef void (*init_func_t)(IMB_MGR *p_mgr);
 
 typedef struct {
-	ipsec_func_t	func;
-	char 		*name;
+	const ipsec_func_t func;
+	const char 	*name;
 } stress_ipsec_funcs_t;
 
 typedef struct {
@@ -262,7 +262,7 @@ static void *stress_alloc_aligned(const size_t nmemb, const size_t size, const s
 
 	return aligned_alloc(alignment, sz);
 #elif defined(HAVE_MEMALIGN)
-	const size_t sz = nmemb * size; 
+	const size_t sz = nmemb * size;
 
 	return memalign(alignment, sz);
 #endif
@@ -282,7 +282,8 @@ static void stress_ipsec_sha(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	struct IMB_JOB *job;
 	uint8_t padding[16];
 	const size_t alloc_len = SHA_DIGEST_SIZE + (sizeof(padding) * 2);
@@ -327,7 +328,8 @@ static void stress_ipsec_des(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	struct IMB_JOB *job;
 
 	uint8_t *encoded;
@@ -384,7 +386,8 @@ static void stress_ipsec_cmac(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	struct IMB_JOB *job;
 
 	uint8_t key[16] ALIGNED(16);
@@ -439,7 +442,8 @@ static void stress_ipsec_ctr(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	struct IMB_JOB *job;
 
 	uint8_t *encoded;
@@ -497,7 +501,8 @@ static void stress_ipsec_hmac_md5(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	size_t i;
 	struct IMB_JOB *job;
 
@@ -568,7 +573,8 @@ static void stress_ipsec_hmac_sha1(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	size_t i;
 	struct IMB_JOB *job;
 
@@ -636,7 +642,8 @@ static void stress_ipsec_hmac_sha512(
 	const size_t data_len,
 	const int jobs)
 {
-	int j, jobs_done = 0;
+	int j;
+	int jobs_done = 0;
 	size_t i;
 	struct IMB_JOB *job;
 
@@ -882,10 +889,24 @@ static int stress_ipsec_mb(stress_args_t *args)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_ipsec_mb_feature, "ipsec-mb-feature", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_ipsec_mb_feature },
+	{ OPT_ipsec_mb_feature, "ipsec-mb-feature", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_ipsec_mb_feature },
 	{ OPT_ipsec_mb_jobs,    "ipsec-mb-jobs",    TYPE_ID_INT, 1, 65536, NULL },
-	{ OPT_ipsec_mb_method,  "ipsec-mb-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_ipsec_mb_method },
+	{ OPT_ipsec_mb_method,  "ipsec-mb-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_ipsec_mb_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+	STRESS_EX_FEATURE("cpu-vector"),
+
+	STRESS_EX_LIBRARY("IPSec_MB"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_ipsec_mb_info = {
@@ -893,7 +914,8 @@ const stressor_info_t stress_ipsec_mb_info = {
 	.supported = stress_ipsec_mb_supported,
 	.opts = opts,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 
@@ -906,9 +928,9 @@ static int stress_ipsec_mb_supported(const char *name)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_ipsec_mb_feature, "ipsec-mb-feature", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_ipsec_mb_feature, "ipsec-mb-feature", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	{ OPT_ipsec_mb_jobs,    "ipsec-mb-jobs",    TYPE_ID_INT, MIN_IPSEC_MB_JOBS, MAX_IPSEC_MB_JOBS, NULL },
-	{ OPT_ipsec_mb_method,  "ipsec-mb-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_ipsec_mb_method,  "ipsec-mb-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 
@@ -918,6 +940,6 @@ const stressor_info_t stress_ipsec_mb_info = {
 	.opts = opts,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE,
 	.help = help,
-	.unimplemented_reason = "built on non-x86-64 without IPSec MB library"
+	.unimplemented_reason = "built on non-x86-64 without IPSec MB library",
 };
 #endif

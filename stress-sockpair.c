@@ -69,10 +69,11 @@ PRAGMA_UNROLL_N(4)
  *	check data contains incrementing chars from val upwards
  */
 static inline int OPTIMIZE3 socket_pair_memchk(
-	uint8_t *buf,
+	const uint8_t *buf,
 	const size_t sz)
 {
-	register const uint8_t *ptr, *buf_end = buf + sz;
+	register const uint8_t *ptr;
+	register const uint8_t *buf_end = buf + sz;
 	register uint8_t checksum = 0;
 
 PRAGMA_UNROLL_N(4)
@@ -89,8 +90,10 @@ static void socket_pair_close(
 {
 	int i;
 
-	for (i = 0; i < max; i++)
+	for (i = 0; i < max; i++) {
 		(void)close(fds[i][which]);
+		fds[i][which] = -1;
+	}
 }
 
 /*
@@ -121,15 +124,22 @@ static void socket_pair_try_leak(void)
  */
 static int stress_sockpair_oomable(stress_args_t *args, void *context)
 {
+	uint64_t low_memory_count = 0;
 	pid_t pid;
 	static int socket_pair_fds[MAX_SOCKET_PAIRS][2];
-	int socket_pair_fds_bad[2];
-	int i, max, ret, parent_cpu;
-	double t, duration, rate, bytes = 0.0;
-	uint64_t low_memory_count = 0;
 	const size_t low_mem_size = args->page_size * 32 * args->instances;
-	const bool oom_avoid = !!(g_opt_flags & OPT_FLAGS_OOM_AVOID);
 	size_t sockpair_max_size = DEFAULT_SOCKPAIR_MAX_SIZE;
+	int socket_pair_fds_bad[2];
+	int i;
+	int max;
+	int ret;
+	int parent_cpu;
+	double t;
+	double duration;
+	double rate;
+	double bytes = 0.0;
+	const bool oom_avoid = !!(g_opt_flags & OPT_FLAGS_OOM_AVOID);
+
 	(void)context;
 
 	if (!stress_setting_get("sockpair-max-size", &sockpair_max_size)) {
@@ -220,13 +230,9 @@ static int stress_sockpair_oomable(stress_args_t *args, void *context)
 		return rc;
 	}
 
-again:
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
-
 		socket_pair_close(socket_pair_fds, max, 0);
 		socket_pair_close(socket_pair_fds, max, 1);
 
@@ -340,9 +346,9 @@ abort:
 		} while (stress_continue(args));
 
 tidy:
-		rate = (duration > 0.0) ? (double)bytes / duration : 0.0;
+		rate = (duration > 0.0) ? bytes / duration : 0.0;
 		stress_metrics_set(args, "MB written per sec",
-			rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+			rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 		if (low_memory_count > 0) {
 			pr_dbg("%s: %.2f%% of writes backed off due to low memory\n",
@@ -386,10 +392,19 @@ static int stress_sockpair(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("socketpair"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sockpair_info = {
 	.stressor = stress_sockpair,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

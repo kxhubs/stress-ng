@@ -58,7 +58,8 @@ static const stress_help_t help[] = {
     defined(HAVE_SYS_PRCTL_H)
 
 #if defined(__NR_rt_sigreturn)	&&	\
-    defined(__NR_rt_sigprocmask)
+    defined(__NR_rt_sigprocmask) && 	\
+    defined(HAVE_SIGLONGJMP)
 #define STRESS_OPCODE_USE_SIGLONGJMP
 static bool jmp_env_set;
 static sigjmp_buf jmp_env;
@@ -207,19 +208,36 @@ static inline void OPTIMIZE3 stress_opcode_random(
 {
 #if defined(STRESS_ARCH_X86)
 	static const uint8_t x86_prefixes[] = {
-		0xf0,	/* lock */
-		0xf1,	/* repne/repnz */
-		0xf3,	/* rep or repe/repz */
-		0x2e,	/* CS segment override */
-		0x36,	/* SS segment override */
-		0x3e,	/* DS segment override */
 		0x26,	/* ES segment override */
+		0x2e,	/* CS segment override or branch not taken */
+		0x36,	/* SS segment override */
+		0x3e,	/* DS segment override or branch taken */
+		0x40,	/* REX */
+		0x41,	/* REX */
+		0x42,	/* REX */
+		0x43,	/* REX */
+		0x44,	/* REX */
+		0x45,	/* REX */
+		0x46,	/* REX */
+		0x47,	/* REX */
+		0x48,	/* REX */
+		0x49,	/* REX */
+		0x4a,	/* REX */
+		0x4b,	/* REX */
+		0x4c,	/* REX */
+		0x4d,	/* REX */
+		0x4e,	/* REX */
+		0x4f,	/* REX */
+		0x62,	/* evex */
 		0x64,	/* FS segment override */
 		0x65,	/* GS segment override */
-		0x2e,	/* branch not taken */
-		0x3e,	/* branch taken */
 		0x66,	/* operand size override */
 		0x67,	/* address size override */
+		0xc4,	/* vex */
+		0xc5,	/* vex */
+		0xf0,	/* lock */
+		0xf2,	/* repne/repnz */
+		0xf3,	/* rep/repe/repz */
 	};
 
 	static const uint8_t x86_prefix_length[] = {
@@ -362,7 +380,8 @@ static void stress_opcode_text(
 	const void *ops_end,
 	const volatile uint64_t *op)
 {
-	char *text_start, *text_end;
+	char *text_start;
+	char *text_end;
 	const size_t ops_len = (uintptr_t)ops_end - (uintptr_t)ops_begin;
 	size_t text_len = stress_exec_text_addr(&text_start, &text_end);
 	uint8_t *ops;
@@ -410,7 +429,8 @@ static int stress_opcode(stress_args_t *args)
 {
 	const size_t page_size = args->page_size;
 	int rc;
-	size_t i, opcode_method = 0;
+	size_t i;
+	size_t opcode_method = 0;
 	const stress_opcode_method_info_t *method;
 #if STRESS_OPCODE_SIZE >= 8
 	const size_t opcode_bytes = STRESS_OPCODE_SIZE >> 3;
@@ -418,7 +438,11 @@ static int stress_opcode(stress_args_t *args)
 	const size_t opcode_bytes = 1;
 #endif
 	const size_t opcode_loops = page_size / opcode_bytes;
-	double op_start, rate, t, duration, percent;
+	double op_start;
+	double rate;
+	double t;
+	double duration;
+	double percent;
 	const double num_opcodes = pow(2.0, STRESS_OPCODE_SIZE);
 	uint64_t forks = 0;
 	void *opcodes;
@@ -484,12 +508,12 @@ static int stress_opcode(stress_args_t *args)
 				OPCODE_HEX_DIGITS, OPCODE_HEX_DIGITS, vstate->opcode);
 			stress_proc_name_set(buf);
 		}
-again:
+
+#if defined(STRESS_OPCODE_USE_SIGLONGJMP)
 		jmp_env_set = false;
-		pid = fork();
+#endif
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -502,7 +526,7 @@ again:
 			const size_t ops_size = page_size * PAGES;
 			void *ops_begin = (void *)((uint8_t *)opcodes + page_size);
 			void *ops_end = (void *)((uint8_t *)ops_begin + ops_size);
-			NOCLOBBER void *ops_ptr;
+			void * CLOBBERED ops_ptr;
 
 			stress_proc_state_set(args->name, STRESS_STATE_RUN);
 			stress_make_it_fail_set();
@@ -595,7 +619,7 @@ exercise:
 				vstate->ops_attempted++;
 				(void)mprotect((void *)state, sizeof(*state), PROT_READ);
 
-				((void (*)(void))(ops_ptr))();
+				((void (*)(void))(UNCLOBBER(ops_ptr)))();
 
 				(void)mprotect((void *)state, sizeof(*state), PROT_READ | PROT_WRITE);
 				ops_ptr = (void *)((uintptr_t)ops_ptr + opcode_bytes);
@@ -684,20 +708,31 @@ static const char *stress_opcode_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_opcode_method, "opcode-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_opcode_method },
+	{ OPT_opcode_method, "opcode-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_opcode_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("frontend-decoder"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("mprotect"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_opcode_info = {
 	.stressor = stress_opcode,
 	.classifier = CLASS_CPU | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_opcode_method, "opcode-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_opcode_method, "opcode-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

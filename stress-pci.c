@@ -34,7 +34,8 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(__linux__)
+#if defined(__linux__) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 static sigjmp_buf jmp_env;
 
@@ -96,7 +97,7 @@ static void stress_pci_info_free(stress_pci_info_t *pci_info_list)
 
 static int stress_pci_rev_sort(const struct dirent **a, const struct dirent **b)
 {
-	return strcmp((*b)->d_name, (*a)->d_name);
+	return shim_strcmp((*b)->d_name, (*a)->d_name);
 }
 
 static const char sys_pci_devices[] = "/sys/bus/pci/devices";
@@ -141,7 +142,6 @@ static void stress_pci_info_get_by_name(stress_pci_info_t **pci_info_list, const
 static stress_pci_info_t *stress_pci_info_get(void)
 {
 	stress_pci_info_t *pci_info_list = NULL;
-
 	struct dirent **pci_list = NULL;
 	char *pci_dev = NULL;
 
@@ -157,7 +157,8 @@ static stress_pci_info_t *stress_pci_info_get(void)
 			stress_pci_info_get_by_name(&pci_info_list, pci_dev);
 		}
 	} else {
-		int n_devs, i;
+		int n_devs;
+		int i;
 
 		n_devs = scandir(sys_pci_devices, &pci_list, stress_pci_dev_filter, stress_pci_rev_sort);
 		for (i = 0; i < n_devs; i++) {
@@ -192,7 +193,8 @@ static void stress_pci_exercise_file(
 		char buf[4096];
 		size_t sz;
 		struct stat statbuf;
-		size_t n_left, n_read;
+		size_t n_left;
+		size_t n_read;
 		double t;
 
 		if (shim_fstat(fd, &statbuf) < 0)
@@ -264,9 +266,9 @@ static void stress_pci_exercise(stress_args_t *args, stress_pci_info_t *pci_info
 
 		for (i = 0; LIKELY(stress_continue(args) && (i < n)); i++) {
 			const char *name = list[i]->d_name;
-			const bool config = !strcmp(name, "config");
-			const bool resource = !strncmp(name, "resource", 8);
-			const bool rom = !strcmp(name, "rom");
+			const bool config = !shim_strcmp(name, "config");
+			const bool resource = !shim_strncmp(name, "resource", 8);
+			const bool rom = !shim_strcmp(name, "rom");
 
 			stress_pci_exercise_file(pci_info, name, config, resource, rom);
 		}
@@ -293,7 +295,7 @@ static void NORETURN MLOCKED_TEXT stress_pci_handler(int signum)
 static void stress_pci_rate(const stress_metrics_t *metrics, char *str, const size_t len)
 {
 	if (metrics->duration > 0.0)
-		(void)snprintf(str, len, "%8.2f", (metrics->count / metrics->duration) / MB);
+		(void)snprintf(str, len, "%8.2f", (metrics->count / metrics->duration) / STRESS_MB);
 	else
 		(void)snprintf(str, len, "%8s", "untested");
 }
@@ -304,12 +306,12 @@ static void stress_pci_rate(const stress_metrics_t *metrics, char *str, const si
  */
 static int stress_pci(stress_args_t *args)
 {
-	NOCLOBBER stress_pci_info_t *pci_info_list;
-	NOCLOBBER stress_pci_info_t *pci_info;
+	stress_pci_info_t * CLOBBERED pci_info_list;
+	stress_pci_info_t * CLOBBERED pci_info;
 	int ret;
 	uint32_t pci_ops_rate = 0;	/* zero = unlimited */
 	double t_start;
-	NOCLOBBER double t_delta;
+	CLOBBERED double t_delta;
 
 	(void)stress_setting_get("pci-ops-rate", &pci_ops_rate);
 	t_delta = pci_ops_rate > 0 ? (double)args->instances / (double)pci_ops_rate : 0.0;
@@ -374,7 +376,8 @@ static int stress_pci(stress_args_t *args)
 		pr_inf("%s: PCI Device     Config Resource\n", args->name);
 
 		for (pci_info = pci_info_list; pci_info; pci_info = pci_info->next) {
-			char rate_config[9], rate_resource[9];
+			char rate_config[9];
+			char rate_resource[9];
 
 			stress_pci_rate(&pci_info->metrics[PCI_METRICS_CONFIG], rate_config, sizeof(rate_config));
 			stress_pci_rate(&pci_info->metrics[PCI_METRICS_RESOURCE], rate_resource, sizeof(rate_resource));
@@ -388,11 +391,23 @@ static int stress_pci(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("stat"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pci_info = {
 	.stressor = stress_pci,
 	.classifier = CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_pci_info = {
@@ -400,6 +415,6 @@ const stressor_info_t stress_pci_info = {
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "only supported on Linux"
+	.unimplemented_reason = "built without siglongjmp() and only supported on Linux"
 };
 #endif

@@ -41,7 +41,9 @@ static const stress_help_t help[] = {
 
 #if defined(HAVE_IOPRIO_GET) &&	\
     defined(HAVE_IOPRIO_SET) && \
-    defined(HAVE_PWRITEV)
+    defined(HAVE_PWRITEV) &&	\
+    defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC)
 
 #define MAX_IOV		(4)
 #define BUF_SIZE	(32)
@@ -57,7 +59,9 @@ static int stress_ioprio(stress_args_t *args)
 #if defined(HAVE_GETPGRP)
 	const pid_t grp = getpgrp();
 #endif
-	int fd, rc = EXIT_FAILURE, ret;
+	int fd;
+	int rc = EXIT_FAILURE;
+	int ret;
 	char filename[PATH_MAX];
 
 	ret = stress_fs_temp_dir_make_args(args);
@@ -68,7 +72,7 @@ static int stress_ioprio(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto cleanup_dir;
 	}
@@ -265,11 +269,24 @@ cleanup_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("ioprio_get"),
+	STRESS_EX_SYSCALL("ioprio_set"),
+	STRESS_EX_SYSCALL("pwritev"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ioprio_info = {
 	.stressor = stress_ioprio,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_ioprio_info = {
@@ -277,6 +294,6 @@ const stressor_info_t stress_ioprio_info = {
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without sys/uio.h, ioprio_get(), ioprio_set() or pwritev() support"
+	.unimplemented_reason = "built without sys/uio.h, struct iovec, ioprio_get(), ioprio_set() or pwritev() support"
 };
 #endif

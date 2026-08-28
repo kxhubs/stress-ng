@@ -40,9 +40,6 @@
 #define HAVE_MEMTHRASH_NUMA	(1)
 #endif
 
-#define BITS_PER_BYTE		(8)
-#define NUMA_LONG_BITS		(sizeof(unsigned long int) * BITS_PER_BYTE)
-
 static const stress_help_t help[] = {
 	{ NULL,	"memthrash N",		"start N workers thrashing a 16MB memory buffer" },
 	{ NULL,	"memthrash-method M",	"specify memthrash method M, default is all" },
@@ -349,6 +346,58 @@ static void OPTIMIZE3 TARGET_CLONES stress_memthrash_copy128(
 }
 #endif
 
+#if defined(HAVE_INT128_T) && defined(HAVE_ASM_X86_MOVNTDQA)
+#define MEMTHRASH_LOAD128(addr)		stress_asm_movntdqa((addr))
+#else
+#define MEMTHRASH_LOAD128(addr)		(*addr)
+#endif
+
+#if defined(HAVE_NT_STORE128)
+#define MEMTHRASH_STORE128(addr, val) 	stress_nt_store128((addr), (val))
+#else
+#define MEMTHRASH_STORE128(addr, val)	(*addr) = (val)
+#endif
+
+#if defined(HAVE_INT128_T) &&		\
+    (defined(HAVE_ASM_X86_MOVNTDQA) ||	\
+     defined(HAVE_NT_STORE128))
+static void OPTIMIZE3 TARGET_CLONES stress_memthrash_copy128nt(
+	const stress_memthrash_context_t *context,
+	const size_t mem_size)
+{
+	__uint128_t *ptr = (__uint128_t *)mem;
+	size_t end_offset = sizeof(*ptr) * 16;
+	register const __uint128_t *end = (__uint128_t *)(((uintptr_t)mem) + mem_size - end_offset);
+
+	if (!stress_cpu_x86_has_sse4_1())
+		stress_memthrash_copy128(context, mem_size);
+
+	while (LIKELY(ptr < end)) {
+		register __uint128_t r0, r1, r2, r3, r4, r5, r6, r7;
+
+		r0 = MEMTHRASH_LOAD128(ptr + 8);
+		r1 = MEMTHRASH_LOAD128(ptr + 9);
+		r2 = MEMTHRASH_LOAD128(ptr + 10);
+		r3 = MEMTHRASH_LOAD128(ptr + 11);
+		r4 = MEMTHRASH_LOAD128(ptr + 12);
+		r5 = MEMTHRASH_LOAD128(ptr + 13);
+		r6 = MEMTHRASH_LOAD128(ptr + 14);
+		r7 = MEMTHRASH_LOAD128(ptr + 15);
+
+		MEMTHRASH_STORE128(ptr + 0, r0);
+		MEMTHRASH_STORE128(ptr + 1, r1);
+		MEMTHRASH_STORE128(ptr + 2, r2);
+		MEMTHRASH_STORE128(ptr + 3, r3);
+		MEMTHRASH_STORE128(ptr + 4, r4);
+		MEMTHRASH_STORE128(ptr + 5, r5);
+		MEMTHRASH_STORE128(ptr + 6, r6);
+		MEMTHRASH_STORE128(ptr + 7, r7);
+
+		ptr += 8;
+	}
+}
+#endif
+
 static void OPTIMIZE3 stress_memthrash_flip_mem(
 	const stress_memthrash_context_t *context,
 	const size_t mem_size)
@@ -395,7 +444,8 @@ static void OPTIMIZE3 stress_memthrash_matrix(
 	const stress_memthrash_context_t *context,
 	const size_t mem_size)
 {
-	size_t i, j;
+	size_t i;
+	size_t j;
 	volatile uint8_t *vmem = (volatile uint8_t *)mem;
 
 	(void)context;
@@ -403,8 +453,8 @@ static void OPTIMIZE3 stress_memthrash_matrix(
 
 	for (i = 0; !thread_terminate && (i < MATRIX_SIZE); i += ((stress_mwc8() & 0xf) + 1)) {
 		for (j = 0; j < MATRIX_SIZE; j += 16) {
-			size_t i1 = (i * MATRIX_SIZE) + j;
-			size_t i2 = (j * MATRIX_SIZE) + i;
+			const size_t i1 = (i * MATRIX_SIZE) + j;
+			const size_t i2 = (j * MATRIX_SIZE) + i;
 			uint8_t tmp;
 
 			tmp = vmem[i1];
@@ -431,7 +481,7 @@ static void OPTIMIZE3 stress_memthrash_prefetch(
 	switch (locality) {
 	case 1:
 		for (i = 0; !thread_terminate && (i < max); i++) {
-			size_t offset = stress_mwcsizemodn(mem_size);
+			const size_t offset = stress_mwcsizemodn(mem_size);
 			uint8_t *const ptr = ((uint8_t *)mem) + offset;
 			volatile uint8_t *const vptr = ptr;
 
@@ -442,7 +492,7 @@ static void OPTIMIZE3 stress_memthrash_prefetch(
 		break;
 	case 2:
 		for (i = 0; !thread_terminate && (i < max); i++) {
-			size_t offset = stress_mwcsizemodn(mem_size);
+			const size_t offset = stress_mwcsizemodn(mem_size);
 			uint8_t *const ptr = ((uint8_t *)mem) + offset;
 			volatile uint8_t *const vptr = ptr;
 
@@ -454,7 +504,7 @@ static void OPTIMIZE3 stress_memthrash_prefetch(
 	case 3:
 	default:
 		for (i = 0; !thread_terminate && (i < max); i++) {
-			size_t offset = stress_mwcsizemodn(mem_size);
+			const size_t offset = stress_mwcsizemodn(mem_size);
 			uint8_t *const ptr = ((uint8_t *)mem) + offset;
 			volatile uint8_t *const vptr = ptr;
 
@@ -477,7 +527,7 @@ static void OPTIMIZE3 stress_memthrash_flush(
 	(void)context;
 
 	for (i = 0; !thread_terminate && (i < max); i++) {
-		size_t offset = stress_mwcsizemodn(mem_size);
+		const size_t offset = stress_mwcsizemodn(mem_size);
 		uint8_t *const ptr = ((uint8_t *)mem) + offset;
 		volatile uint8_t *const vptr = ptr;
 
@@ -497,7 +547,7 @@ static void OPTIMIZE3 stress_memthrash_mfence(
 	(void)context;
 
 	for (i = 0; !thread_terminate && (i < max); i++) {
-		size_t offset = stress_mwcsizemodn(mem_size);
+		const size_t offset = stress_mwcsizemodn(mem_size);
 		volatile uint8_t *ptr = ((uint8_t *)mem) + offset;
 
 		*ptr = i & 0xff;
@@ -515,7 +565,7 @@ static void OPTIMIZE3 stress_memthrash_lock(
 	(void)context;
 
 	for (i = 0; !thread_terminate && (i < 64); i++) {
-		size_t offset = stress_mwcsizemodn(mem_size);
+		const size_t offset = stress_mwcsizemodn(mem_size);
 		volatile uint8_t *ptr = ((uint8_t *)mem) + offset;
 
 		MEM_LOCK(ptr, 1);
@@ -637,7 +687,8 @@ static void OPTIMIZE3 stress_memthrash_tlb(
 	size_t prime_stride = 65537 * STRESS_CACHE_LINE_SIZE;	/* prime default */
 	register int i;
 	volatile uint8_t *ptr;
-	register size_t j, k;
+	register size_t j;
+	register size_t k;
 
 	(void)context;
 
@@ -750,6 +801,11 @@ static const stress_memthrash_method_info_t memthrash_methods[] = {
 	{ "chunkpage",	stress_memthrash_random_chunkpage },
 #if defined(HAVE_INT128_T)
 	{ "copy128",	stress_memthrash_copy128 },
+#endif
+#if defined(HAVE_INT128_T) &&		\
+    (defined(HAVE_ASM_X86_MOVNTDQA) ||	\
+     defined(HAVE_NT_STORE128))
+	{ "copy128nt",	stress_memthrash_copy128nt },
 #endif
 	{ "flip",	stress_memthrash_flip_mem },
 #if defined(HAVE_ASM_X86_CLFLUSH)
@@ -888,7 +944,7 @@ static inline uint32_t stress_memthrash_optimal(
 	return 1;
 }
 
-static inline char *plural(uint32_t n)
+static inline const char *plural(const uint32_t n)
 {
 	return n > 1 ? "s" : "";
 }
@@ -910,7 +966,7 @@ static int stress_memthrash_child(stress_args_t *args, void *ctxt)
 
 	pthread_info = (stress_pthread_info_t *)calloc(max_threads, sizeof(*pthread_info));
 	if (!pthread_info) {
-		pr_inf_skip("%s: failed to allocate pthread information array%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate pthread information array failed%s, skipping stressor\n",
 			args->name, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -1050,20 +1106,40 @@ static const char *stress_memthrash_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_memthrash_method, "memthrash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_memthrash_method },
+	{ OPT_memthrash_method, "memthrash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_memthrash_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+#if defined(MEM_LOCK)
+	STRESS_EX_FEATURE("atomic"),
+#endif
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("d-cache-ll-write"),
+	STRESS_EX_FEATURE("tlb"),
+	STRESS_EX_FEATURE("memory-bound"),
+	STRESS_EX_FEATURE("memory-bus"),
+	STRESS_EX_FEATURE("memory-stalls"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_memthrash_info = {
 	.stressor = stress_memthrash,
 	.classifier = CLASS_MEMORY,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_memthrash_method, "memthrash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_memthrash_method, "memthrash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

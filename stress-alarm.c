@@ -66,11 +66,8 @@ static int stress_alarm(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			return EXIT_SUCCESS;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -195,9 +192,18 @@ again:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("alarm"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_alarm_info = {
 	.stressor = stress_alarm,
 	.classifier = CLASS_SIGNAL | CLASS_INTERRUPT | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

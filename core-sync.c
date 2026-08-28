@@ -124,7 +124,7 @@ void stress_sync_start_wait(stress_args_t *args)
  *  stress_sync_start_cont_s_pid()
  *	wake up (continue) a stopped process
  */
-void stress_sync_start_cont_s_pid(stress_pid_t *s_pid)
+void stress_sync_start_cont_s_pid(const stress_pid_t *s_pid)
 {
 	pid_t pid;
 
@@ -140,7 +140,8 @@ void stress_sync_start_cont_s_pid(stress_pid_t *s_pid)
 
 void stress_sync_start_cont_list(stress_pid_t *s_pids_head)
 {
-	int unready, n_pids;
+	int unready;
+	int n_pids;
 
 	if (!(g_opt_flags & OPT_FLAGS_SYNC_START))
 		return;
@@ -169,7 +170,8 @@ void stress_sync_start_cont_list(stress_pid_t *s_pids_head)
 	if (!unready) {
 		do {
 			stress_pid_t *s_pid;
-			int running = 0, finished = 0;
+			int running = 0;
+			int finished = 0;
 			uint8_t state;
 
 			for (s_pid = s_pids_head; s_pid; s_pid = s_pid->next) {

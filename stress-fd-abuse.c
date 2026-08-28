@@ -99,7 +99,7 @@ typedef struct {
 } stress_fd_t;
 
 typedef void (*open_func_t)(stress_fd_t *fd);
-typedef void (*fd_func_t)(stress_fd_t *fd);
+typedef void (*fd_func_t)(const stress_fd_t *fd);
 
 static char stress_fd_filename[PATH_MAX];
 static double t_now;
@@ -971,7 +971,7 @@ static open_func_t open_funcs[] = {
 };
 
 #if defined(SOL_SOCKET)
-static void stress_fd_sockopt_reuseaddr(stress_fd_t *fd)
+static void stress_fd_sockopt_reuseaddr(const stress_fd_t *fd)
 {
 	int so_reuseaddr = 1;
 
@@ -980,7 +980,7 @@ static void stress_fd_sockopt_reuseaddr(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_lseek(stress_fd_t *fd)
+static void stress_fd_lseek(const stress_fd_t *fd)
 {
 	static const int whence[] = {
 		SEEK_SET,
@@ -1003,7 +1003,7 @@ static void stress_fd_lseek(stress_fd_t *fd)
 	}
 }
 
-static void stress_fd_dup(stress_fd_t *fd)
+static void stress_fd_dup(const stress_fd_t *fd)
 {
 	int fd2;
 
@@ -1012,7 +1012,7 @@ static void stress_fd_dup(stress_fd_t *fd)
 		(void)close(fd2);
 }
 
-static void stress_fd_dup2(stress_fd_t *fd)
+static void stress_fd_dup2(const stress_fd_t *fd)
 {
 	int fd2;
 
@@ -1021,8 +1021,9 @@ static void stress_fd_dup2(stress_fd_t *fd)
 		(void)close(fd2);
 }
 
-#if defined(O_CLOEXEC)
-static void stress_fd_dup3(stress_fd_t *fd)
+#if defined(HAVE_DUP3) &&	\
+    defined(O_CLOEXEC)
+static void stress_fd_dup3(const stress_fd_t *fd)
 {
 	int fd2;
 
@@ -1032,7 +1033,7 @@ static void stress_fd_dup3(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_bind_af_inet(stress_fd_t *fd)
+static void stress_fd_bind_af_inet(const stress_fd_t *fd)
 {
 	struct sockaddr_in addr;
 
@@ -1045,7 +1046,7 @@ static void stress_fd_bind_af_inet(stress_fd_t *fd)
 }
 
 #if defined(AF_INET6)
-static void stress_fd_bind_af_inet6(stress_fd_t *fd)
+static void stress_fd_bind_af_inet6(const stress_fd_t *fd)
 {
 	struct sockaddr_in6 addr;
 #if defined(__minix__)
@@ -1061,7 +1062,7 @@ static void stress_fd_bind_af_inet6(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_select_rd(stress_fd_t *fd)
+static void stress_fd_select_rd(const stress_fd_t *fd)
 {
 	if ((fd->fd >= 0) && (fd->fd < FD_SETSIZE)) {
 		fd_set rfds;
@@ -1076,7 +1077,7 @@ static void stress_fd_select_rd(stress_fd_t *fd)
 	}
 }
 
-static void stress_fd_select_wr(stress_fd_t *fd)
+static void stress_fd_select_wr(const stress_fd_t *fd)
 {
 	if ((fd->fd >= 0) && (fd->fd < FD_SETSIZE)) {
 		fd_set wfds;
@@ -1092,7 +1093,7 @@ static void stress_fd_select_wr(stress_fd_t *fd)
 }
 
 #if defined(HAVE_PSELECT)
-static void stress_fd_pselect_rdwr(stress_fd_t *fd)
+static void stress_fd_pselect_rdwr(const stress_fd_t *fd)
 {
 	if ((fd->fd >= 0) && (fd->fd < FD_SETSIZE)) {
 		struct timespec tv;
@@ -1112,7 +1113,7 @@ static void stress_fd_pselect_rdwr(stress_fd_t *fd)
 
 #if defined(POLLIN) &&	\
     defined(POLLOUT)
-static void stress_fd_poll_rdwr(stress_fd_t *fd)
+static void stress_fd_poll_rdwr(const stress_fd_t *fd)
 {
 	struct pollfd fds[1];
 
@@ -1127,7 +1128,7 @@ static void stress_fd_poll_rdwr(stress_fd_t *fd)
 #if defined(HAVE_PPOLL) &&	\
     defined(POLLIN) &&		\
     defined(POLLOUT)
-static void stress_fd_ppoll_rdwr(stress_fd_t *fd)
+static void stress_fd_ppoll_rdwr(const stress_fd_t *fd)
 {
 	struct timespec tv;
 	struct pollfd fds[1];
@@ -1142,7 +1143,7 @@ static void stress_fd_ppoll_rdwr(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_mmap_rd(stress_fd_t *fd)
+static void stress_fd_mmap_rd(const stress_fd_t *fd)
 {
 	void *ptr;
 
@@ -1151,7 +1152,7 @@ static void stress_fd_mmap_rd(stress_fd_t *fd)
 		(void)munmap(ptr, 4096);
 }
 
-static void stress_fd_mmap_wr(stress_fd_t *fd)
+static void stress_fd_mmap_wr(const stress_fd_t *fd)
 {
 	void *ptr;
 
@@ -1162,7 +1163,7 @@ static void stress_fd_mmap_wr(stress_fd_t *fd)
 
 #if defined(IN_MASK_CREATE) &&  \
     defined(IN_MASK_ADD)
-static void stress_fd_inotify_add_watch(stress_fd_t *fd)
+static void stress_fd_inotify_add_watch(const stress_fd_t *fd)
 {
 	int wd;
 
@@ -1177,7 +1178,7 @@ static void stress_fd_inotify_add_watch(stress_fd_t *fd)
     defined(HAVE_TIMERFD_GETTIME) &&	\
     defined(HAVE_TIMERFD_SETTIME) &&	\
     defined(CLOCK_REALTIME)
-static void stress_fd_timerfd_gettime(stress_fd_t *fd)
+static void stress_fd_timerfd_gettime(const stress_fd_t *fd)
 {
 	struct itimerspec value;
 
@@ -1185,13 +1186,13 @@ static void stress_fd_timerfd_gettime(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_pidfd_send_signal(stress_fd_t *fd)
+static void stress_fd_pidfd_send_signal(const stress_fd_t *fd)
 {
 	(void)shim_pidfd_send_signal(fd->fd, 0, NULL, 0);
 }
 
 #if defined(FIOQSIZE)
-static void stress_fd_ioctl_fioqsize(stress_fd_t *fd)
+static void stress_fd_ioctl_fioqsize(const stress_fd_t *fd)
 {
 	shim_loff_t sz;
 
@@ -1201,7 +1202,7 @@ static void stress_fd_ioctl_fioqsize(stress_fd_t *fd)
 
 
 #if defined(__NR_getdents)
-static void stress_fd_getdents(stress_fd_t *fd)
+static void stress_fd_getdents(const stress_fd_t *fd)
 {
 	char buffer[8192];
 
@@ -1209,7 +1210,7 @@ static void stress_fd_getdents(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_fstat(stress_fd_t *fd)
+static void stress_fd_fstat(const stress_fd_t *fd)
 {
 	struct stat statbuf;
 
@@ -1217,13 +1218,13 @@ static void stress_fd_fstat(stress_fd_t *fd)
 }
 
 #if defined(F_GETFL)
-static void stress_fd_fcntl_f_getfl(stress_fd_t *fd)
+static void stress_fd_fcntl_f_getfl(const stress_fd_t *fd)
 {
 	(void)fcntl(fd->fd, F_GETFL);
 }
 #endif
 
-static void stress_fd_ftruncate(stress_fd_t *fd)
+static void stress_fd_ftruncate(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1233,7 +1234,7 @@ static void stress_fd_ftruncate(stress_fd_t *fd)
 
 #if defined(HAVE_POSIX_FADVISE) &&	\
     defined(SHIM_POSIX_FADV_RANDOM)
-static void stress_fd_posix_fadvise(stress_fd_t *fd)
+static void stress_fd_posix_fadvise(const stress_fd_t *fd)
 {
 	(void)shim_posix_fadvise(fd->fd, 0, 0, SHIM_POSIX_FADV_RANDOM);
 	(void)shim_posix_fadvise(fd->fd, 0, 1024, SHIM_POSIX_FADV_RANDOM);
@@ -1241,13 +1242,13 @@ static void stress_fd_posix_fadvise(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_listen(stress_fd_t *fd)
+static void stress_fd_listen(const stress_fd_t *fd)
 {
 	(void)listen(fd->fd, 0);
 	(void)shutdown(fd->fd, SHUT_RDWR);
 }
 
-static void stress_fd_accept(stress_fd_t *fd)
+static void stress_fd_accept(const stress_fd_t *fd)
 {
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);	/* invalid */
@@ -1265,12 +1266,12 @@ static void stress_fd_accept(stress_fd_t *fd)
 	(void)accept(fd->fd, &addr, &addrlen);
 }
 
-static void stress_fd_shutdown(stress_fd_t *fd)
+static void stress_fd_shutdown(const stress_fd_t *fd)
 {
 	(void)shutdown(fd->fd, SHUT_RDWR);
 }
 
-static void stress_fd_getsockname(stress_fd_t *fd)
+static void stress_fd_getsockname(const stress_fd_t *fd)
 {
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);
@@ -1279,7 +1280,7 @@ static void stress_fd_getsockname(stress_fd_t *fd)
 	(void)getsockname(fd->fd, &addr, &addrlen);
 }
 
-static void stress_fd_getpeername(stress_fd_t *fd)
+static void stress_fd_getpeername(const stress_fd_t *fd)
 {
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);
@@ -1289,7 +1290,7 @@ static void stress_fd_getpeername(stress_fd_t *fd)
 }
 
 #if defined(HAVE_SYNCFS)
-static void stress_fd_syncfs(stress_fd_t *fd)
+static void stress_fd_syncfs(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1299,7 +1300,7 @@ static void stress_fd_syncfs(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_FDATASYNC)
-static void stress_fd_fdatasync(stress_fd_t *fd)
+static void stress_fd_fdatasync(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1308,7 +1309,7 @@ static void stress_fd_fdatasync(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_fsync(stress_fd_t *fd)
+static void stress_fd_fsync(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1316,7 +1317,7 @@ static void stress_fd_fsync(stress_fd_t *fd)
 		(void)shim_fsync(fd->fd);
 }
 
-static void stress_fd_fchdir(stress_fd_t *fd)
+static void stress_fd_fchdir(const stress_fd_t *fd)
 {
 	char mycwd[PATH_MAX];
 
@@ -1327,7 +1328,7 @@ static void stress_fd_fchdir(stress_fd_t *fd)
 	VOID_RET(int, chdir(mycwd));
 }
 
-static void stress_fd_chmod(stress_fd_t *fd)
+static void stress_fd_chmod(const stress_fd_t *fd)
 {
 	struct stat statbuf;
 	static double t = 0.0;
@@ -1340,7 +1341,7 @@ static void stress_fd_chmod(stress_fd_t *fd)
 }
 
 #if defined(HAVE_SYS_STATVFS_H)
-static void stress_fd_fstatfs(stress_fd_t *fd)
+static void stress_fd_fstatfs(const stress_fd_t *fd)
 {
 	struct statvfs buf;
 
@@ -1349,7 +1350,7 @@ static void stress_fd_fstatfs(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_FUTIMENS)
-static void stress_fd_futimens(stress_fd_t *fd)
+static void stress_fd_futimens(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1363,7 +1364,7 @@ static void stress_fd_futimens(stress_fd_t *fd)
 #if defined(HAVE_FLOCK) &&      \
     defined(LOCK_EX) &&         \
     defined(LOCK_UN)
-static void stress_fd_flock(stress_fd_t *fd)
+static void stress_fd_flock(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1376,7 +1377,7 @@ static void stress_fd_flock(stress_fd_t *fd)
 #endif
 
 #if defined(F_DUPFD)
-static void stress_fd_fcntl_f_dupfd(stress_fd_t *fd)
+static void stress_fd_fcntl_f_dupfd(const stress_fd_t *fd)
 {
 	int fd2;
 
@@ -1388,7 +1389,7 @@ static void stress_fd_fcntl_f_dupfd(stress_fd_t *fd)
 
 #if defined(F_NOTIFY) &&	\
     defined(DN_ACCESS)
-static void stress_fd_fnctl_f_notify(stress_fd_t *fd)
+static void stress_fd_fnctl_f_notify(const stress_fd_t *fd)
 {
 	(void)fcntl(fd->fd, F_NOTIFY, DN_ACCESS);
 	(void)fcntl(fd->fd, F_NOTIFY, 0);
@@ -1396,7 +1397,7 @@ static void stress_fd_fnctl_f_notify(stress_fd_t *fd)
 #endif
 
 #if defined(F_SETFL)
-static void stress_fd_fcntl_f_setfl(stress_fd_t *fd)
+static void stress_fd_fcntl_f_setfl(const stress_fd_t *fd)
 {
 	static const int flags[] = {
 		0,
@@ -1436,14 +1437,14 @@ static void stress_fd_fcntl_f_setfl(stress_fd_t *fd)
 #endif
 
 #if defined(F_GETOWN)
-static void stress_fd_fcntl_f_getown(stress_fd_t *fd)
+static void stress_fd_fcntl_f_getown(const stress_fd_t *fd)
 {
 	(void)fcntl(fd->fd, F_GETOWN);
 }
 #endif
 
 #if defined(F_SETPIPE_SZ)
-static void stress_fd_fctnl_f_setpipe_sz(stress_fd_t *fd)
+static void stress_fd_fctnl_f_setpipe_sz(const stress_fd_t *fd)
 {
 	(void)fcntl(fd->fd, F_SETPIPE_SZ, 1024);	/* Illegal */
 	(void)fcntl(fd->fd, F_SETPIPE_SZ, 4096 * (stress_mwc8() & 31));
@@ -1451,7 +1452,7 @@ static void stress_fd_fctnl_f_setpipe_sz(stress_fd_t *fd)
 #endif
 
 #if defined(F_SET_RW_HINT)
-static void stress_fd_fcntl_f_set_rw_hint(stress_fd_t *fd)
+static void stress_fd_fcntl_f_set_rw_hint(const stress_fd_t *fd)
 {
 	static const uint64_t hints[] = {
 		0,
@@ -1487,7 +1488,7 @@ static void stress_fd_fcntl_f_set_rw_hint(stress_fd_t *fd)
     defined(F_RDLCK) &&		\
     defined(F_WRLCK) &&		\
     defined(F_UNLCK)
-static void stress_fd_fcntl_f_setlease(stress_fd_t *fd)
+static void stress_fd_fcntl_f_setlease(const stress_fd_t *fd)
 {
 	if (fcntl(fd->fd, F_SETLEASE, stress_mwc1() ? F_RDLCK : F_WRLCK) < 0)
 		return;
@@ -1496,7 +1497,7 @@ static void stress_fd_fcntl_f_setlease(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_WAITID)
-static void stress_fd_waitid(stress_fd_t *fd)
+static void stress_fd_waitid(const stress_fd_t *fd)
 {
 	siginfo_t info;
 
@@ -1506,7 +1507,7 @@ static void stress_fd_waitid(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SETNS)
-static void stress_fd_setns(stress_fd_t *fd)
+static void stress_fd_setns(const stress_fd_t *fd)
 {
 	(void)setns(fd->fd, 0);
 }
@@ -1515,7 +1516,7 @@ static void stress_fd_setns(stress_fd_t *fd)
 #if defined(HAVE_LOCKF) &&	\
     defined(F_TLOCK) &&		\
     defined(F_UNLOCK)
-static void stress_fd_lockf(stress_fd_t *fd)
+static void stress_fd_lockf(const stress_fd_t *fd)
 {
 	static double t = 0.0;
 
@@ -1530,7 +1531,7 @@ static void stress_fd_lockf(stress_fd_t *fd)
 #if (defined(HAVE_SYS_XATTR_H) ||	\
      defined(HAVE_ATTR_XATTR_H)) &&	\
     defined(HAVE_FLISTXATTR)
-static void stress_fd_flistxattr(stress_fd_t *fd)
+static void stress_fd_flistxattr(const stress_fd_t *fd)
 {
 	char buffer[4096];
 
@@ -1539,8 +1540,9 @@ static void stress_fd_flistxattr(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(SPLICE_F_NONBLOCK)
-static void stress_fd_vmslice(stress_fd_t *fd)
+static void stress_fd_vmslice(const stress_fd_t *fd)
 {
 	struct iovec iov[1];
 	const size_t sz = 4096;
@@ -1558,7 +1560,7 @@ static void stress_fd_vmslice(stress_fd_t *fd)
 }
 #endif
 
-static void stress_fd_read(stress_fd_t *fd)
+static void stress_fd_read(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_READ) {
 		const off_t offset = (off_t)stress_mwc32();
@@ -1571,7 +1573,7 @@ static void stress_fd_read(stress_fd_t *fd)
 	}
 }
 
-static void stress_fd_write(stress_fd_t *fd)
+static void stress_fd_write(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		const off_t offset = (off_t)stress_mwc16();
@@ -1586,7 +1588,7 @@ static void stress_fd_write(stress_fd_t *fd)
 }
 
 #if defined(HAVE_PREAD)
-static void stress_fd_pread(stress_fd_t *fd)
+static void stress_fd_pread(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_READ) {
 		const off_t offset = (off_t)stress_mwc32();
@@ -1598,7 +1600,7 @@ static void stress_fd_pread(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_PWRITE)
-static void stress_fd_pwrite(stress_fd_t *fd)
+static void stress_fd_pwrite(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		const off_t offset = (off_t)stress_mwc16();
@@ -1610,8 +1612,10 @@ static void stress_fd_pwrite(stress_fd_t *fd)
 }
 #endif
 
-#if defined(HAVE_READV)
-static void stress_fd_readv(stress_fd_t *fd)
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_READV)
+static void stress_fd_readv(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_READ) {
 		const off_t offset = (off_t)stress_mwc32();
@@ -1630,8 +1634,9 @@ static void stress_fd_readv(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_WRITEV)
-static void stress_fd_writev(stress_fd_t *fd)
+static void stress_fd_writev(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		const off_t offset = (off_t)stress_mwc16();
@@ -1650,8 +1655,9 @@ static void stress_fd_writev(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
-static void stress_fd_preadv(stress_fd_t *fd)
+static void stress_fd_preadv(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_READ) {
 		struct iovec iov[1];
@@ -1667,8 +1673,9 @@ static void stress_fd_preadv(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
-static void stress_fd_pwritev(stress_fd_t *fd)
+static void stress_fd_pwritev(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		struct iovec iov[1];
@@ -1684,6 +1691,7 @@ static void stress_fd_pwritev(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
      (defined(HAVE_PREADV2) ||	\
      defined(HAVE_PWRITEV2))
 
@@ -1708,8 +1716,9 @@ static const int rwf_flags[] = {
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
-static void stress_fd_preadv2(stress_fd_t *fd)
+static void stress_fd_preadv2(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_READ) {
 		struct iovec iov[1];
@@ -1726,8 +1735,9 @@ static void stress_fd_preadv2(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
-static void stress_fd_pwritev2(stress_fd_t *fd)
+static void stress_fd_pwritev2(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		struct iovec iov[1];
@@ -1744,7 +1754,7 @@ static void stress_fd_pwritev2(stress_fd_t *fd)
 #endif
 
 #if defined(MSG_DONTWAIT)
-static void stress_fd_recv(stress_fd_t *fd)
+static void stress_fd_recv(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_RECV | FD_FLAG_READ)) {
 		char buf[16];
@@ -1755,7 +1765,7 @@ static void stress_fd_recv(stress_fd_t *fd)
 #endif
 
 #if defined(MSG_DONTWAIT)
-static void stress_fd_send(stress_fd_t *fd)
+static void stress_fd_send(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_SEND | FD_FLAG_WRITE)) {
 		char buf[1];
@@ -1768,18 +1778,18 @@ static void stress_fd_send(stress_fd_t *fd)
 #endif
 
 #if defined(MSG_DONTWAIT)
-static void stress_fd_recvfrom(stress_fd_t *fd)
+static void stress_fd_recvfrom(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_RECV | FD_FLAG_READ)) {
 		char buf[16];
 
-		VOID_RET(ssize_t, recvfrom(fd->fd, buf, sizeof(buf), MSG_DONTWAIT, NULL, 0));
+		VOID_RET(ssize_t, recvfrom(fd->fd, buf, sizeof(buf), MSG_DONTWAIT, NULL, NULL));
 	}
 }
 #endif
 
 #if defined(MSG_DONTWAIT)
-static void stress_fd_sendto(stress_fd_t *fd)
+static void stress_fd_sendto(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_SEND | FD_FLAG_WRITE)) {
 		char buf[1];
@@ -1792,8 +1802,9 @@ static void stress_fd_sendto(stress_fd_t *fd)
 #endif
 
 #if defined(MSG_DONTWAIT) &&	\
-    defined(HAVE_RECVMSG)
-static void stress_fd_recvmsg(stress_fd_t *fd)
+    defined(HAVE_RECVMSG) &&	\
+    defined(HAVE_IOVEC)
+static void stress_fd_recvmsg(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_RECV | FD_FLAG_READ)) {
 		struct iovec iov[1];
@@ -1813,8 +1824,9 @@ static void stress_fd_recvmsg(stress_fd_t *fd)
 #endif
 
 #if defined(MSG_DONTWAIT) &&	\
-    defined(HAVE_SENDMSG)
-static void stress_fd_sendmsg(stress_fd_t *fd)
+    defined(HAVE_SENDMSG) &&	\
+    defined(HAVE_IOVEC)
+static void stress_fd_sendmsg(const stress_fd_t *fd)
 {
 	if (fd->flags & (FD_FLAG_SEND | FD_FLAG_WRITE)) {
 		struct iovec iov[1];
@@ -1837,7 +1849,7 @@ static void stress_fd_sendmsg(stress_fd_t *fd)
 
 #if defined(HAVE_SYS_SENDFILE_H) &&	\
     defined(HAVE_SENDFILE)
-static void stress_fd_sendfile(stress_fd_t *fd)
+static void stress_fd_sendfile(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		int fd_in;
@@ -1854,7 +1866,7 @@ static void stress_fd_sendfile(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_COPY_FILE_RANGE)
-static void stress_fd_copy_file_range(stress_fd_t *fd)
+static void stress_fd_copy_file_range(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		int fd_in;
@@ -1873,7 +1885,7 @@ static void stress_fd_copy_file_range(stress_fd_t *fd)
 #endif
 
 #if defined(HAVE_SPLICE)
-static void stress_fd_splice(stress_fd_t *fd)
+static void stress_fd_splice(const stress_fd_t *fd)
 {
 	if (fd->flags & FD_FLAG_WRITE) {
 		int fd_in;
@@ -1899,7 +1911,8 @@ static const fd_func_t fd_funcs[] = {
 	stress_fd_lseek,
 	stress_fd_dup,
 	stress_fd_dup2,
-#if defined(O_CLOEXEC)
+#if defined(HAVE_DUP3) &&	\
+    defined(O_CLOEXEC)
 	stress_fd_dup3,
 #endif
 	stress_fd_bind_af_inet,
@@ -2016,6 +2029,7 @@ static const fd_func_t fd_funcs[] = {
 	stress_fd_flistxattr,
 #endif
 #if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(SPLICE_F_NONBLOCK)
 	stress_fd_vmslice,
 #endif
@@ -2028,26 +2042,32 @@ static const fd_func_t fd_funcs[] = {
 	stress_fd_pwrite,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_READV)
 	stress_fd_readv,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_WRITEV)
 	stress_fd_writev,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
 	stress_fd_preadv,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
 	stress_fd_pwritev,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
 	stress_fd_preadv2,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
 	stress_fd_pwritev2,
 #endif
@@ -2064,10 +2084,12 @@ static const fd_func_t fd_funcs[] = {
 	stress_fd_sendto,
 #endif
 #if defined(MSG_DONTWAIT) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_RECVMSG)
 	stress_fd_recvmsg,
 #endif
 #if defined(MSG_DONTWAIT) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_SENDMSG)
 	stress_fd_sendmsg,
 #endif
@@ -2085,7 +2107,8 @@ static const fd_func_t fd_funcs[] = {
 
 static int stress_fd_abuse_process(stress_args_t *args, void *context)
 {
-	size_t i, n;
+	size_t i;
+	size_t n;
 	pid_t pid;
 	stress_fd_t fds[SIZEOF_ARRAY(open_funcs)];
 
@@ -2185,9 +2208,92 @@ static int stress_fd_abuse(stress_args_t *args)
 	return rc;
 }
 
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("creat"),
+	STRESS_EX_SYSCALL("dup"),
+	STRESS_EX_SYSCALL("dup2"),
+#if defined(HAVE_DUP3) &&	\
+    defined(O_CLOEXEC)
+	STRESS_EX_SYSCALL("dup3"),
+#endif
+#if defined(HAVE_SYS_EPOLL_H) &&	\
+    defined(HAVE_EPOLL_CREATE)
+	STRESS_EX_SYSCALL("epoll_create"),
+#endif
+#if defined(HAVE_EVENTFD) &&	\
+    defined(HAVE_SYS_EVENTFD_H)
+	STRESS_EX_SYSCALL("eventfd"),
+#endif
+#if defined(HAVE_SYS_INOTIFY_H)
+	STRESS_EX_SYSCALL("inotify_init"),
+#endif
+#if defined(IN_MASK_CREATE) &&  \
+    defined(IN_MASK_ADD)
+	STRESS_EX_SYSCALL("inotify_add_watch"),
+#endif
+	STRESS_EX_SYSCALL("lseek"),
+#if defined(HAVE_MEMFD_CREATE)
+	STRESS_EX_SYSCALL("memfd_create"),
+#endif
+#if defined(__NR_memfd_secret)
+	STRESS_EX_SYSCALL("memfd_secret"),
+#endif
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(O_NONBLOCK) &&	\
+    defined(O_DIRECTORY) &&	\
+    defined(HAVE_OPENAT)
+	STRESS_EX_SYSCALL("openat"),
+#endif
+#if defined(HAVE_PIDFD_OPEN)
+	STRESS_EX_SYSCALL("pidfd_open"),
+#endif
+	STRESS_EX_SYSCALL("pipe"),
+#if defined(HAVE_PIPE2)
+	STRESS_EX_SYSCALL("pipe2"),
+#endif
+#if defined(POLLIN) &&	\
+    defined(POLLOUT)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_PPOLL) &&	\
+    defined(POLLIN) &&		\
+    defined(POLLOUT)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+#if defined(HAVE_PSELECT)
+	STRESS_EX_SYSCALL("pselect"),
+#endif
+	STRESS_EX_SYSCALL("select"),
+#if defined(SOL_SOCKET)
+	STRESS_EX_SYSCALL("setsockopt"),
+#endif
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("socketpair"),
+#if defined(HAVE_SYS_TIMERFD_H) &&	\
+    defined(HAVE_TIMERFD_CREATE) &&	\
+    defined(HAVE_TIMERFD_GETTIME) &&	\
+    defined(HAVE_TIMERFD_SETTIME) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("timerfd_create"),
+#endif
+#if defined(HAVE_USERFAULTFD)
+	STRESS_EX_SYSCALL("userfaultfd"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fd_abuse_info = {
 	.stressor = stress_fd_abuse,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

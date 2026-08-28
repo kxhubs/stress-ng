@@ -100,7 +100,7 @@ static const char * const stress_regex_text[] = {
 	"google.com",
 };
 
-static double stress_regex_rate(double t[N_REGEXES], uint64_t c[N_REGEXES])
+static double stress_regex_rate(const double t[N_REGEXES], const uint64_t c[N_REGEXES])
 {
 	size_t i;
 	double t_total = 0.0;
@@ -178,7 +178,6 @@ static int stress_regex(stress_args_t *args)
 					ret = regexec(&regex, stress_regex_text[j], SIZEOF_ARRAY(regmatch), regmatch, 0);
 					if (UNLIKELY(ret))
 						continue;
-					/* pr_inf("%s %s\n", stress_posix_regex[i].regex, stress_regex_text[j]); */
 					exec_times[i] += stress_time_now() - t;
 					exec_count[i]++;
 				}
@@ -207,11 +206,27 @@ static int stress_regex(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("d-cache-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("string"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_regex_info = {
 	.stressor = stress_regex,
 	.classifier = CLASS_CPU | CLASS_HOT,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_posix_regex) + 2
+	.max_metrics_items = SIZEOF_ARRAY(stress_posix_regex) + 2,
+	.exercises = exercises,
 };
 #else
 

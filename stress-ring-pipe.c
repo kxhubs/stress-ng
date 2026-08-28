@@ -54,7 +54,8 @@ static const stress_opt_t opts[] = {
     defined(HAVE_POLL)
 static int stress_pipe_non_block(stress_args_t *args, const int fd)
 {
-	int flags, ret;
+	int flags;
+	int ret;
 
 	flags = fcntl(fd, F_GETFL);
 	if (UNLIKELY(flags < 0)) {
@@ -65,7 +66,7 @@ static int stress_pipe_non_block(stress_args_t *args, const int fd)
 	flags |= O_NONBLOCK;
 	ret = fcntl(fd, F_SETFL, flags);
 	if (UNLIKELY(ret < 0)) {
-		pr_inf("%s: cannot set O_NONBLOCK on pipe fd %d, errno=%d (%s)\n",
+		pr_inf("%s: set O_NONBLOCK on pipe fd %d failed, errno=%d (%s)\n",
 			args->name, fd, errno, strerror(errno));
 		return -1;
 	}
@@ -86,7 +87,7 @@ static ssize_t stress_pipe_read(
 
 	sret = read(fd, buf, buf_len);
 	if (UNLIKELY(sret < 0)) {
-		pr_inf("%s: failed to read from pipe fd %d, errno=%d (%s)\n",
+		pr_inf("%s: read from pipe fd %d failed, errno=%d (%s)\n",
 			args->name, fd, errno, strerror(errno));
 		return -1;
 	}
@@ -100,14 +101,14 @@ static ssize_t stress_pipe_read(
 static ssize_t stress_pipe_write(
 	stress_args_t *args,
 	const int fd,
-	char *buf,
+	const char *buf,
 	const size_t buf_len)
 {
 	ssize_t sret;
 
 	sret = write(fd, buf, buf_len);
 	if (UNLIKELY(sret < 0)) {
-		pr_inf("%s: failed to write to pipe fd %d, errno=%d (%s)\n",
+		pr_inf("%s: write to pipe fd %d failed, errno=%d (%s)\n",
 			args->name, fd, errno, strerror(errno));
 		return -1;
 	}
@@ -120,12 +121,18 @@ static ssize_t stress_pipe_write(
  */
 static int stress_ring_pipe(stress_args_t *args)
 {
-	double duration = 0.0, bytes = 0.0, rate;
-	size_t i, n_pipes, ring_pipe_num = 256, ring_pipe_size = 4096;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
+	size_t i;
+	size_t n_pipes;
+	size_t ring_pipe_num = 256;
+	size_t ring_pipe_size = 4096;
 	bool ring_pipe_splice = false;
 	char *buf;
 	pipe_fds_t *pipe_fds;
-	int ret, max_fd;
+	int ret;
+	int max_fd;
 	int rc = EXIT_NO_RESOURCE;
 	ssize_t sret;
 	struct pollfd *poll_fds;
@@ -137,7 +144,7 @@ static int stress_ring_pipe(stress_args_t *args)
 	buf = (char *)stress_mmap_populate(NULL, (size_t)STRESS_RING_PIPE_SIZE_MAX,
 		PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d size buffer%s, "
+		pr_inf_skip("%s: mmap %d size buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, STRESS_RING_PIPE_SIZE_MAX,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -147,14 +154,14 @@ static int stress_ring_pipe(stress_args_t *args)
 
 	pipe_fds = (pipe_fds_t *)calloc(ring_pipe_num, sizeof(*pipe_fds));
 	if (!pipe_fds) {
-		pr_inf_skip("%s: failed to allocate %zu pipe file descriptors%s, "
+		pr_inf_skip("%s: allocate %zu pipe file descriptors failed%s, "
 			"skipping stressor\n", args->name, ring_pipe_num,
 			stress_memory_free_get());
 		goto err_unmap_buf;
 	}
 	poll_fds = (struct pollfd *)calloc(ring_pipe_num, sizeof(*poll_fds));
 	if (!poll_fds) {
-		pr_inf_skip("%s: cannot allocate %zu poll descriptors%s, "
+		pr_inf_skip("%s: allocate %zu poll descriptors failed%s, "
 			"skipping stressor\n", args->name, ring_pipe_num,
 			stress_memory_free_get());
 		goto err_free_pipe_fds;
@@ -232,7 +239,7 @@ static int stress_ring_pipe(stress_args_t *args)
 						int flag = 0;
 #endif
 						t = stress_time_now();
-						sret = splice(pipe_fds[i].fds[0], 0, pipe_fds[j].fds[1], 0,
+						sret = splice(pipe_fds[i].fds[0], NULL, pipe_fds[j].fds[1], NULL,
 							      ring_pipe_size, flag);
 						if (UNLIKELY(sret < 0)) {
 							pr_inf("%s: splice failed, errno=%d (%s)\n",
@@ -267,7 +274,7 @@ finish:
 		rate, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (duration > 0.0) ? (double)bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec data pipe write",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 err_deinit:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -285,12 +292,29 @@ err_ret:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(HAVE_POLL_H) &&	\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("fcntl"),
+#endif
+	STRESS_EX_SYSCALL("poll"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ring_pipe_info = {
 	.stressor = stress_ring_pipe,
 	.classifier = CLASS_PIPE_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

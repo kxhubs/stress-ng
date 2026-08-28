@@ -394,8 +394,21 @@ static const char *stress_trig_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_trig_method, "trig-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_trig_method },
+	{ OPT_trig_method, "trig-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_trig_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("backend-bound-rob"),
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_trig_info = {
@@ -404,5 +417,6 @@ const stressor_info_t stress_trig_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_trig_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_trig_methods),
+	.exercises = exercises,
 };

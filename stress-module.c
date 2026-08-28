@@ -194,7 +194,8 @@ static int get_modpath_name(
 	FILE *fp;
 	char *line = NULL;
 	ssize_t line_len;
-	size_t len = 0, lineno = 0;
+	size_t len = 0;
+	size_t lineno = 0;
 	static const char *dirname_default_prefix = "/lib/modules";
 	char module[PATH_MAX - 256];		/* used by our parser */
 	char module_path_truncated[PATH_MAX];	/* truncated path */
@@ -213,7 +214,8 @@ static int get_modpath_name(
 		goto out_close;
 
 	while ((line_len = getline(&line, &len, fp)) != -1) {
-		const char *module_pathp, *modulenamep;
+		const char *module_pathp;
+		const char *modulenamep;
 		char *start_postfix;
 
 		lineno++;
@@ -228,7 +230,7 @@ static int get_modpath_name(
 			goto out_close;
 		case PARSE_DEPMOD_MODULE:
 			/* truncates the "kernel/" part */
-			module_pathp = strchr(module, '/');
+			module_pathp = shim_strchr(module, '/');
 			if (module_pathp == NULL) {
 				free(line);
 				line = NULL;
@@ -240,7 +242,7 @@ static int get_modpath_name(
 			modulenamep = basename(module_path_truncated);
 			(void)shim_strscpy(module_path_basename, modulenamep, sizeof(module_path_basename));
 
-			start_postfix = strchr(module_path_basename, '.');
+			start_postfix = shim_strchr(module_path_basename, '.');
 			if (!start_postfix) {
 				free(line);
 				line = NULL;
@@ -248,14 +250,14 @@ static int get_modpath_name(
 			}
 			*start_postfix  = '\0';
 
-			len = strlen(name);
+			len = shim_strlen(name);
 			(void)shim_strscpy(module_short, module_path_basename, sizeof(module_short));
 			if (len != shim_strnlen(module_short, sizeof(module_short))) {
 				free(line);
 				line = NULL;
 				break;
 			}
-			if (strncmp(name, module_short, len) != 0) {
+			if (shim_strncmp(name, module_short, len) != 0) {
 				free(line);
 				line = NULL;
 				break;
@@ -266,13 +268,13 @@ static int get_modpath_name(
 
 			/* Check for .ko end, can't decompress .zst, .xz etc yet */
 			ret = -1;
-			len = strlen(module_path);
+			len = shim_strlen(module_path);
 			if (len > 6) {
-				if (strncmp(module_path + len - 6, ".ko.xz", 6) == 0)
+				if (shim_strncmp(module_path + len - 6, ".ko.xz", 6) == 0)
 					ret = MODULE_KO_XZ;
 			}
 			if (len > 3) {
-				if (strncmp(module_path + len - 3, ".ko", 3) == 0)
+				if (shim_strncmp(module_path + len - 3, ".ko", 3) == 0)
 					ret = MODULE_KO;
 			}
 			goto out_close;
@@ -319,7 +321,8 @@ static int stress_module_open(stress_args_t *args, int mod_type)
 	uint8_t buf_in[1024];
 	uint8_t buf_out[1024];
 	char modname[PATH_MAX];
-	int fd_in, fd_out;
+	int fd_in;
+	int fd_out;
 #endif
 
 	(void)args;
@@ -429,7 +432,7 @@ static int stress_module_open(stress_args_t *args, int mod_type)
 	fd_in = open(modname, O_RDONLY | O_CLOEXEC);
 	(void)unlink(modname);
 	lzma_end(&strm);
-	
+
 	return fd_in;
 #else
 	return -1;
@@ -450,7 +453,8 @@ static int stress_module(stress_args_t *args)
 	const char *finit_args1 = "";
 	unsigned int kernel_flags = 0;
 	struct stat statbuf;
-	int fd = -1, ret;
+	int fd = -1;
+	int ret;
 	static const char * const default_modules[] = {
 		"test_user_copy",
 		"test_bpf",
@@ -461,7 +465,7 @@ static int stress_module(stress_args_t *args)
 
 	ret = stress_fs_temp_dir_make_args(args);
         if (ret < 0)
-                return stress_exit_status((int)-ret);
+                return stress_exit_status(-ret);
 
 	(void)stress_setting_get("module-name", &module_name_cli);
 	(void)stress_setting_get("module-no-vermag", &module_no_vermag);
@@ -522,7 +526,7 @@ static int stress_module(stress_args_t *args)
 	 */
 	fd = stress_module_open(args, ret);
 	if (fd < 0) {
-		pr_inf_skip("%s: cannot open the module file %s, "
+		pr_inf_skip("%s: open module '%s' failed, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, global_module_path,
 			errno, strerror(errno));
@@ -598,12 +602,23 @@ out:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("finit_module"),
+	STRESS_EX_SYSCALL("delete_module"),
+
+#if defined(HAVE_LZMA_H)
+        STRESS_EX_LIBRARY("lzma"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_module_info = {
 	.stressor = stress_module,
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.supported = stress_module_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

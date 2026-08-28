@@ -29,7 +29,8 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,		 NULL }
 };
 
-#if defined(HAVE_MPROTECT)
+#if defined(HAVE_MPROTECT) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 typedef struct {
 	const int	flag;
@@ -167,13 +168,16 @@ static int stress_mprotect(stress_args_t *args)
 	const size_t mem_size = page_size * mem_pages;
 	size_t i;
 	uint8_t *mem;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
-	int prot_bits = 0, *prot_flags, rc = EXIT_SUCCESS;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
+	int prot_bits = 0;
+	int *prot_flags;
+	int rc = EXIT_SUCCESS;
 	size_t n_flags;
 
 	s_pids = stress_sync_s_pids_mmap(MPROTECT_MAX);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %d PIDs failed%s, skipping stressor\n",
 			args->name, MPROTECT_MAX, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -203,7 +207,7 @@ static int stress_mprotect(stress_args_t *args)
 
 	n_flags = stress_flag_permutation(prot_bits, &prot_flags);
 	if (!prot_flags) {
-		pr_inf_skip("%s: cannot allocate protection masks, skipping stressor\n",
+		pr_inf_skip("%s: allocate protection masks failed, skipping stressor\n",
 			args->name);
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_s_pids;
@@ -212,7 +216,7 @@ static int stress_mprotect(stress_args_t *args)
 	mem = (uint8_t *)mmap(NULL, mem_size, PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (mem == MAP_FAILED) {
-		pr_inf_skip("%s: cannot allocate %zu pages%s, "
+		pr_inf_skip("%s: mmap %zu pages failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, mem_pages,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -270,11 +274,24 @@ tidy_s_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("maple-tree-write"),
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("tlb"),
+
+	STRESS_EX_SYSCALL("mprotect"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mprotect_info = {
 	.stressor = stress_mprotect,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mprotect_info = {
@@ -282,6 +299,6 @@ const stressor_info_t stress_mprotect_info = {
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without mprotect() system call"
+	.unimplemented_reason = "built without mprotect() or siglongjmp()"
 };
 #endif

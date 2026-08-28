@@ -221,7 +221,7 @@ static inline uint32_t value_map(const uint32_t x, register uint32_t y)
 static void *hash_create(const uint64_t n, const uint32_t x, const uint32_t y)
 {
 	sparse_hash_table_t *table;
-	uint64_t n_prime = (uint64_t)stress_prime64_next_get(n);
+	uint64_t n_prime = stress_prime64_next_get(n);
 
 	(void)x;
 	(void)y;
@@ -246,7 +246,8 @@ static void *hash_create(const uint64_t n, const uint32_t x, const uint32_t y)
  */
 static void hash_destroy(void *handle, size_t *objmem)
 {
-	size_t i, n;
+	size_t i;
+	size_t n;
 	sparse_hash_table_t *table = (sparse_hash_table_t *)handle;
 
 	*objmem = 0;
@@ -336,7 +337,7 @@ static sparse_hash_node_t OPTIMIZE3 *hash_get_node(void *handle, const uint32_t 
  */
 static uint32_t OPTIMIZE3 hash_get(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_hash_node_t *node = hash_get_node(handle, x, y);
+	const sparse_hash_node_t *node = hash_get_node(handle, x, y);
 
 	return node ? node->value : 0;
 }
@@ -480,7 +481,7 @@ static sparse_qhash_node_t OPTIMIZE3 *qhash_get_node(void *handle, const uint32_
  */
 static uint32_t OPTIMIZE3 qhash_get(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_qhash_node_t *node = qhash_get_node(handle, x, y);
+	const sparse_qhash_node_t *node = qhash_get_node(handle, x, y);
 
 	return node ? node->value : 0;
 }
@@ -556,7 +557,8 @@ static int OPTIMIZE3 judy_put(void *handle, const uint32_t x, const uint32_t y, 
  */
 static uint32_t OPTIMIZE3 judy_get(void *handle, const uint32_t x, const uint32_t y)
 {
-	Word_t *pvalue, value;
+	Word_t *pvalue;
+	Word_t value;
 	const Word_t idx = ((Word_t)x << 32) | y;
 
 	JLG(pvalue, *(Pvoid_t *)handle, idx);
@@ -638,7 +640,8 @@ static void rb_destroy(void *handle, size_t *objmem)
  */
 static int OPTIMIZE3 rb_put(void *handle, const uint32_t x, const uint32_t y, const uint32_t value)
 {
-	sparse_rb_t node, *found;
+	sparse_rb_t *found;
+	sparse_rb_t node;
 
 	node.xy = ((uint64_t)x << 32) | y;
 	found = RB_FIND(sparse_rb_tree, handle, &node);
@@ -665,7 +668,8 @@ static int OPTIMIZE3 rb_put(void *handle, const uint32_t x, const uint32_t y, co
  */
 static void OPTIMIZE3 rb_del(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_rb_t node, *found;
+	sparse_rb_t *found;
+	sparse_rb_t node;
 	node.xy = ((uint64_t)x << 32) | y;
 
 	found = RB_FIND(sparse_rb_tree, handle, &node);
@@ -682,7 +686,8 @@ static void OPTIMIZE3 rb_del(void *handle, const uint32_t x, const uint32_t y)
  */
 static uint32_t OPTIMIZE3 rb_get(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_rb_t node, *found;
+	sparse_rb_t *found;
+	sparse_rb_t node;
 
 	(void)shim_memset(&node, 0xff, sizeof(node));
 	node.xy = ((uint64_t)x << 32) | y;
@@ -761,7 +766,8 @@ static void splay_destroy(void *handle, size_t *objmem)
  */
 static int OPTIMIZE3 splay_put(void *handle, const uint32_t x, const uint32_t y, const uint32_t value)
 {
-	sparse_splay_t node, *found = NULL;
+	sparse_splay_t *found = NULL;
+	sparse_splay_t node;
 
 	node.xy = ((uint64_t)x << 32) | y;
 	found = SPLAY_FIND(sparse_splay_tree, handle, &node);
@@ -788,7 +794,8 @@ static int OPTIMIZE3 splay_put(void *handle, const uint32_t x, const uint32_t y,
  */
 static void OPTIMIZE3 splay_del(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_splay_t node, *found = NULL;
+	sparse_splay_t *found = NULL;
+	sparse_splay_t node;
 	node.xy = ((uint64_t)x << 32) | y;
 
 	found = SPLAY_FIND(sparse_splay_tree, handle, &node);
@@ -805,7 +812,8 @@ static void OPTIMIZE3 splay_del(void *handle, const uint32_t x, const uint32_t y
  */
 static uint32_t OPTIMIZE3 splay_get(void *handle, const uint32_t x, const uint32_t y)
 {
-	sparse_splay_t node, *found = NULL;
+	sparse_splay_t *found = NULL;
+	sparse_splay_t node;
 
 	(void)shim_memset(&node, 0xff, sizeof(node));
 	node.xy = ((uint64_t)x << 32) | y;
@@ -869,10 +877,12 @@ static void list_destroy(void *handle, size_t *objmem)
 static int OPTIMIZE3 list_put(void *handle, const uint32_t x, const uint32_t y, const uint32_t value)
 {
 	sparse_y_list_t *y_head = (sparse_y_list_t *)handle;
-	sparse_y_list_node_t *y_node = NULL, *new_y_node;
+	sparse_y_list_node_t *y_node = NULL;
+	sparse_y_list_node_t *new_y_node;
 
 	sparse_x_list_t *x_head;
-	sparse_x_list_node_t *x_node = NULL, *new_x_node;
+	sparse_x_list_node_t *x_node = NULL;
+	sparse_x_list_node_t *new_x_node;
 
 	CIRCLEQ_FOREACH(y_node, y_head, sparse_y_list) {
 		if (y_node->y == y) {
@@ -1069,7 +1079,8 @@ static void OPTIMIZE3 hashjudy_del(void *handle, const uint32_t x, const uint32_
 static uint32_t OPTIMIZE3 hashjudy_get(void *handle, const uint32_t x, const uint32_t y)
 {
 	sparse_hashjudy_table_t *table = (sparse_hashjudy_table_t *)handle;
-	Word_t *pvalue, value;
+	Word_t *pvalue;
+	Word_t value;
 
 	if (UNLIKELY(!table))
 		return (uint32_t)-1;
@@ -1092,9 +1103,10 @@ static int stress_sparse_method_test(
 {
 	void *handle;
 	uint64_t i;
-	int rc = SPARSE_TEST_OK;
 	size_t objmem = 0;
-	double t1, t2;
+	int rc = SPARSE_TEST_OK;
+	double t1;
+	double t2;
 
 	const uint32_t w = stress_mwc32();
 	const uint32_t z = stress_mwc32();
@@ -1111,7 +1123,8 @@ static int stress_sparse_method_test(
 	for (i = 0; LIKELY(stress_continue_flag() && (i < sparsematrix_items)); i++) {
 		register const uint32_t x = stress_mwc32modn(sparsematrix_size);
 		register const uint32_t y = stress_mwc32modn(sparsematrix_size);
-		uint32_t gv, v = value_map(x, y);
+		uint32_t gv;
+		uint32_t v = value_map(x, y);
 
 		if (v == 0)
 			v = ~(uint32_t)0;
@@ -1137,7 +1150,8 @@ static int stress_sparse_method_test(
 	for (i = 0; LIKELY(stress_continue_flag() && (i < sparsematrix_items)); i++) {
 		register const uint32_t x = stress_mwc32modn(sparsematrix_size);
 		register const uint32_t y = stress_mwc32modn(sparsematrix_size);
-		uint32_t gv, v = value_map(x, y);
+		uint32_t gv;
+		uint32_t v = value_map(x, y);
 
 		if (v == 0)
 			v = ~(uint32_t)0;
@@ -1186,12 +1200,14 @@ err:
 
 static void *mmap_create(const uint64_t n, const uint32_t x, const uint32_t y)
 {
-	const size_t page_size = stress_memory_page_size_get();
+	stress_memory_info_t info;
+	uint64_t max_phys;
+	uint64_t total_free;
+	uint64_t max_size_t;
 	static sparse_mmap_t m;
-	size_t shmall, freemem, totalmem, freeswap, totalswap;
-	uint64_t max_phys, total_free, max_size_t;
+	const size_t page_size = stress_memory_page_size_get();
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+	stress_memory_info_get(&info);
 
 	(void)n;
 
@@ -1205,7 +1221,7 @@ static void *mmap_create(const uint64_t n, const uint32_t x, const uint32_t y)
 	m.mmap_size = (uint64_t)x * (uint64_t)y * sizeof(uint32_t);
 	m.mmap_size = (m.mmap_size + page_size - 1) & (uint64_t)~(page_size - 1);
 
-	total_free = (uint64_t)freemem + (uint64_t)freeswap;
+	total_free = (uint64_t)info.freemem + (uint64_t)info.freeswap;
 	if (max_phys > total_free)
 		return NULL;
 
@@ -1331,14 +1347,14 @@ static const char *sparsematrix_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_sparsematrix_items,  "sparsematrix-items",  TYPE_ID_UINT64, MIN_SPARSEMATRIX_ITEMS, MAX_SPARSEMATRIX_ITEMS, NULL },
-	{ OPT_sparsematrix_method, "sparsematrix-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)sparsematrix_method },
+	{ OPT_sparsematrix_method, "sparsematrix-method", TYPE_ID_SIZE_T_METHOD, 0, 1, sparsematrix_method },
 	{ OPT_sparsematrix_size,   "sparsematrix-size",   TYPE_ID_UINT32, MIN_SPARSEMATRIX_SIZE, MAX_SPARSEMATRIX_SIZE, NULL },
 	END_OPT,
 };
 
 static void stress_sparsematrix_create_failed(stress_args_t *args, const char *name)
 {
-	pr_inf("%s: failed to create sparse matrix with '%s' method, out of memory\n",
+	pr_inf("%s: create sparse matrix with '%s' method failed, out of memory\n",
 		args->name, name);
 }
 
@@ -1348,16 +1364,21 @@ static void stress_sparsematrix_create_failed(stress_args_t *args, const char *n
  */
 static int stress_sparsematrix(stress_args_t *args)
 {
-	uint32_t sparsematrix_size = DEFAULT_SPARSEMATRIX_SIZE;
-	uint64_t sparsematrix_items = DEFAULT_SPARSEMATRIX_ITEMS;
-	uint64_t capacity;
-	double percent_full, count;
-	double puts_mantissa, gets_mantissa;
-	uint64_t puts_exponent, gets_exponent;
-	int rc = EXIT_NO_RESOURCE;
 	test_info_t test_info[SIZEOF_ARRAY(sparsematrix_methods)];
-	size_t i, begin, end;
+	uint64_t sparsematrix_items = DEFAULT_SPARSEMATRIX_ITEMS;
+	uint64_t puts_exponent;
+	uint64_t gets_exponent;
+	uint64_t capacity;
+	size_t i;
+	size_t begin;
+	size_t end;
 	size_t method = 0;	/* All methods */
+	uint32_t sparsematrix_size = DEFAULT_SPARSEMATRIX_SIZE;
+	int rc = EXIT_NO_RESOURCE;
+	double percent_full;
+	double count;
+	double puts_mantissa;
+	double gets_mantissa;
 
 	for (i = 0; i < SIZEOF_ARRAY(test_info); i++) {
 		test_info[i].skip_no_mem = false;
@@ -1452,14 +1473,15 @@ static int stress_sparsematrix(stress_args_t *args)
 	for (i = begin; (i < end); i++) {
 		if (!test_info[i].skip_no_mem) {
 			char tmp[32];
-			double rate, f;
+			double rate;
+			double f;
 			int e;
 
 			(void)snprintf(tmp, sizeof(tmp), "%s gets per sec", sparsematrix_methods[i].name);
 			rate = test_info[i].get_duration > 0.0 ? (double)test_info[i].get_ops / test_info[i].get_duration : 0.0;
 			stress_metrics_set(args, tmp, rate, STRESS_METRIC_HARMONIC_MEAN);
 
-			f = frexp((double)rate, &e);
+			f = frexp(rate, &e);
 			puts_mantissa *= f;
 			puts_exponent += e;
 
@@ -1467,7 +1489,7 @@ static int stress_sparsematrix(stress_args_t *args)
 			rate = test_info[i].put_duration > 0.0 ? (double)test_info[i].put_ops / test_info[i].put_duration : 0.0;
 			stress_metrics_set(args, tmp, rate, STRESS_METRIC_HARMONIC_MEAN);
 
-			f = frexp((double)rate, &e);
+			f = frexp(rate, &e);
 			gets_mantissa *= f;
 			gets_exponent += e;
 
@@ -1475,7 +1497,8 @@ static int stress_sparsematrix(stress_args_t *args)
 		}
 	}
 	if (count > 0.0) {
-		double geomean, inverse_n = 1.0 / count;
+		double geomean;
+		double inverse_n = 1.0 / count;
 
 		geomean = pow(puts_mantissa, inverse_n) *
 			  pow(2.0, (double)puts_exponent * inverse_n);
@@ -1494,11 +1517,25 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("bsd"),
+#if defined(HAVE_JUDY_H)
+	STRESS_EX_LIBRARY("judy"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sparsematrix_info = {
 	.stressor = stress_sparsematrix,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(sparsematrix_methods) * 2
+	.max_metrics_items = SIZEOF_ARRAY(sparsematrix_methods) * 2,
+	.exercises = exercises,
 };

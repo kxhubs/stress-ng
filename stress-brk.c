@@ -23,7 +23,7 @@
 #include "core-nt-load.h"
 #include "core-out-of-memory.h"
 
-#define MIN_BRK_BYTES		(64 * KB)
+#define MIN_BRK_BYTES		(64 * STRESS_KB)
 #define MAX_BRK_BYTES		(MAX_MEM_LIMIT)
 #define DEFAULT_BRK_BYTES	(MAX_MEM_LIMIT)
 
@@ -90,25 +90,26 @@ static inline void OPTIMIZE3 stress_brk_page_resident(
 	const size_t page_size,
 	const bool brk_touch)
 {
-#if defined(__APPLE__)
-	(void)addr;
-	(void)page_size;
+	register uint8_t *new_addr = addr - page_size;
+
 	(void)brk_touch;
-#endif
+
+	if (UNLIKELY(new_addr == 0))
+		return;
 
 #if !defined(__APPLE__)
 	/* Touch page, force it to be resident */
 	if (LIKELY(brk_touch)) {
 #if defined(HAVE_NT_LOAD32)
-		(void)stress_nt_load32((uint32_t *)(addr - page_size));
+		(void)stress_nt_load32((uint32_t *)new_addr);
 #else
-		(void )*(volatile uint8_t *)(addr - page_size);
+		(void )*(volatile uint8_t *)new_addr;
 #endif
 	}
 #endif
 #if defined(HAVE_MADVISE) &&	\
     defined(MADV_MERGEABLE)
-	(void)madvise((void *)(addr - page_size), page_size, MADV_MERGEABLE);
+	(void)madvise((void *)new_addr, page_size, MADV_MERGEABLE);
 #else
 	UNEXPECTED
 #endif
@@ -121,9 +122,12 @@ static inline size_t CONST stress_brk_abs(const uint8_t *ptr1, const uint8_t *pt
 
 static int OPTIMIZE3 stress_brk_child(stress_args_t *args, void *context)
 {
-	uint8_t *start_ptr, *new_start_ptr, *unmap_ptr = NULL;
+	uint8_t *start_ptr;
+	uint8_t *new_start_ptr;
+	uint8_t *unmap_ptr = NULL;
 	const uint8_t *brk_failed_ptr = NULL;
-	int i = 0, brk_failed_count = 0;
+	int i = 0;
+	int brk_failed_count = 0;
 	const size_t page_size = args->page_size;
 	const bool brk_touch = !brk_context->brk_notouch;
 	bool reset_brk = false;
@@ -341,10 +345,10 @@ static int stress_brk(stress_args_t *args)
 	pr_dbg("%s: %" PRIu64 " successful sbrk expands, %" PRIu64 " successful sbrk shinks\n",
 		args->name, brk_context->sbrk_expands, brk_context->sbrk_shrinks);
 
-	rate = (brk_context->sbrk_exp_count > 0.0) ? (double)brk_context->sbrk_exp_duration / brk_context->sbrk_exp_count : 0.0;
+	rate = (brk_context->sbrk_exp_count > 0.0) ? brk_context->sbrk_exp_duration / brk_context->sbrk_exp_count : 0.0;
 	stress_metrics_set(args, "nanosecs per sbrk page expand",
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
-	rate = (brk_context->sbrk_shr_count > 0.0) ? (double)brk_context->sbrk_shr_duration / brk_context->sbrk_shr_count : 0.0;
+	rate = (brk_context->sbrk_shr_count > 0.0) ? brk_context->sbrk_shr_duration / brk_context->sbrk_shr_count : 0.0;
 	stress_metrics_set(args, "nanosecs per sbrk page shrink",
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
 
@@ -353,11 +357,27 @@ static int stress_brk(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("heap"),
+	STRESS_EX_FEATURE("kmalloc"),
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("swap"),
+
+	STRESS_EX_SYSCALL("brk"),
+	STRESS_EX_SYSCALL("sbrk"),
+#if defined(HAVE_MADVISE) &&	\
+    defined(MADV_MERGEABLE)
+	STRESS_EX_SYSCALL("madvise"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_brk_info = {
 	.stressor = stress_brk,
 	.supported = stress_brk_supported,
 	.classifier = CLASS_OS | CLASS_VM,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

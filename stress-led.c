@@ -55,15 +55,16 @@ static int CONST stress_led_dot_filter(const struct dirent *d)
 
 static char *stress_led_orig_trigger(const char *str)
 {
-	const char *start, *end;
+	const char *start;
+	const char *end;
 	char *orig;
 	size_t len;
 
-	start = strchr(str, '[');
+	start = shim_strchr(str, '[');
 	if (!start)
 		return NULL;
 	start++;
-	end = strchr(start, ']');
+	end = shim_strchr(start, ']');
 	if (!end)
 		return NULL;
 	len = 1 + (end - start);
@@ -91,7 +92,7 @@ static void stress_led_trigger(const char *path, const char *trigger)
 	char filename[PATH_MAX];
 
 	(void)snprintf(filename, sizeof(filename), "%s/trigger", path);
-	stress_fs_file_write(filename, trigger, strlen(trigger));
+	stress_fs_file_write(filename, trigger, shim_strlen(trigger));
 }
 
 /*
@@ -125,8 +126,8 @@ static stress_led_info_t *stress_led_info_get(void)
 {
 	static const char sys_devices[] = "/sys/class/leds";
 	stress_led_info_t *led_info_list = NULL;
-
-	int n_devs, i;
+	int n_devs;
+	int i;
 	struct dirent **led_list = NULL;
 
 	n_devs = scandir(sys_devices, &led_list, stress_led_dot_filter, NULL);
@@ -221,14 +222,16 @@ led_free_info:
  *  stress_led_exercise()
  *	exercise all LED files in a given LED path
  */
-static void stress_led_exercise(stress_args_t *args, stress_led_info_t *led_info)
+static void stress_led_exercise(stress_args_t *args, const stress_led_info_t *led_info)
 {
 	char buf[MAX_BUF_SIZE];
-	char *ptr, *token;
+	char *ptr;
+	char *token;
+	char *saveptr;
 	int brightness;
 
 	(void)shim_strscpy(buf, led_info->trigger, sizeof(buf));
-	for (ptr = buf; (token = strtok(ptr, " ")) != NULL; ptr = NULL) {
+	for (ptr = buf; (token = shim_strtok_r(ptr, " ", &saveptr)) != NULL; ptr = NULL) {
 		char *tmp;
 		int delta = 1;
 
@@ -236,7 +239,7 @@ static void stress_led_exercise(stress_args_t *args, stress_led_info_t *led_info
 			break;
 		if (token[0] == '[')
 			token++;
-		tmp = strchr(token, ']');
+		tmp = shim_strchr(token, ']');
 		if (tmp)
 			*tmp = '\0';
 		stress_led_trigger(led_info->path, token);
@@ -290,10 +293,19 @@ static int stress_led(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_led_info = {
 	.stressor = stress_led,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_led_info = {

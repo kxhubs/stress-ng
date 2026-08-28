@@ -82,9 +82,10 @@ struct shim_fsverity_read_metadata_arg {
 static int stress_verity(stress_args_t *args)
 {
 	char filename[PATH_MAX];
-	int ret, fd;
-	size_t hash = 0;
 	const size_t file_size = OFFSET_SCALE * OFFSET_CHUNKS;
+	size_t hash = 0;
+	int ret;
+	int fd;
 
 	if (SIZEOF_ARRAY(hash_algorithms) == (0)) {
 		if (stress_instance_zero(args))
@@ -107,10 +108,10 @@ static int stress_verity(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		struct fsverity_enable_arg enable;
-		char digest_buf[256];
-		struct fsverity_digest *digest = (struct fsverity_digest *)shim_assume_aligned(digest_buf, 1);
 		char block[512];
+		char digest_buf[256];
+		struct fsverity_enable_arg enable;
+		struct fsverity_digest *digest = (struct fsverity_digest *)shim_assume_aligned(digest_buf, 1);
 		int i;
 #if defined(FS_IOC_READ_VERITY_METADATA)
 		struct shim_fsverity_read_metadata_arg md_arg;
@@ -122,7 +123,7 @@ static int stress_verity(stress_args_t *args)
 		fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 		if (fd < 0) {
 			ret = stress_exit_status(errno);
-			pr_err("%s: cannot create %s, errno=%d (%s)\n",
+			pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			return ret;
 		}
@@ -136,7 +137,7 @@ static int stress_verity(stress_args_t *args)
 			n = write(fd, block, sizeof(block));
 			if (n < 0) {
 				ret = stress_exit_status(errno);
-				pr_err("%s: cannot write %s, errno=%d (%s)%s\n",
+				pr_err("%s: write to '%s' failed, errno=%d (%s)%s\n",
 					args->name, filename,
 					errno, strerror(errno),
 					stress_fs_type_get(filename));
@@ -151,7 +152,7 @@ static int stress_verity(stress_args_t *args)
 		fd = open(filename, O_RDONLY);
 		if (fd < 0) {
 			ret = stress_exit_status(errno);
-			pr_err("%s: cannot re-open %s, errno=%d (%s)%s\n",
+			pr_err("%s: re-open '%s' failed, errno=%d (%s)%s\n",
 				args->name, filename, errno, strerror(errno),
 				stress_fs_type_get(filename));
 			goto clean;
@@ -240,7 +241,7 @@ static int stress_verity(stress_args_t *args)
 		fd = open(filename, O_RDONLY);
 		if (fd < 0) {
 			ret = stress_exit_status(errno);
-			pr_err("%s: cannot re-open %s, errno=%d (%s)\n",
+			pr_err("%s: re-open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			goto clean;
 		}
@@ -253,7 +254,7 @@ static int stress_verity(stress_args_t *args)
 			n = read(fd, block, sizeof(block));
 			if (n < 0) {
 				ret = stress_exit_status(errno);
-				pr_err("%s: cannot read %s, errno=%d (%s)%s\n",
+				pr_err("%s: read of '%s' failed, errno=%d (%s)%s\n",
 					args->name, filename,
 					errno, strerror(errno),
 					stress_fs_type_get(filename));
@@ -299,13 +300,26 @@ clean:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_verity_info = {
 	.stressor = stress_verity,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
+
 #else
+
 const stressor_info_t stress_verity_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,

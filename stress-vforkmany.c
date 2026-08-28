@@ -25,9 +25,9 @@
 #include "core-mincore.h"
 #include "core-out-of-memory.h"
 
-#define MIN_VFORKMANY_VM_BYTES		(4 * KB)
+#define MIN_VFORKMANY_VM_BYTES		(4 * STRESS_KB)
 #define MAX_VFORKMANY_VM_BYTES		(MAX_MEM_LIMIT)
-#define DEFAULT_VFORKMANY_VM_BYTES	(64 * MB)
+#define DEFAULT_VFORKMANY_VM_BYTES	(64 * STRESS_MB)
 
 typedef struct {
 	volatile uint64_t invoked;	/* count of vfork processes that started */
@@ -80,12 +80,12 @@ static void vforkmany_wait(vforkmany_shared_t *vforkmany_shared, const pid_t pid
 static int stress_vforkmany(stress_args_t *args)
 {
 	/* avoid variables on stack since we're using vfork */
-	static pid_t chpid;
-	static uint8_t *stack_sig;
-	static bool vforkmany_vm = false;
 	static vforkmany_shared_t *vforkmany_shared;
+	static pid_t chpid;
 	static size_t vforkmany_vm_bytes = DEFAULT_VFORKMANY_VM_BYTES;
 	static int rc = EXIT_SUCCESS;
+	static uint8_t *stack_sig;
+	static bool vforkmany_vm = false;
 
 	(void)stress_setting_get("vforkmany-vm", &vforkmany_vm);
 	if (stress_setting_get("vforkmany-vm-bytes", &vforkmany_vm_bytes)) {
@@ -101,7 +101,7 @@ static int stress_vforkmany(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (stack_sig == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte signal stack%s,"
+		pr_inf_skip("%s: mmap %zu byte signal stack failed%s,"
 			" errno=%d (%s), skipping stressor\n",
 			args->name, (size_t)STRESS_SIGSTKSZ,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -116,7 +116,7 @@ static int stress_vforkmany(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (vforkmany_shared == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+		pr_inf("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, sizeof(*vforkmany_shared),
 			stress_memory_free_get(), errno, strerror(errno));
 		VOID_RET(int, stress_stack_sigalt(NULL, 0));
@@ -136,11 +136,8 @@ static int stress_vforkmany(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-fork_again:
-	chpid = fork();
+	chpid = stress_retry_fork(args, 0);
 	if (chpid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto fork_again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_err("%s: fork failed, errno=%d: (%s)\n",
@@ -342,10 +339,22 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("vfork"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vforkmany_info = {
 	.stressor = stress_vforkmany,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

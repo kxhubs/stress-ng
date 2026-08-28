@@ -74,7 +74,7 @@ static const char *stress_jpeg_image(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_jpeg_height,  "jpeg-height",   TYPE_ID_INT32, MIN_JPEG_HEIGHT, MAX_JPEG_HEIGHT, NULL },
-	{ OPT_jpeg_image,   "jpeg-image",    TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_jpeg_image },
+	{ OPT_jpeg_image,   "jpeg-image",    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_jpeg_image },
 	{ OPT_jpeg_width,   "jpeg-width",    TYPE_ID_INT32, MIN_JPEG_WIDTH, MAX_JPEG_WIDTH, NULL },
 	{ OPT_jpeg_quality, "jpeg-quality",  TYPE_ID_INT32, MIN_JPEG_QUALITY, MAX_JPEG_QUALITY, NULL },
 	END_OPT,
@@ -138,7 +138,8 @@ static void OPTIMIZE3 stress_rgb_noise(
 	const int32_t	y_max)
 {
 	const int32_t size = x_max * y_max * 3;
-	register int32_t i, n;
+	register int32_t i;
+	register int32_t n;
 	register uint32_t *ptr32 = (uint32_t *)shim_assume_aligned(rgb, 4);
 	register uint8_t *ptr8;
 
@@ -279,7 +280,8 @@ static int stress_rgb_compress_to_jpeg(
 	uint32_t	*checksum,
 	double		*duration)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 	FILE *fp;
@@ -359,7 +361,8 @@ static int stress_jpeg(stress_args_t *args)
 	double t_jpeg;
 	int32_t jpeg_quality = 95;
 	int32_t yy = 0;
-	size_t rgb_size, row_pointer_size;
+	size_t rgb_size;
+	size_t row_pointer_size;
 	size_t jpeg_image = 0; /* plasma */
 	double total_pixels = 0.0, t_start, duration, rate, ratio;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -390,7 +393,7 @@ static int stress_jpeg(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (rgb == MAP_FAILED) {
-		pr_inf_skip("%s: cannot allocate RGB buffer of size %" PRId32 " x %" PRId32 " x %d%s, "
+		pr_inf_skip("%s: allocate RGB buffer of size %" PRId32 " x %" PRId32 " x %d%s failed, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, x_max, y_max, 3,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -402,7 +405,7 @@ static int stress_jpeg(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (row_pointer == MAP_FAILED) {
-		pr_inf_skip("%s: cannot allocate row pointer array of size %" PRId32 " x %zu%s, "
+		pr_inf_skip("%s: allocate row pointer array of size %" PRId32 " x %zu%s failed, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, y_max, sizeof(*row_pointer),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -497,12 +500,25 @@ static int stress_jpeg(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-loads"),
+
+	STRESS_EX_LIBRARY("jpeg"),
+	STRESS_EX_LIBRARY("m"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_jpeg_info = {
 	.stressor = stress_jpeg,
 	.classifier = CLASS_CPU | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_jpeg_info = {

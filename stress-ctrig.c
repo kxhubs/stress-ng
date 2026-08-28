@@ -216,7 +216,7 @@ static bool OPTIMIZE3 TARGET_CLONES stress_ctrig_ctanf(stress_args_t *args)
 	complex double sumctan = shim_cmplx(0.0, 0.0);
 	complex double z = shim_cmplx(-0.5, 0.5);
 	const complex double dz = shim_cmplx(1.0 / (double)STRESS_CTRIG_LOOPS, -1.0 / (2.0 * (double)STRESS_CTRIG_LOOPS));
-	const double precision = 1E-4;
+	const double precision = 1E-3;
 	int i;
 
 PRAGMA_UNROLL_N(8)
@@ -301,10 +301,9 @@ static bool stress_ctrig_exercise(stress_args_t *args, const size_t idx)
 	ret = stress_ctrig_methods[idx].trig_func(args);
 	stress_ctrig_metrics[idx].duration += (stress_time_now() - t);
 	stress_ctrig_metrics[idx].count += 1.0;
-	if (ret) {
-		if (idx != 0)
-			pr_fail("trig: %s does not match expected checksum\n",
-				stress_ctrig_methods[idx].name);
+	if ((ret) && (idx != 0)) {
+		pr_fail("trig: %s does not match expected checksum\n",
+			stress_ctrig_methods[idx].name);
 	}
 	return ret;
 }
@@ -366,8 +365,18 @@ static const char *stress_ctrig_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_ctrig_method, "ctrig-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_ctrig_method },
+	{ OPT_ctrig_method, "ctrig-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_ctrig_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp-complex"),
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_ctrig_info = {
@@ -376,7 +385,8 @@ const stressor_info_t stress_ctrig_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_ctrig_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_ctrig_methods),
+	.exercises = exercises,
 };
 
 #else

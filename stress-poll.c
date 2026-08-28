@@ -102,7 +102,8 @@ static int OPTIMIZE3 stress_poll(stress_args_t *args)
 	pid_t pid;
 	int rc = EXIT_SUCCESS, parent_cpu;
 	register size_t i;
-	size_t max_fds = MAX_PIPES, max_rnd_fds;
+	size_t max_fds = MAX_PIPES;
+	size_t max_rnd_fds;
 	pipe_fds_t *pipe_fds;
 	struct pollfd *poll_fds;
 	int *rnd_fds_index;
@@ -118,14 +119,14 @@ static int OPTIMIZE3 stress_poll(stress_args_t *args)
 
 	pipe_fds = (pipe_fds_t *)calloc(max_fds, sizeof(*pipe_fds));
 	if (!pipe_fds) {
-		pr_inf_skip("%s: out of memory allocating %zu pipe file descriptors%s, "
+		pr_inf_skip("%s: allocating %zu pipe file descriptors failed%s, "
 			"skipping stressor\n",
 			args->name, max_fds, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 	poll_fds = (struct pollfd *)calloc(max_fds, sizeof(*poll_fds));
 	if (!poll_fds) {
-		pr_inf("%s: out of memory allocating %zu poll file descriptors%s, "
+		pr_inf("%s: allocating %zu poll file descriptors failed%s, "
 			"skipping stressor\n",
 			args->name, max_fds, stress_memory_free_get());
 		free(pipe_fds);
@@ -138,7 +139,7 @@ static int OPTIMIZE3 stress_poll(stress_args_t *args)
 
 	rnd_fds_index = (int *)calloc(max_rnd_fds, sizeof(*rnd_fds_index));
 	if (!rnd_fds_index) {
-		pr_inf("%s: out of memory allocating %zu randomized poll indices%s, "
+		pr_inf("%s: allocating %zu randomized poll indices failed%s, "
 			"skipping stressor\n",
 			args->name, max_fds, stress_memory_free_get());
 		free(poll_fds);
@@ -180,12 +181,10 @@ static int OPTIMIZE3 stress_poll(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto tidy;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -322,7 +321,9 @@ abort:
 			if (UNLIKELY(!stress_continue(args)))
 				break;
 
-#if defined(RLIMIT_NOFILE)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_NOFILE)
 			/*
 			 *  Exercise ppoll with more fds than rlimit soft
 			 *  limit. This should fail with EINVAL on Linux.
@@ -440,13 +441,32 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+	STRESS_EX_SYSCALL("poll"),
+#if defined(HAVE_PPOLL)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+#if defined(HAVE_SYS_SELECT_H) &&	\
+    defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+#if defined(HAVE_SYS_SELECT_H) &&	\
+    defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("pselect"),
+#endif
+
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_poll_info = {
 	.stressor = stress_poll,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_poll_info = {

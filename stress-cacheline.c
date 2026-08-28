@@ -116,7 +116,7 @@ static int stress_cacheline_adjacent(
 	volatile uint8_t *buffer = (volatile uint8_t *)g_shared->cacheline.buffer;
 	volatile uint8_t *data8 = buffer + idx;
 	register uint8_t val8 = *(data8);
-	volatile uint8_t *data8adjacent = (volatile uint8_t *)(((uintptr_t)data8) ^ 1);
+	volatile const uint8_t *data8adjacent = (volatile const uint8_t *)(((uintptr_t)data8) ^ 1);
 
 	(void)parent;
 	(void)l1_cacheline_size;
@@ -366,7 +366,7 @@ static int stress_cacheline_rdrev64(
 		/* read cache line backwards */
 PRAGMA_UNROLL
 		for (j = cacheline_size - 8; j >= 0; j -= 8) {
-			volatile uint64_t *data64 = (volatile uint64_t *)(aligned_cacheline + (size_t)j);
+			volatile const uint64_t *data64 = (volatile const uint64_t *)(aligned_cacheline + (size_t)j);
 
 			(void)*data64;
 			stress_asm_mb();
@@ -407,7 +407,7 @@ static int stress_cacheline_rdfwd64(
 PRAGMA_UNROLL
 #endif
 		for (j = 0; j < cacheline_size; j += 8) {
-			volatile uint64_t *data64 = (volatile uint64_t *)(aligned_cacheline + j);
+			volatile const uint64_t *data64 = (volatile const uint64_t *)(aligned_cacheline + j);
 
 			(void)*data64;
 			stress_asm_mb();
@@ -429,12 +429,12 @@ static int stress_cacheline_rdints(
 {
 	register int i;
 	volatile uint8_t *buffer = (volatile uint8_t *)g_shared->cacheline.buffer;
-	volatile uint8_t *data8 = buffer + idx;
-	volatile uint16_t *data16 = (volatile uint16_t *)(((uintptr_t)data8) & ~(uintptr_t)1);
-	volatile uint32_t *data32 = (volatile uint32_t *)(((uintptr_t)data8) & ~(uintptr_t)3);
-	volatile uint64_t *data64 = (volatile uint64_t *)(((uintptr_t)data8) & ~(uintptr_t)7);
+	volatile uint8_t *data8 = (volatile uint8_t *)(buffer + idx);
+	volatile const uint16_t *data16 = (volatile const uint16_t *)(((uintptr_t)data8) & ~(uintptr_t)1);
+	volatile const uint32_t *data32 = (volatile const uint32_t *)(((uintptr_t)data8) & ~(uintptr_t)3);
+	volatile const uint64_t *data64 = (volatile const uint64_t *)(((uintptr_t)data8) & ~(uintptr_t)7);
 #if defined(HAVE_INT128_T)
-        volatile __uint128_t *data128 = (volatile __uint128_t *)(((uintptr_t)data8) & ~(uintptr_t)15);
+        volatile const __uint128_t *data128 = (volatile const __uint128_t *)(((uintptr_t)data8) & ~(uintptr_t)15);
 #endif
 
 	(void)parent;
@@ -450,20 +450,20 @@ PRAGMA_UNROLL
 		stress_asm_mb();
 
 		/* 2 byte reads from same location */
-		(void)*(data16);
+		(void)*data16;
 		stress_asm_mb();
 
 		/* 4 byte reads from same location */
-		(void)*(data32);
+		(void)*data32;
 		stress_asm_mb();
 
 		/* 8 byte reads from same location */
-		(void)*(data64);
+		(void)*data64;
 		stress_asm_mb();
 
 #if defined(HAVE_INT128_T)
 		/* 16 byte reads from same location */
-		(void)*(data128);
+		(void)*data128;
 		stress_asm_mb();
 #endif
 		if (UNLIKELY(val8 != *data8)) {
@@ -712,8 +712,10 @@ static int stress_cacheline(stress_args_t *args)
 	size_t cacheline_method = 0;
 	stress_cacheline_func func;
 	bool cacheline_affinity = false;
-	size_t n_pids, i;
-	stress_pid_t *s_pids = NULL, *s_pids_head = NULL;
+	size_t n_pids;
+	size_t i;
+	stress_pid_t *s_pids = NULL;
+	stress_pid_t *s_pids_head = NULL;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -772,11 +774,8 @@ static int stress_cacheline(stress_args_t *args)
 				rc = EXIT_NO_RESOURCE;
 				goto finish;
 			}
-again:
-			s_pids[i].pid = fork();
+			s_pids[i].pid = stress_retry_fork(args, 0);
 			if (s_pids[i].pid < 0) {
-				if (stress_redo_fork(args, errno))
-					goto again;
 				if (UNLIKELY(!stress_continue(args)))
 					goto finish;
 				pr_err("%s: fork failed, errno=%d: (%s)\n",
@@ -784,7 +783,7 @@ again:
 				goto finish;
 			} else if (s_pids[i].pid == 0) {
 				s_pids[i].pid = getpid();
-	
+
 				stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 				stress_sync_start_wait_s_pid(&s_pids[i]);
 				stress_proc_state_set(args->name, STRESS_STATE_RUN);
@@ -815,9 +814,16 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 static const stress_opt_t opts[] = {
 	{ OPT_cacheline_affinity, "cacheline-affinity", TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_cacheline_method,   "cacheline-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_cacheline_method },
+	{ OPT_cacheline_method,   "cacheline-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_cacheline_method },
 	END_OPT,
 };
 
@@ -828,5 +834,6 @@ const stressor_info_t stress_cacheline_info = {
 	.opts = opts,
 	.init = stress_cacheline_init,
 	.deinit = stress_cacheline_deinit,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

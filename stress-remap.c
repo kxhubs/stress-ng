@@ -150,8 +150,13 @@ static int stress_remap(stress_args_t *args)
 	uint8_t *unmapped, *mapped;
 	const size_t page_size = args->page_size;
 	const size_t stride = page_size / sizeof(*data);
-	size_t data_size, order_size, i, mapped_size = page_size + page_size;
-	double duration = 0.0, count = 0.0, rate = 0.0;
+	size_t i;
+	size_t data_size;
+	size_t order_size;
+	size_t mapped_size = page_size + page_size;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate = 0.0;
 	bool remap_mlock = false;
 	int rc = EXIT_SUCCESS;
 
@@ -172,8 +177,8 @@ static int stress_remap(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes "
-			"(%zu pages)%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu bytes "
+			"(%zu pages) failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, data_size, remap_pages,
 			stress_memory_free_get(),
 			errno, strerror(errno));
@@ -188,7 +193,7 @@ static int stress_remap(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (order == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap %zu bytes%s failed, errno=%d (%s), "
 			"skipping stressor\n", args->name, order_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)munmap((void *)data, data_size);
@@ -347,12 +352,28 @@ PRAGMA_UNROLL_N(4)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache-read-miss"),
+	STRESS_EX_FEATURE("maple-tree-write"),
+	STRESS_EX_FEATURE("maple-tree-read"),
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("tlb-flush"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("remap_file_pages"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_remap_info = {
 	.stressor = stress_remap,
 	.opts = opts,
 	.classifier = CLASS_MEMORY | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_remap_info = {

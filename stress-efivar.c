@@ -21,6 +21,7 @@
 #include "core-attribute.h"
 #include "core-builtin.h"
 #include "core-capabilities.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-madvise.h"
 #include "core-out-of-memory.h"
@@ -65,7 +66,7 @@ static int efi_mode = STRESS_EFI_UNKNOWN;
  *  efi_var_ignore()
  *	check for filenames that are not efi vars
  */
-static inline bool CONST efi_var_ignore(char *d_name)
+static inline bool CONST efi_var_ignore(const char *d_name)
 {
 	static const char * const ignore[] = {
 		".",
@@ -78,7 +79,7 @@ static inline bool CONST efi_var_ignore(char *d_name)
 	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(ignore); i++)
-		if (strcmp(d_name, ignore[i]) == 0)
+		if (shim_strcmp(d_name, ignore[i]) == 0)
 			return true;
 
 	return false;
@@ -111,7 +112,6 @@ static inline void guid_to_str(const uint8_t *guid, char *guid_str, const size_t
 static inline void efi_get_varname(char *dst, const size_t len, const stress_efi_var_t *var)
 {
 	register size_t i = len;
-
 	const uint16_t *src = (const uint16_t *)(const void *)var->varname;
 
 	while ((*src) && (i > 1)) {
@@ -139,10 +139,12 @@ static void efi_lseek_read(const int fd, const off_t offset, const int whence)
 
 static void stress_efi_sysfs_fd(
 	stress_args_t *args,
+	const char *filename,
 	const int fd,
 	const ssize_t n)
 {
 	off_t offset;
+
 	/*
 	 *  And exercise the interface for some extra kernel
 	 *  test coverage
@@ -177,6 +179,9 @@ static void stress_efi_sysfs_fd(
 		int isz;
 
 		VOID_RET(int, ioctl(fd, FIGETBSZ, &isz));
+		if (stress_ioctl_get_check(fd, FIGETBSZ, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FIGETBSZ on '%s', failed, not getting flags reliably\n",
+				args->name, filename);
 	}
 #endif
 #if defined(FIONREAD)
@@ -184,6 +189,9 @@ static void stress_efi_sysfs_fd(
 		int isz;
 
 		VOID_RET(int, ioctl(fd, FIONREAD, &isz));
+		if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FIONREAD on '%s' failed, not getting flags reliably\n",
+				args->name, filename);
 	}
 #endif
 }
@@ -202,7 +210,8 @@ static int efi_get_data(
 	double *duration,
 	double *count)
 {
-	int fd, rc = 0;
+	int fd;
+	int rc = 0;
 	ssize_t n;
 	char filename[PATH_MAX];
 	struct stat statbuf;
@@ -215,7 +224,7 @@ static int efi_get_data(
 		return 0;	/* silently fail for open-retry later on */
 
 	if (shim_fstat(fd, &statbuf) < 0) {
-		pr_fail("%s: failed to stat %s, errno=%d (%s)\n",
+		pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = -1;
 		goto err_vars;
@@ -228,7 +237,7 @@ static int efi_get_data(
 		t = stress_time_now();
 	n = read(fd, buf, buf_len);
 	if ((n < 0) && (errno != EIO) && (errno != EAGAIN) && (errno != EINTR)) {
-		pr_fail("%s: failed to read %s, errno=%d (%s)\n",
+		pr_fail("%s: read '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = -1;
 		goto err_vars;
@@ -237,7 +246,7 @@ static int efi_get_data(
 		(*duration) += stress_time_now() - t;
 		(*count) += 1.0;
 	}
-	stress_efi_sysfs_fd(args, fd, n);
+	stress_efi_sysfs_fd(args, filename, fd, n);
 
 err_vars:
 	(void)close(fd);
@@ -259,7 +268,9 @@ static int efi_read_variable(
 	struct stat statbuf;
 	double t;
 	ssize_t n;
-	int fd, ret, rc = 0;
+	int fd;
+	int ret;
+	int rc = 0;
 #if defined(FS_IOC_GETFLAGS) &&	\
     defined(FS_IOC_SETFLAGS)
 	int flags;
@@ -271,7 +282,7 @@ static int efi_read_variable(
 
 	ret = shim_fstat(fd, &statbuf);
 	if (ret < 0) {
-		pr_fail("%s: failed to stat %s, errno=%d (%s)\n",
+		pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = -1;
 		goto err_efi_vars;
@@ -280,7 +291,7 @@ static int efi_read_variable(
 	t = stress_time_now();
 	n = read(fd, data, data_len);
 	if ((n < 0) && (errno != EIO) && (errno != EAGAIN) && (errno != EINTR)) {
-		pr_fail("%s: failed to read %s, errno=%d (%s)\n",
+		pr_fail("%s: read '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = -1;
 		goto err_efi_vars;
@@ -289,19 +300,22 @@ static int efi_read_variable(
 	(*count) += 1.0;
 
 	(void)stress_fs_fdinfo_read(pid, fd);
-	stress_efi_sysfs_fd(args, fd, n);
+	stress_efi_sysfs_fd(args, filename, fd, n);
 
 #if defined(FS_IOC_GETFLAGS) &&	\
     defined(FS_IOC_SETFLAGS)
 	ret = ioctl(fd, FS_IOC_GETFLAGS, &flags);
 	if (ret < 0) {
-		pr_fail("%s: ioctl FS_IOC_GETFLAGS on %s failed, errno=%d (%s)\n",
+		pr_fail("%s: ioctl FS_IOC_GETFLAGS on '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = -1;
 		goto err_efi_vars;
 	}
 
 	VOID_RET(int, ioctl(fd, FS_IOC_SETFLAGS, &flags));
+	if (stress_ioctl_get_check(fd, FS_IOC_SETFLAGS, sizeof(int)) < 0)
+		pr_fail("%s: ioctl FS_IOC_GETFLAGS on '%s' failed, not getting flags reliably\n",
+			args->name, filename);
 #endif
 
 err_efi_vars:
@@ -398,10 +412,11 @@ static int efi_vars_get(
 	double *count)
 {
 	static char data[4096];
-	int i, rc = 0;
+	int i;
+	int rc = 0;
 
 	for (i = 0; LIKELY(stress_continue(args) && (i < dir_count)); i++) {
-		char *d_name = efi_dentries[i]->d_name;
+		const char *d_name = efi_dentries[i]->d_name;
 		int ret;
 
 		if (efi_ignore[i])
@@ -476,7 +491,8 @@ static int stress_efivar(stress_args_t *args)
 {
 	pid_t pid;
 	size_t sz;
-	double duration = 0.0, count = 0.0;
+	double duration = 0.0;
+	double count = 0.0;
 	int rc = EXIT_SUCCESS;
 
 	efi_mode = STRESS_EFI_UNKNOWN;
@@ -490,7 +506,7 @@ static int stress_efivar(stress_args_t *args)
 		if (efi_dentries && (dir_count > 0)) {
 			efi_mode = STRESS_EFI_VARS;
 		} else {
-			pr_inf("%s: cannot read EFI vars in %s or %s\n", args->name, sysfs_efi_efivars, sysfs_efi_vars);
+			pr_inf("%s: cannot read EFI vars in '%s' or '%s'\n", args->name, sysfs_efi_efivars, sysfs_efi_vars);
 			return EXIT_NO_RESOURCE;
 		}
 	}
@@ -510,11 +526,9 @@ static int stress_efivar(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
-	pid = fork();
+
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -573,12 +587,17 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_efivar_info = {
 	.stressor = stress_efivar,
 	.supported = stress_efivar_supported,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 static int stress_efivar_supported(const char *name)

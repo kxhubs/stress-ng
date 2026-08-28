@@ -43,9 +43,9 @@ static const stress_help_t help[] = {
  *  stress_l1cache_ln2()
  *	calculate log base 2
  */
-static uint32_t CONST stress_l1cache_ln2(const uint32_t val)
+static uint32_t CONST stress_l1cache_ln2(uint32_t val)
 {
-	int ln2 = 0;
+	register int ln2 = 0;
 
 	while (val >>= 1)
 		++ln2;
@@ -181,8 +181,8 @@ bad_cache_free:
 	stress_cpu_cache_free(cpu_caches);
 #endif
 bad_cache:
-	pr_inf_skip("%s: skipping stressor, cannot determine "
-		"cache level 1 information from kernel\n",
+	pr_inf_skip("%s: cannot determine cache level 1 information "
+		"from kernel, skipping stressor\n",
 		args->name);
 
 	return EXIT_NO_RESOURCE;
@@ -197,7 +197,6 @@ static int OPTIMIZE3 stress_l1cache_forward(
 {
 	register int i;
 	static uint32_t set;
-
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	const uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -236,7 +235,6 @@ static int OPTIMIZE3 stress_l1cache_forward_and_verify(
 {
 	register int i;
 	static uint32_t set;
-
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	const uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -281,7 +279,6 @@ static int OPTIMIZE3 stress_l1cache_reverse(
 {
 	register int i;
 	static uint32_t set;
-
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -320,7 +317,6 @@ static int OPTIMIZE3 stress_l1cache_reverse_and_verify(
 {
 	register int i;
 	static uint32_t set;
-
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -367,8 +363,8 @@ static int OPTIMIZE3 stress_l1cache_random(
 {
 	register int i;
 	static uint32_t set;
-	uint32_t w, z;
-
+	uint32_t w;
+	uint32_t z;
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	const uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -413,8 +409,8 @@ static int OPTIMIZE3 stress_l1cache_random_and_verify(
 {
 	register int i;
 	static uint32_t set;
-	uint32_t w, z;
-
+	uint32_t w;
+	uint32_t z;
 	const uint32_t set_offset = set * l1cache_set_size;
 	uint8_t * const cache_start = cache_aligned + set_offset;
 	const uint8_t * const cache_end = cache_start + (l1cache_size << 1);
@@ -489,7 +485,7 @@ static const stress_opt_t opts[] = {
 	{ OPT_l1cache_sets,      "l1cache-sets",      TYPE_ID_UINT32, 1, 65536, NULL },
 	{ OPT_l1cache_size,      "l1cache-size",      TYPE_ID_UINT32, 1, INT_MAX, NULL },
 	{ OPT_l1cache_line_size, "l1cache-line-size", TYPE_ID_UINT32, 1, INT_MAX, NULL },
-	{ OPT_l1cache_method,    "l1cache-method",    TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_l1cache_method },
+	{ OPT_l1cache_method,    "l1cache-method",    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_l1cache_method },
 	{ OPT_l1cache_mlock,     "l1cache-mlock",     TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_l1cache_ways,      "l1cache-ways",      TYPE_ID_UINT32, 1, 65536, NULL },
 	END_OPT,
@@ -497,13 +493,15 @@ static const stress_opt_t opts[] = {
 
 static int stress_l1cache(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	uint32_t l1cache_ways = 0;
 	uint32_t l1cache_size = 0;
 	uint32_t l1cache_sets = 0;
 	uint32_t l1cache_line_size = 0;
 	uint32_t l1cache_set_size;
-	uint8_t *cache, *cache_aligned;
+	uint8_t *cache;
+	uint8_t *cache_aligned;
 	uintptr_t addr;
 	uint32_t padding;
 	size_t l1cache_method = 0;	/* Default forward */
@@ -580,10 +578,18 @@ static int stress_l1cache(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_l1cache_info = {
 	.stressor = stress_l1cache,
 	.classifier = CLASS_CPU_CACHE,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -18,6 +18,8 @@
  */
 #include "stress-ng.h"
 #include "core-attribute.h"
+#include "core-builtin.h"
+#include "core-ioctl.h"
 #include "core-mmap.h"
 #include "core-mounts.h"
 
@@ -172,27 +174,23 @@ static int stress_rofs_file_access(
 	double *count,
 	stress_rofs_info_t *info)
 {
-	(void)info;
+	if ((access(path, W_OK) == 0) &&
+	    ((info->statbuf.st_mode & S_IFMT) != S_IFLNK)) {
+		int fd;
 
-	if (access(path, W_OK) == 0) {
-
-		if ((info->statbuf.st_mode & S_IFMT) != S_IFLNK) {
-			int fd;
-
-			/*
-			 *  Potential Time of check time of use
-			 *  issue here, but we're now trying to
-			 *  try and write-only open a read-only
-			 *  file, so lets let that slide
-			 */
-			fd = open(path, O_WRONLY | O_APPEND);
-			if (fd != -1) {
-				(void)close(fd);
-				info->writable = true;
-				pr_fail("%s: access W_OK on '%s' unexpectedly succeeded\n",
-					args->name, path);
-				return -1;
-			}
+		/*
+		 *  Potential Time of check time of use
+		 *  issue here, but we're now trying to
+		 *  try and write-only open a read-only
+		 *  file, so lets let that slide
+		 */
+		fd = open(path, O_WRONLY | O_APPEND);
+		if (fd != -1) {
+			(void)close(fd);
+			info->writable = true;
+			pr_fail("%s: access W_OK on '%s' unexpectedly succeeded\n",
+				args->name, path);
+			return -1;
 		}
 	}
 	(*count) += 1.0;
@@ -243,7 +241,7 @@ static int stress_rofs_file_mmap(
 		data = (char *)mmap(NULL, page_size, PROT_READ, MAP_PRIVATE, fd, rand_off & mask);
 		if (data != MAP_FAILED) {
 			register const char *ptr_end = data + page_size;
-			register volatile char *ptr;
+			register const volatile char *ptr;
 
 #if defined(__CYGWIN__)
 			/*
@@ -317,7 +315,6 @@ static off_t stress_rofs_lseek_end(
 	const off_t curr_off,
 	const off_t rand_off)
 {
-	(void)size;
 	(void)curr_off;
 
 	return lseek(fd, size - rand_off, SEEK_CUR);
@@ -363,7 +360,7 @@ static const stress_rofs_lseek_func_t stress_rofs_lseek_funcs[] = {
 #endif
 };
 
-static off_t stress_rofs_lseek(const int fd, stress_rofs_info_t *info)
+static off_t stress_rofs_lseek(const int fd, const stress_rofs_info_t *info)
 {
 	off_t size;
 	off_t curr_off = lseek(fd, 0, SEEK_CUR);
@@ -411,7 +408,7 @@ static int stress_rofs_file_read(
 
 /*
  *  stress_rofs_file_lseek()
- *	lseeks
+ *	lseeking exercising
  */
 static int stress_rofs_file_lseek(
 	stress_args_t *args,
@@ -451,8 +448,6 @@ static int stress_rofs_file_listxattr(
 {
 	char buffer[4086];
 
-	(void)info;
-
 	if (shim_listxattr(path, buffer, sizeof(buffer)) >= 0)
 		(*count) += 1.0;
 	else {
@@ -491,9 +486,6 @@ static int stress_rofs_file_flock(
 {
 	int fd;
 
-	(void)info;
-	(void)args;
-
 	fd = stres_rofs_file_open(args, path, info);
 	if (fd < 0)
 		return -1;
@@ -518,8 +510,6 @@ static int stress_rofs_file_valid_open_close(
 	stress_rofs_info_t *info)
 {
 	int fd;
-
-	(void)info;
 
 	fd = stres_rofs_file_open(args, path, info);
 	if (fd < 0)
@@ -569,7 +559,7 @@ static int stress_rofs_file_invalid_open_close(
 
 	(*count) += 1.0;
 
-	fd = open(path, flags[idx], 0007);
+	fd = open(path, flags[idx], S_IRUSR | S_IWUSR);
 	if (fd >= 0) {
 		ssize_t lret;
 		char data[1];
@@ -613,8 +603,6 @@ static int stress_rofs_file_fsync(
 {
 	int fd;
 
-	(void)info;
-
 	fd = stres_rofs_file_open(args, path, info);
 	if (fd < 0)
 		return -1;
@@ -625,12 +613,15 @@ static int stress_rofs_file_fsync(
 	return 0;
 }
 
-typedef int (*stress_rofs_file_ioctl_func_t)(const int fd);
+typedef int (*stress_rofs_file_ioctl_func_t)(stress_args_t *args, const int fd);
 
 #if defined(FS_IOC_GETVERSION)
-static int stress_rofs_file_ioctl_ioc_get_version(const int fd)
+static int stress_rofs_file_ioctl_ioc_get_version(stress_args_t *args, const int fd)
 {
 	int version;
+
+	if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+		pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 
 	return ioctl(fd, FS_IOC_GETVERSION, &version);
 }
@@ -638,45 +629,59 @@ static int stress_rofs_file_ioctl_ioc_get_version(const int fd)
 
 #if defined(FS_IOC_GETFSLABEL) &&	\
     defined(FSLABEL_MAX)
-static int stress_rofs_file_ioctl_ioc_getfslabel(const int fd)
+static int stress_rofs_file_ioctl_ioc_getfslabel(stress_args_t *args, const int fd)
 {
 	char label[FSLABEL_MAX];
+
+	(void)args;
 
 	return ioctl(fd, FS_IOC_GETFSLABEL, label);
 }
 #endif
 
 #if defined(FS_IOC_GETFLAGS)
-static int stress_rofs_file_ioctl_ioc_getflags(const int fd)
+static int stress_rofs_file_ioctl_ioc_getflags(stress_args_t *args, const int fd)
 {
 	int attr = 0;
+
+	if (stress_ioctl_get_check(fd, FS_IOC_GETFLAGS, sizeof(int)) < 0)
+		pr_fail("%s: ioctl FS_IOC_GETFLAGS failed, not getting value reliably\n", args->name);
 
 	return ioctl(fd, FS_IOC_GETFLAGS, &attr);
 }
 #endif
 
 #if defined(FIGETBSZ)
-static int stress_rofs_file_ioctl_figetbsz(const int fd)
+static int stress_rofs_file_ioctl_figetbsz(stress_args_t *args, const int fd)
 {
 	int isz;
+
+	if (stress_ioctl_get_check(fd, FIGETBSZ, sizeof(int)) < 0)
+		pr_fail("%s: ioctl FIGETBSZ failed, not getting value reliably\n", args->name);
 
 	return ioctl(fd, FIGETBSZ, &isz);
 }
 #endif
 
 #if defined(FIONREAD)
-static int stress_rofs_file_ioctl_fionread(const int fd)
+static int stress_rofs_file_ioctl_fionread(stress_args_t *args, const int fd)
 {
 	int isz;
+
+	if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+		pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 
 	return ioctl(fd, FIONREAD, &isz);
 }
 #endif
 
 #if defined(FIOQSIZE)
-static int stress_rofs_file_ioctl_fioqsize(const int fd)
+static int stress_rofs_file_ioctl_fioqsize(stress_args_t *args, const int fd)
 {
 	shim_loff_t sz;
+
+	if (stress_ioctl_get_check(fd, FIOQSIZE, sizeof(shim_loff_t)) < 0)
+		pr_fail("%s: ioctl FIOQSIZE failed, not getting value reliably\n", args->name);
 
 	return ioctl(fd, FIOQSIZE, &sz);
 }
@@ -726,7 +731,7 @@ static int stress_rofs_file_ioctl(
 		return -1;
 
 	idx = stress_mwcsizemodn(n_ioctl_funcs);
-	if (stress_rofs_file_ioctl_funcs[idx](fd) == 0)
+	if (stress_rofs_file_ioctl_funcs[idx](args, fd) == 0)
 		(*count) += 1.0;
 
 	(void)close(fd);
@@ -748,23 +753,23 @@ static const stress_rofs_method_t  stress_rofs_methods[] = {
 #if (defined(HAVE_SYS_XATTR_H) ||	\
      defined(HAVE_ATTR_XATTR_H)) &&	\
     defined(HAVE_GETXATTR)
-	{ "listxattr",	stress_rofs_file_listxattr },
+	{ "listxattr",		stress_rofs_file_listxattr },
 #endif
 #if defined(HAVE_SYS_FILE_H) &&	\
     defined(HAVE_FLOCK) &&	\
     defined(LOCK_EX) &&		\
     defined(LOCK_UN)
-	{ "flock",      stress_rofs_file_flock },
+	{ "flock",		stress_rofs_file_flock },
 #endif
-	{ "fsync",	stress_rofs_file_fsync },
-	{ "ioctl",	stress_rofs_file_ioctl },
+	{ "fsync",		stress_rofs_file_fsync },
+	{ "ioctl",		stress_rofs_file_ioctl },
 };
 
 static stress_metrics_t stress_rofs_metrics[SIZEOF_ARRAY(stress_rofs_methods)];
 
 static int stress_rofs_scandir(stress_args_t *args, const char *path, stress_rofs_info_t *dir_info)
 {
-	struct dirent *de;
+	const struct dirent *de;
 	DIR *dp;
 	int rc = 0;
 	size_t i;
@@ -860,7 +865,7 @@ static int stress_rofs_scandir(stress_args_t *args, const char *path, stress_rof
  */
 static int stress_rofs(stress_args_t *args)
 {
-	NOCLOBBER int ret = EXIT_FAILURE;
+	CLOBBERED int ret = EXIT_FAILURE;
 	size_t i;
 	int j;
 	char *paths[MOUNTS_MAX];
@@ -915,7 +920,7 @@ static int stress_rofs(stress_args_t *args)
 			if (statfsbuf.f_type == CGROUP_SUPER_MAGIC)
 				continue;
 #endif
-			if (strncmp(mnts[j], "/sys", 4) == 0)
+			if (shim_strncmp(mnts[j], "/sys", 4) == 0)
 				continue;
 
 			if (statfsbuf.f_flags & ST_RDONLY)
@@ -942,7 +947,7 @@ static int stress_rofs(stress_args_t *args)
 		char *str;
 
 		for (j = 0; j < n_paths; j++)
-			n += strlen(paths[j]) + 2;
+			n += shim_strlen(paths[j]) + 2;
 
 		str = calloc(n, sizeof(*str));
 		if (str) {
@@ -951,7 +956,7 @@ static int stress_rofs(stress_args_t *args)
 					shim_strlcat(str, ", ", n);
 				shim_strlcat(str, paths[j], n);
 			}
-			pr_inf("%s: exercising %s\n", args->name, str);
+			pr_inf("%s: exercising '%s'\n", args->name, str);
 			free(str);
 		}
 	}
@@ -960,7 +965,7 @@ static int stress_rofs(stress_args_t *args)
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-	j = args->instance % (int)n_paths;
+	j = args->instance % n_paths;
 	do {
 		if (j >= n_paths)
 			j = 0;
@@ -994,6 +999,27 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("directory"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("access"),
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("lstat"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+#if defined(AT_EMPTY_PATH) &&   \
+    defined(AT_SYMLINK_NOFOLLOW)
+	STRESS_EX_SYSCALL("statx"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rofs_info = {
 	.stressor = stress_rofs,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
@@ -1001,4 +1027,5 @@ const stressor_info_t stress_rofs_info = {
 	.verify = VERIFY_ALWAYS,
 	.help = help,
 	.max_metrics_items = 12,
+	.exercises = exercises,
 };

@@ -16,6 +16,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-ioctl.h"
 
 #include <sys/ioctl.h>
 
@@ -89,7 +90,8 @@ static int stress_pty(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		size_t i, n;
+		size_t i;
+		size_t n;
 
 		for (n = 0; n < pty_max; n++) {
 			ptys[n].follower = -1;
@@ -100,7 +102,7 @@ static int stress_pty(stress_args_t *args)
 				    (errno == EIO) ||
 				    (errno == EMFILE))
 					break;
-				pr_fail("%s: open /dev/ptmx failed, errno=%d (%s)\n",
+				pr_fail("%s: open '/dev/ptmx' failed, errno=%d (%s)\n",
 					args->name, errno, strerror(errno));
 				rc = EXIT_FAILURE;
 				goto clean;
@@ -129,7 +131,7 @@ static int stress_pty(stress_args_t *args)
 					if (errno == EINTR)
 						break;
 					if (errno != EMFILE) {
-						pr_fail("%s: open %s failed, errno=%d (%s)\n",
+						pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 							args->name, ptys[n].followername, errno, strerror(errno));
 						rc = EXIT_FAILURE;
 						goto clean;
@@ -403,7 +405,11 @@ static int stress_pty(stress_args_t *args)
 					pr_fail("%s: ioctl FIONREAD on follower pty failed, errno=%d (%s)\n",
 						args->name, errno, strerror(errno));
 					rc = EXIT_FAILURE;
+				} else {
+					if (stress_ioctl_get_check(ptys[i].follower, FIONREAD, sizeof(int)) < 0)
+						pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 				}
+
 			}
 #endif
 
@@ -416,6 +422,9 @@ static int stress_pty(stress_args_t *args)
 					pr_fail("%s: ioctl TIOCINQ on follower pty failed, errno=%d (%s)\n",
 						args->name, errno, strerror(errno));
 					rc = EXIT_FAILURE;
+				} else {
+					if (stress_ioctl_get_check(ptys[i].follower, TIOCINQ, sizeof(int)) < 0)
+						pr_fail("%s: ioctl TIOCINQ failed, not getting value reliably\n", args->name);
 				}
 			}
 #endif
@@ -429,6 +438,9 @@ static int stress_pty(stress_args_t *args)
 					pr_fail("%s: ioctl TIOCOUTQ on follower pty failed, errno=%d (%s)\n",
 						args->name, errno, strerror(errno));
 					rc = EXIT_FAILURE;
+				} else {
+					if (stress_ioctl_get_check(ptys[i].follower, TIOCOUTQ, sizeof(int)) < 0)
+						pr_fail("%s: ioctl TIOCOUTQ failed, not getting value reliably\n", args->name);
 				}
 			}
 #endif
@@ -436,11 +448,15 @@ static int stress_pty(stress_args_t *args)
 #if defined(TIOCGPTLCK) &&	\
     defined(TIOCSPTLCK)
 			{
-				int ret, locked = 0;
+				int ret;
+				int locked = 0;
 
 				ret = ioctl(ptys[i].leader, TIOCGPTLCK, &locked);
-				if (ret == 0)
+				if (ret == 0) {
 					ret = ioctl(ptys[i].leader, TIOCSPTLCK, &locked);
+					if (stress_ioctl_get_check(ptys[i].follower, TIOCGPTLCK, sizeof(int)) < 0)
+						pr_fail("%s: ioctl TIOCGPTLCK failed, not getting value reliably\n", args->name);
+				}
 
 				(void)ret;
 			}
@@ -458,11 +474,19 @@ static int stress_pty(stress_args_t *args)
     defined(TIOCPKT)
 
 			{
-				int val, ret;
+				int val;
+				int ret;
 
 				ret = ioctl(ptys[i].leader, TIOCGPKT, &val);
-				if (ret == 0)
+				if (ret == 0) {
+					if (stress_ioctl_get_check(ptys[i].follower, TIOCGPKT, sizeof(int)) < 0)
+						pr_fail("%s: ioctl TIOCGPKT failed, not getting value reliably\n", args->name);
 					ret = ioctl(ptys[i].leader, TIOCPKT, &val);
+					if (ret == 0) {
+						if (stress_ioctl_get_check(ptys[i].follower, TIOCGPKT, sizeof(int)) < 0)
+							pr_fail("%s: ioctl TIOCGPKT failed, not getting value reliably\n", args->name);
+					}
+				}
 				(void)ret;
 			}
 #endif
@@ -504,7 +528,8 @@ static int stress_pty(stress_args_t *args)
 #else
 				const int max_ldisc = 32;
 #endif
-				int ldisc, orig_ldisc;
+				int ldisc;
+				int orig_ldisc;
 
 				if (ioctl(ptys[i].follower, TIOCGETD, &orig_ldisc) == 0) {
 					pr_block_begin();
@@ -561,12 +586,24 @@ clean:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("ioctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pty_info = {
 	.stressor = stress_pty,
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_pty_info = {

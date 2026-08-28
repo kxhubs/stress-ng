@@ -73,7 +73,8 @@ static void MLOCKED_TEXT NORETURN stress_dekker_sigill_handler(int signum)
 
 static int stress_dekker_supported(const char *name)
 {
-	static struct sigaction act, oldact;
+	static struct sigaction act;
+	static struct sigaction oldact;
 	int ret;
 
 	(void)shim_memset(&act, 0, sizeof(act));
@@ -107,7 +108,8 @@ static int stress_dekker_supported(const char *name)
 
 static int stress_dekker_p0(stress_args_t *args)
 {
-	int check0, check1;
+	int check0;
+	int check1;
 	double t;
 
 	t = stress_time_now();
@@ -151,7 +153,8 @@ static int stress_dekker_p0(stress_args_t *args)
 
 static int stress_dekker_p1(stress_args_t *args)
 {
-	int check0, check1;
+	int check0;
+	int check1;
 	double t;
 
 	t = stress_time_now();
@@ -203,8 +206,11 @@ static int stress_dekker(stress_args_t *args)
 {
 	const size_t sz = STRESS_MAXIMUM(args->page_size, sizeof(*dekker));
 	pid_t pid;
-	double rate, duration, count;
-	int parent_cpu, rc = EXIT_SUCCESS;
+	double rate;
+	double duration;
+	double count;
+	int parent_cpu;
+	int rc = EXIT_SUCCESS;
 
 	dekker = (dekker_t *)stress_mmap_populate(NULL, sz,
 			PROT_READ | PROT_WRITE,
@@ -267,12 +273,21 @@ static int stress_dekker(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dekker_info = {
 	.stressor = stress_dekker,
 	.classifier = CLASS_CPU_CACHE | CLASS_IPC,
 	.verify = VERIFY_ALWAYS,
 	.supported = stress_dekker_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -282,7 +297,7 @@ const stressor_info_t stress_dekker_info = {
 	.classifier = CLASS_CPU | CLASS_IPC,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without user space memory fencing or siglongjmp support"
+	.unimplemented_reason = "built without user space memory fencing or siglongjmp() support"
 };
 
 #endif

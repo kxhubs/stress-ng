@@ -99,10 +99,12 @@ static void stress_topology_set_get(
 	const struct dirent *d;
 	int max_cpus = (int)stress_cpus_configured_get();
 	cpu_set_t *sets;
-	int i, n_sets = 0, which;
+	int i;
+	int n_sets = 0;
+	int which;
 
-	if (sscanf(arg + strlen(topology) , "%d", &which) != 1) {
-		(void)fprintf(stderr, "%s: invalid argument '%s' missing integer\n", topology, arg);
+	if (sscanf(arg + shim_strlen(topology) , "%d", &which) != 1) {
+		(void)fprintf(stderr, "%s: invalid argument '%s', missing integer\n", topology, arg);
 		_exit(EXIT_FAILURE);
 	}
 
@@ -123,11 +125,15 @@ static void stress_topology_set_get(
 
 	while ((d = readdir(dir)) != NULL) {
 		char filename[PATH_MAX];
-		char str[1024], *ptr, *token;
+		char str[1024];
+		char *ptr;
+		const char *token;
+		char *saveptr = NULL;
 		cpu_set_t newset;
-		int lo, hi;
+		int lo;
+		int hi;
 
-		if (strncmp(d->d_name, "cpu", 3))
+		if (shim_strncmp(d->d_name, "cpu", 3))
 			continue;
 		if (!isdigit((int)d->d_name[3]))
 			continue;
@@ -138,8 +144,8 @@ static void stress_topology_set_get(
 			continue;
 
 		CPU_ZERO(&newset);
-		for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
-			const char *tmpptr = strstr(token, "-");
+		for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
+			const char *tmpptr = shim_strstr(token, "-");
 
 			if (sscanf(token, "%d", &i) != 1)
 				continue;
@@ -192,7 +198,10 @@ static void stress_topology_set_get(
  */
 int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 {
-	char *str, *ptr, *token;
+	char *str;
+	char *ptr;
+	const char *token;
+	char *saveptr = NULL;
 	const int32_t max_cpus = stress_cpus_configured_get();
 	int i;
 
@@ -205,11 +214,12 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 		_exit(EXIT_FAILURE);
 	}
 
-	for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
-		int lo, hi;
-		const char *tmpptr = strstr(token, "-");
+	for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
+		int lo;
+		int hi;
+		const char *tmpptr = shim_strstr(token, "-");
 
-		if (!strcmp(token, "odd")) {
+		if (!shim_strcmp(token, "odd")) {
 			for (i = 1; i < max_cpus; i += 2) {
 				if (!CPU_ISSET(i, set)) {
 					CPU_SET(i, set);
@@ -217,7 +227,7 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 				}
 			}
 			continue;
-		} else if (!strcmp(token, "even")) {
+		} else if (!shim_strcmp(token, "even")) {
 			for (i = 0; i < max_cpus; i += 2) {
 				if (!CPU_ISSET(i, set)) {
 					CPU_SET(i, set);
@@ -225,7 +235,7 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 				}
 			}
 			continue;
-		} else if (!strcmp(token, "all")) {
+		} else if (!shim_strcmp(token, "all")) {
 			for (i = 0; i < max_cpus; i++) {
 				if (!CPU_ISSET(i, set)) {
 					CPU_SET(i, set);
@@ -233,7 +243,7 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 				}
 			}
 			continue;
-		} else if (!strcmp(token, "random")) {
+		} else if (!shim_strcmp(token, "random")) {
 			for (i = 0; i < max_cpus; i++) {
 				if (stress_mwc1()) {
 					if (!CPU_ISSET(i, set)) {
@@ -251,16 +261,16 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 				}
 			}
 			continue;
-		} else if (!strncmp(token, "package", 7)) {
+		} else if (!shim_strncmp(token, "package", 7)) {
 			stress_topology_set_get("package_cpus_list", "package", token, set, setbits);
 			continue;
-		} else if (!strncmp(token, "cluster", 7)) {
+		} else if (!shim_strncmp(token, "cluster", 7)) {
 			stress_topology_set_get("cluster_cpus_list", "cluster", token, set, setbits);
 			continue;
-		} else if (!strncmp(token, "die", 3)) {
+		} else if (!shim_strncmp(token, "die", 3)) {
 			stress_topology_set_get("die_cpus_list", "die", token, set, setbits);
 			continue;
-		} else if (!strncmp(token, "core", 4)) {
+		} else if (!shim_strncmp(token, "core", 4)) {
 			stress_topology_set_get("core_cpus_list", "core", token, set, setbits);
 			continue;
 		}
@@ -311,7 +321,8 @@ int stress_affinity_parse_cpu(const char *arg, cpu_set_t *set, int *setbits)
 int stress_affinity_cpu_set(const char *arg)
 {
 	cpu_set_t set;
-	int setbits, ret;
+	int setbits;
+	int ret;
 
 	ret = stress_affinity_parse_cpu(arg, &set, &setbits);
 	if ((ret == 0) && (setbits))
@@ -388,7 +399,8 @@ int stress_affinity_cpu_set(const char *arg)
  */
 uint32_t stress_affinity_cpus_get(uint32_t **cpus, const bool use_affinity)
 {
-	uint32_t i, n_cpus = (uint32_t)stress_cpus_configured_get();
+	uint32_t i;
+	uint32_t n_cpus = (uint32_t)stress_cpus_configured_get();
 
 #if defined(HAVE_SCHED_GETAFFINITY) && \
     defined(HAVE_SCHED_SETAFFINITY) && \
@@ -432,7 +444,7 @@ uint32_t stress_affinity_cpus_get(uint32_t **cpus, const bool use_affinity)
 		return 0;
 	}
 
-	*cpus = (uint32_t *)malloc(sizeof(**cpus) * n_cpus);
+	*cpus = (uint32_t *)calloc(n_cpus, sizeof(**cpus));
 	if (*cpus == NULL)
 		return 0;
 

@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-attribute.h"
+#include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-killpid.h"
 #include "core-out-of-memory.h"
@@ -65,9 +66,9 @@ bool stress_process_oomed(const pid_t pid)
 		/*
 		 * Look for 'Out of memory: Kill process 22566'
 		 */
-		ptr = strstr(buf, "process");
-		if (ptr && (strstr(buf, "Out of memory") ||
-			    strstr(buf, "oom_reaper"))) {
+		ptr = shim_strstr(buf, "process");
+		if (ptr && (shim_strstr(buf, "Out of memory") ||
+			    shim_strstr(buf, "oom_reaper"))) {
 			intmax_t oom_pid;
 
 			if (sscanf(ptr + 7, "%10" SCNdMAX, &oom_pid) == 1) {
@@ -99,8 +100,9 @@ static int stress_set_adjustment(
 	const char *procname,
 	const char *str)
 {
-	const size_t len = strlen(str);
-	int i, saved_errno = 0;
+	const size_t len = shim_strlen(str);
+	int i;
+	int saved_errno = 0;
 
 	for (i = 0; i < 32; i++) {
 		ssize_t n;
@@ -269,9 +271,8 @@ int stress_oomable_child(
 again:
 	if (UNLIKELY(!stress_continue(args)))
 		return EXIT_SUCCESS;
-	if (UNLIKELY(valid_timeout && (stress_time_now() > args->time_end))) {
+	if (UNLIKELY(valid_timeout && (stress_time_now() > args->time_end)))
 		return EXIT_SUCCESS;
-	}
 	pid = fork();
 	if (pid < 0) {
 		/* Keep trying if we are out of resources */
@@ -286,7 +287,8 @@ again:
 		return -1;
 	} else if (pid > 0) {
 		/* Parent, wait for child */
-		int status, ret;
+		int status;
+		int ret;
 		double t_end = -1.0;
 
 		args->stats->s_pid.oomable_child = pid;

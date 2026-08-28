@@ -119,7 +119,8 @@ static bool stress_pid_a_zombie(const pid_t pid)
 {
 #if defined(__linux__)
 	char path[PATH_MAX];
-	char buf[4096], *ptr = buf;
+	char buf[4096];
+	const char *ptr = buf;
 	int fd;
 	ssize_t n;
 
@@ -417,10 +418,24 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(HAVE_LINUX_CLONE)
+	STRESS_EX_SYSCALL("clone"),
+#else
+	STRESS_EX_SYSCALL("fork"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_zombie_info = {
 	.stressor = stress_zombie,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

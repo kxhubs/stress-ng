@@ -163,7 +163,8 @@ static void stress_dbg(const char *fmt, ...) FORMAT(printf, 1, 2);
 static void stress_dbg(const char *fmt, ...)
 {
 	va_list ap;
-	int n, sz;
+	int n;
+	int sz;
 	static char buf[256];
 
 	n = snprintf(buf, sizeof(buf), "stress-ng: debug: [%" PRIdMAX"] ", (intmax_t)getpid());
@@ -193,7 +194,8 @@ static void stress_dump_data(
 	if (stress_memory_readable(addr, len)) {
 		size_t i;
 		bool show_opcode = false;
-		int n, sz = 0;
+		int n;
+		int sz = 0;
 		char buf[128];
 
 		n = snprintf(buf + sz, sizeof(buf) - sz, "stress-ng: info: 0x%16.16" PRIxPTR ":", (uintptr_t)addr);
@@ -226,10 +228,10 @@ static void stress_dump_data(
  *  stress_dump_readable_data()
  *	3 lines of memory hexdump, aligned to 16 bytes boundary
  */
-static void stress_dump_readable_data(uint8_t *fault_addr)
+static void stress_dump_readable_data(const uint8_t *fault_addr)
 {
 	int i;
-	uint8_t *addr = (uint8_t *)((uintptr_t)fault_addr & ~0xf);
+	const uint8_t *addr = (const uint8_t *)((uintptr_t)fault_addr & ~0xf);
 
 	for (i = 0; i < 3; i++, addr += 16) {
 		stress_dump_data(addr, fault_addr, 16);
@@ -250,15 +252,17 @@ static void stress_dump_map_info(uint8_t *fault_addr)
 	if (UNLIKELY(!fp))
 		return;
 	while ((fgets(buf, sizeof(buf), fp)) != NULL) {
-		uintptr_t begin, end;
+		uintptr_t begin;
+		uintptr_t end;
 
 		if (sscanf(buf, "%" SCNxPTR "-%" SCNxPTR, &begin, &end) == 2) {
 			if (((uintptr_t)fault_addr >= begin) &&
 			    ((uintptr_t)fault_addr <= end)) {
-				char *ptr1, *ptr2;
+				char *ptr1;
+				char *ptr2;
 
 				/* truncate to first \n found */
-				ptr1 = strchr(buf, (int)'\n');
+				ptr1 = shim_strchr(buf, (int)'\n');
 				if (ptr1)
 					*ptr1 = '\0';
 

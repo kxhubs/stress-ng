@@ -137,8 +137,8 @@ static const char *stress_prio_inv_type(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_prio_inv_policy, "prio-inv-policy", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_prio_inv_policy },
-	{ OPT_prio_inv_type,   "prio-inv-type",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_prio_inv_type },
+	{ OPT_prio_inv_policy, "prio-inv-policy", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_prio_inv_policy },
+	{ OPT_prio_inv_type,   "prio-inv-type",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_prio_inv_type },
 	END_OPT,
 };
 
@@ -270,7 +270,7 @@ redo_policy:
 				policy = SCHED_OTHER;
 				goto redo_policy;
 			}
-			pr_fail("%s: cannot set scheduling priority to %d and policy %s, errno=%d (%s)\n",
+			pr_fail("%s: set scheduling priority to %d and policy %s failed, errno=%d (%s)\n",
 				args->name, prio, stress_sched_name_get(policy),
 				errno, strerror(errno));
 		}
@@ -281,13 +281,13 @@ redo_policy:
 		param.sched_priority = 0;
 		ret = sched_setscheduler(0, policy, &param);
 		if (ret < 0) {
-			pr_fail("%s: cannot set scheduling priority to %d and policy %s, errno=%d (%s)\n",
+			pr_fail("%s: set scheduling priority to %d and policy %s failed, errno=%d (%s)\n",
 				args->name, prio, stress_sched_name_get(policy),
 				errno, strerror(errno));
 		}
 		ret = setpriority(PRIO_PROCESS, 0, niceness);
 		if (ret < 0) {
-			pr_fail("%s: cannot set priority to %d, errno=%d (%s)\n",
+			pr_fail("%s: set priority to %d failed, errno=%d (%s)\n",
 				args->name, niceness, errno, strerror(errno));
 		}
 	}
@@ -325,12 +325,17 @@ static void stress_prio_inv_check_policy(
  */
 static int stress_prio_inv(stress_args_t *args)
 {
-	size_t i;
-	int prio_min, prio_max, prio_div, sched_policy = -1;
 	size_t prio_inv_type = 0; /* STRESS_PRIO_INV_TYPE_INHERIT */
 	size_t prio_inv_policy = 2; /* STRESS_PRIO_INV_POLICY_FIFO */
+	size_t i;
+	int prio_min;
+	int prio_max;
+	int prio_div;
+	int sched_policy = -1;
 	int pthread_protocol;
-	int nice_min, nice_max, nice_div;
+	int nice_min;
+	int nice_max;
+	int nice_div;
 	int rc = EXIT_SUCCESS;
 	const pid_t ppid = getpid();
 	pthread_mutexattr_t mutexattr;
@@ -354,7 +359,7 @@ static int stress_prio_inv(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (prio_inv_info == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap %zu byte prio_inv_info structure%s, "
+		pr_inf_skip("%s: mmap %zu byte prio_inv_info structure failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*prio_inv_info),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -446,7 +451,7 @@ static int stress_prio_inv(stress_args_t *args)
 
 		pid = fork();
 		if (pid < 0) {
-			pr_inf("%s: cannot fork child process, errno=%d (%s), skipping stressor\n",
+			pr_inf("%s: fork child process failed, errno=%d (%s), skipping stressor\n",
 				args->name, errno, strerror(errno));
 			rc = EXIT_NO_RESOURCE;
 			goto reap;
@@ -529,12 +534,27 @@ unmap_prio_inv_info:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+
+	STRESS_EX_SYSCALL("getrusage"),
+	STRESS_EX_SYSCALL("setpriority"),
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_prio_inv_info = {
 	.stressor = stress_prio_inv,
 	.classifier = CLASS_OS | CLASS_SCHEDULER,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_prio_inv_info = {

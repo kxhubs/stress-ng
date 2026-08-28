@@ -99,7 +99,8 @@ static int stress_mmapmany_child(stress_args_t *args, void *context)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		size_t i, n;
+		size_t i;
+		size_t n;
 
 		for (n = 0; LIKELY(stress_continue_flag() && (n < (size_t)max)); n++) {
 			uint64_t *ptr;
@@ -135,9 +136,10 @@ static int stress_mmapmany_child(stress_args_t *args, void *context)
 #endif
 
 		for (i = 0; i < n; i++) {
-			uint64_t *ptr, val;
+			uint64_t *ptr;
+			uint64_t val;
 
-			ptr = (uint64_t *)mappings[i];
+			ptr = mappings[i];
 			val = (uint64_t)i ^ pattern0;
 			if (UNLIKELY(*ptr != val)) {
 				pr_fail("%s: failed: mapping %zu at %p was %" PRIx64 " and not %" PRIx64 "\n",
@@ -161,10 +163,7 @@ static int stress_mmapmany_child(stress_args_t *args, void *context)
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 	free(mappings);
 	return rc;
@@ -185,10 +184,21 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmapmany_info = {
 	.stressor = stress_mmapmany,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

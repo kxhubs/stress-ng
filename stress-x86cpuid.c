@@ -105,9 +105,14 @@ static const stress_cpuid_regs_t ALIGN64 stress_cpuid_regs[] = {
 	{ 0x8000001e, 0x00000000, false },	/* get APIC/unit/node information */
 	{ 0x8000001f, 0x00000000, false },	/* get SME/SEV information */
 	{ 0x80000021, 0x00000000, false },	/* Extended Feature Identification 2 */
+	{ 0x80000025, 0x00000000, false },	/* Encrypted Memory Capabilities 2 */
+	{ 0x8c860000, 0x00000000, false },	/* Hygon Extended Feature Flags */
+	{ 0x8ffffffe, 0x00000000, false },	/* AMD Easter Egg */
 	{ 0x8fffffff, 0x00000000, false },	/* AMD Easter Egg */
 	{ 0xc0000000, 0x00000000, false },	/* Highest Centaur Extended Function */
 	{ 0xc0000001, 0x00000000, false },	/* Centaur Feature Information */
+	{ 0xc0000002, 0x00000000, false },	/* Centaur Extended CPUID Performance Data */
+	{ 0xc0000006, 0x00000000, false },	/* Zhaoxin Feature Information */
 };
 
 static void OPTIMIZE3 stress_x86cpuid_reorder_regs(const size_t n, stress_cpuid_regs_t *reordered_cpu_regs)
@@ -139,7 +144,9 @@ static void OPTIMIZE3 stress_x86cpuid_reorder_regs(const size_t n, stress_cpuid_
  */
 static int stress_x86cpuid(stress_args_t *args)
 {
-	double count = 0.0, duration = 0.0, rate;
+	double count = 0.0;
+	double duration = 0.0;
+	double rate;
 	const size_t n = SIZEOF_ARRAY(stress_cpuid_regs);
 	stress_cpuid_saved_regs_t saved_regs[SIZEOF_ARRAY(stress_cpuid_regs)];
 	int rc = EXIT_SUCCESS;
@@ -152,13 +159,17 @@ static int stress_x86cpuid(stress_args_t *args)
 
 	do {
 		double t;
-		register size_t i, j;
+		register size_t i;
+		register size_t j;
 
 		stress_x86cpuid_reorder_regs(n, reordered_cpu_regs);
 
 		for (i = 0; i < n; i++) {
 			if (stress_cpuid_regs[i].verify) {
-				uint32_t eax, ebx, ecx, edx;
+				uint32_t eax;
+				uint32_t ebx;
+				uint32_t ecx;
+				uint32_t edx;
 
 				eax = stress_cpuid_regs[i].eax;
 				ebx = 0; /* Not required */
@@ -178,7 +189,10 @@ static int stress_x86cpuid(stress_args_t *args)
 		for (j = 0; j < 1024; j++) {
 PRAGMA_UNROLL_N(8)
 			for (i = 0; i < n; i++) {
-				uint32_t eax, ebx, ecx, edx;
+				uint32_t eax;
+				uint32_t ebx;
+				uint32_t ecx;
+				uint32_t edx;
 
 				eax = reordered_cpu_regs[i].eax;
 				ebx = 0; /* Not required */
@@ -194,7 +208,10 @@ PRAGMA_UNROLL_N(8)
 
 		for (i = 0; i < n; i++) {
 			if (stress_cpuid_regs[i].verify) {
-				uint32_t eax, ebx, ecx, edx;
+				uint32_t eax;
+				uint32_t ebx;
+				uint32_t ecx;
+				uint32_t edx;
 
 				eax = stress_cpuid_regs[i].eax;
 				ebx = 0; /* Not required */
@@ -248,11 +265,22 @@ PRAGMA_UNROLL_N(8)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("registers"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_x86cpuid_info = {
 	.stressor = stress_x86cpuid,
 	.classifier = CLASS_CPU,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 

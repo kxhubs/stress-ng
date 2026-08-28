@@ -36,20 +36,20 @@ static const stress_help_t help[] = {
 static int stress_idle_page_supported(const char *name)
 {
 	if (!stress_capabilities_check(SHIM_CAP_SYS_RESOURCE)) {
-		pr_inf_skip("%s stressor will be skipped, "
+		pr_inf_skip("%s: stressor will be skipped, "
 			"need to be running with CAP_SYS_RESOURCE "
 			"rights for this stressor\n", name);
 		return -1;
 	}
 	if (geteuid() != 0) {
-		pr_inf_skip("%s stressor will be skipped, "
-		       "need to be running as root for this stressor\n", name);
+		pr_inf_skip("%s: need to be running as root, stressor will be skipped\n",
+			name);
 		return -1;
 	}
 
 	if (access(bitmap_file, R_OK) != 0) {
-		pr_inf_skip("%s stressor will be skipped, "
-			"cannot access file %s\n", name, bitmap_file);
+		pr_inf_skip("%s: failed to access file '%s', stressor will be skipped\n",
+			name, bitmap_file);
 		return -1;
 	}
 	return 0;
@@ -66,14 +66,15 @@ static int stress_idle_page_supported(const char *name)
 static int stress_idle_page(stress_args_t *args)
 {
 	int fd;
-	off_t posn = 0, last_posn = ~(off_t)7;
+	off_t posn = 0;
+	off_t last_posn = ~(off_t)7;
 	uint64_t bitmap_set[PAGES_TO_SCAN] ALIGNED(8);
 
 	fd = open(bitmap_file, O_RDWR);
 	if (fd < 0) {
 		if (stress_instance_zero(args))
-			pr_inf_skip("idle_page stressor will be skipped, "
-				"cannot access file %s\n", bitmap_file);
+			pr_inf_skip("%s: failed to access file '%s', stressor will be skipped\n",
+				args->name, bitmap_file);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -126,11 +127,19 @@ next:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_idle_page_info = {
 	.stressor = stress_idle_page,
 	.supported = stress_idle_page_supported,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_idle_page_info = {

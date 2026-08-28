@@ -21,6 +21,7 @@
 #include "core-attribute.h"
 #include "core-builtin.h"
 #include "core-helper.h"
+#include "core-ioctl.h"
 #include "core-madvise.h"
 #include "core-mmap.h"
 #include "core-put.h"
@@ -95,12 +96,12 @@ static int stress_full(stress_args_t *args)
 		if ((fd = open("/dev/full", O_RDWR)) < 0) {
 			if (errno == ENOENT) {
 				if (stress_instance_zero(args))
-					pr_inf_skip("%s: /dev/full not available, skipping stressor\n",
+					pr_inf_skip("%s: '/dev/full' not available, skipping stressor\n",
 						args->name);
 				rc = EXIT_NOT_IMPLEMENTED;
 				goto fail;
 			}
-			pr_fail("%s: open /dev/full failed, errno=%d (%s)\n",
+			pr_fail("%s: open '/dev/full' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			goto fail;
 		}
@@ -110,7 +111,7 @@ static int stress_full(stress_args_t *args)
 		 */
 		ret = write(fd, buffer, buffer_size);
 		if (UNLIKELY(ret != -1)) {
-			pr_fail("%s: write to /dev/full should fail "
+			pr_fail("%s: write to '/dev/full' should fail "
 				"with errno ENOSPC but it didn't\n",
 				args->name);
 			goto fail;
@@ -140,7 +141,7 @@ try_read:
 #if defined(HAVE_PREAD)
 		{
 			const off_t offset = (sizeof(offset) == sizeof(uint64_t)) ?
-				(off_t)(stress_mwc64() & 0x7fffffffffffffff) :
+				(off_t)(stress_mwc64() & 0x7fffffffffffffffULL) :
 				(off_t)(stress_mwc32() & 0x7fffffffUL);
 			ret = pread(fd, buffer, buffer_size, offset);
 			if (UNLIKELY(ret < 0)) {
@@ -213,9 +214,9 @@ try_read:
 #endif
 #if defined(FIGETBSZ)
 		{
-			int isz = 0;
+			if (stress_ioctl_get_check(fd, FIGETBSZ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl FIGETBSZ failed, not getting flags reliably\n", args->name);
 
-			VOID_RET(int, ioctl(fd, FIGETBSZ, &isz));
 		}
 #endif
 		(void)close(fd);
@@ -235,11 +236,26 @@ fail:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_full_info = {
 	.stressor = stress_full,
 	.classifier = CLASS_DEV | CLASS_MEMORY | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_full_info = {

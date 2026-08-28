@@ -504,7 +504,8 @@ static inline void OPTIMIZE3 TARGET_CLONES stress_fma_reset_a(stress_fma_t *pfma
 static int stress_fma(stress_args_t *args)
 {
 	stress_fma_t *pfma;
-	register size_t idx_b = 0, idx_c = 0;
+	register size_t idx_b = 0;
+	register size_t idx_c = 0;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	const stress_fma_func_t *fma_func_array;
 	bool fma_libc = false;
@@ -603,10 +604,25 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fma_info = {
 	.stressor = stress_fma,
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

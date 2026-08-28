@@ -36,9 +36,9 @@ typedef struct {
 } ENTRY;
 #endif
 
-#define MIN_HSEARCH_SIZE	(1 * KB)
-#define MAX_HSEARCH_SIZE	(64 * MB)
-#define DEFAULT_HSEARCH_SIZE	(8 * KB)
+#define MIN_HSEARCH_SIZE	(1 * STRESS_KB)
+#define MAX_HSEARCH_SIZE	(64 * STRESS_MB)
+#define DEFAULT_HSEARCH_SIZE	(8 * STRESS_KB)
 
 typedef int (*hcreate_func_t)(size_t nel);
 typedef ENTRY *(*hsearch_func_t)(ENTRY item, ACTION action);
@@ -93,8 +93,9 @@ static void hdestroy_nonlibc(void)
 
 static ENTRY OPTIMIZE3 *hsearch_nonlibc(ENTRY entry, ACTION action)
 {
-	register uint32_t idx, idx_start;
-	register char *ptr = entry.key;
+	register uint32_t idx;
+	register uint32_t idx_start;
+	register const char *ptr = entry.key;
 
 	for (idx = 0; *ptr; ) {
 		idx += *(ptr++);
@@ -107,7 +108,7 @@ static ENTRY OPTIMIZE3 *hsearch_nonlibc(ENTRY entry, ACTION action)
 
 	if (action == FIND) {
 		do {
-			if ((htable[idx].hash == idx) && (strcmp(htable[idx].entry.key, entry.key) == 0))
+			if ((htable[idx].hash == idx) && (shim_strcmp(htable[idx].entry.key, entry.key) == 0))
 				return &htable[idx].entry;
 			idx++;
 			if (idx >= htable_size)
@@ -122,7 +123,7 @@ static ENTRY OPTIMIZE3 *hsearch_nonlibc(ENTRY entry, ACTION action)
 			htable[idx].hash = idx;
 			htable[idx].entry = entry;
 			return &htable[idx].entry;
-		} else if ((hash == idx) && (strcmp(htable[idx].entry.key, entry.key) == 0)) {
+		} else if ((hash == idx) && (shim_strcmp(htable[idx].entry.key, entry.key) == 0)) {
 			htable[idx].hash = idx;
 			htable[idx].entry = entry;
 			return &htable[idx].entry;
@@ -149,7 +150,7 @@ static const char *stress_hsearch_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_hsearch_method, "hsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_hsearch_method },
+	{ OPT_hsearch_method, "hsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_hsearch_method },
 	{ OPT_hsearch_size,   "hsearch-size",   TYPE_ID_UINT64, MIN_HSEARCH_SIZE, MAX_HSEARCH_SIZE, NULL },
 	END_OPT,
 };
@@ -161,7 +162,8 @@ static const stress_opt_t opts[] = {
 static int OPTIMIZE3 stress_hsearch(stress_args_t *args)
 {
 	uint64_t hsearch_size = DEFAULT_HSEARCH_SIZE;
-	size_t i, max;
+	size_t i;
+	size_t max;
 	int rc = EXIT_FAILURE;
 	char **keys;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -191,7 +193,7 @@ static int OPTIMIZE3 stress_hsearch(stress_args_t *args)
 
 	keys = (char **)calloc(max, sizeof(*keys));
 	if (!keys) {
-		pr_err("%s: cannot allocate %zu keys%s\n",
+		pr_err("%s: allocate %zu keys failed%s\n",
 			args->name, max, stress_memory_free_get());
 		goto free_hash;
 	}
@@ -204,7 +206,7 @@ static int OPTIMIZE3 stress_hsearch(stress_args_t *args)
 		(void)snprintf(buffer, sizeof(buffer), "%zu", i);
 		keys[i] = shim_strdup(buffer);
 		if (!keys[i]) {
-			pr_err("%s: cannot allocate %zu byte key%s\n",
+			pr_err("%s: allocate %zu byte key failedy%s\n",
 				args->name, shim_strnlen(buffer, sizeof(buffer)),
 				stress_memory_free_get());
 			goto free_all;
@@ -214,7 +216,7 @@ static int OPTIMIZE3 stress_hsearch(stress_args_t *args)
 		e.data = (void *)i;
 
 		if (hsearch_func(e, ENTER) == NULL) {
-			pr_err("%s: cannot allocate new hash item%s\n",
+			pr_err("%s: allocate new hash item failed%s\n",
 				args->name, stress_memory_free_get());
 			goto free_all;
 		}
@@ -235,7 +237,7 @@ static int OPTIMIZE3 stress_hsearch(stress_args_t *args)
 			ep = hsearch_func(e, FIND);
 			if (verify) {
 				if (UNLIKELY(ep == NULL)) {
-					pr_fail("%s: cannot find key %s\n", args->name, keys[i]);
+					pr_fail("%s: cannot find key '%s'\n", args->name, keys[i]);
 					rc = EXIT_FAILURE;
 				} else {
 					if (UNLIKELY(i != (size_t)ep->data)) {
@@ -274,10 +276,23 @@ free_hash:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer-division"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_hsearch_info = {
 	.stressor = stress_hsearch,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

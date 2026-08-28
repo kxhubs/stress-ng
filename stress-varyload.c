@@ -113,10 +113,10 @@ static const char *stress_varyload_sched(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_varyload_method,	"varyload-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_workload_method },
+	{ OPT_varyload_method,	"varyload-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_workload_method },
 	{ OPT_varyload_ms,	"varyload-ms",	   TYPE_ID_UINT32, 1, 36000000, NULL },
-	{ OPT_varyload_sched,	"varyload-sched",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_varyload_sched },
-	{ OPT_varyload_type,	"varyload-type",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_varyload_type },
+	{ OPT_varyload_sched,	"varyload-sched",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_varyload_sched },
+	{ OPT_varyload_type,	"varyload-type",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_varyload_type },
 	END_OPT,
 };
 
@@ -138,10 +138,12 @@ static int stress_varyload_set_sched(
 	UNEXPECTED
 #endif
 	struct sched_param param;
-	int ret = 0;
-	int max_prio, min_prio, rng_prio;
-	const pid_t pid = getpid();
 	const char *policy_name;
+	const pid_t pid = getpid();
+	int ret = 0;
+	int max_prio;
+	int min_prio;
+	int rng_prio;
 	int policy;
 
 	if ((varyload_sched < 1) || (varyload_sched >= stress_sched_types_length))
@@ -301,10 +303,10 @@ static void stress_varyload_by_type(
 	static uint32_t load_saw_dec;
 	static uint32_t load_triangle;
 	static uint32_t load_brown;
-	static bool pulse_low = true;
-	static bool triangle_inc = true;
 	uint32_t i;
 	int32_t newload;
+	static bool pulse_low = true;
+	static bool triangle_inc = true;
 
 	switch (varyload_type) {
 	case STRESS_VARYLOAD_TYPE_SAW_INC:
@@ -442,22 +444,23 @@ static void stress_varyload_by_type(
  */
 static int stress_varyload(stress_args_t *args)
 {
+	pid_t *pids;
+	uint8_t *buffer;
 	uint32_t varyload_ms = STRESS_VARYLOAD_MS_DEFAULT;
 	size_t varyload_type_idx = STRESS_VARYLOAD_TYPE_DEFAULT;
 	size_t varyload_sched = 0;		/* undefined */
 	size_t varyload_method_idx = 0;		/* all */
-	int varyload_method, varyload_type;
-	uint8_t *buffer;
-	const size_t buffer_len = MB;
-	int rc = EXIT_SUCCESS;
-	pid_t *pids;
+	const size_t buffer_len = STRESS_MB;
 	uint32_t i;
+	int varyload_method;
+	int varyload_type;
+	int rc = EXIT_SUCCESS;
 	bool controller = stress_instance_zero(args);
 	bool sync_fail = false;
 
 	pids = (pid_t *)calloc((size_t)args->instances, sizeof(*pids));
 	if (!pids) {
-		pr_inf("%s: failed to allocate %" PRIu32 " pids, skipping stressor\n",
+		pr_inf("%s: allocate %" PRIu32 " pids failed, skipping stressor\n",
 			args->name, args->instances);
 		return EXIT_NO_RESOURCE;
 	}
@@ -514,7 +517,7 @@ redo:
 				PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (buffer == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte buffer%s, "
+		pr_inf_skip("%s: mmap %zu byte buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, buffer_len,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -593,6 +596,14 @@ exit_free_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache-ll-read"),
+
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_varyload_info = {
 	.stressor = stress_varyload,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
@@ -600,5 +611,6 @@ const stressor_info_t stress_varyload_info = {
 	.init = stress_varyload_init,
 	.deinit = stress_varyload_deinit,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

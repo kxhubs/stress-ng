@@ -24,9 +24,9 @@
 #include <search.h>
 #endif
 
-#define MIN_TSEARCH_SIZE	(1 * KB)
-#define MAX_TSEARCH_SIZE	(64 * MB)
-#define DEFAULT_TSEARCH_SIZE	(64 * KB)
+#define MIN_TSEARCH_SIZE	(1 * STRESS_KB)
+#define MAX_TSEARCH_SIZE	(64 * STRESS_MB)
+#define DEFAULT_TSEARCH_SIZE	(64 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"tsearch N",		"start N workers that exercise a tree search" },
@@ -51,8 +51,12 @@ static int stress_tsearch(stress_args_t *args)
 {
 	uint64_t tsearch_size = DEFAULT_TSEARCH_SIZE;
 	int32_t *data;
-	size_t i, n;
-	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
+	size_t i;
+	size_t n;
+	double rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double sorted = 0.0;
 	int rc = EXIT_SUCCESS;
 
 	if (!stress_setting_get("tsearch-size", &tsearch_size)) {
@@ -64,7 +68,7 @@ static int stress_tsearch(stress_args_t *args)
 	n = (size_t)tsearch_size;
 
 	if ((data = (int32_t *)calloc(n, sizeof(*data))) == NULL) {
-		pr_fail("%s: failed to allocate %zu integers%s, skipping stressor\n",
+		pr_fail("%s: allocate %zu integers failed%s, skipping stressor\n",
 			args->name, n, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -86,8 +90,8 @@ static int stress_tsearch(stress_args_t *args)
 			if (UNLIKELY(tsearch(&data[i], &root, stress_sort_cmp_fwd_int32) == NULL)) {
 				size_t j;
 
-				pr_err("%s: cannot allocate new "
-					"tree node\n", args->name);
+				pr_err("%s: allocate new "
+					"tree node failed\n", args->name);
 				for (j = 0; j < i; j++)
 					tdelete(&data[j], &root, stress_sort_cmp_fwd_int32);
 				goto abort;
@@ -151,12 +155,25 @@ abort:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tsearch_info = {
 	.stressor = stress_tsearch,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -167,7 +184,7 @@ const stressor_info_t stress_tsearch_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without libc tsearch() support"
+	.unimplemented_reason = "built without libc tsearch() support",
 };
 
 #endif

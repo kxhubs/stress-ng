@@ -49,7 +49,8 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(__linux__)
+#if defined(__linux__) &&	\
+    defined(HAVE_IOVEC)
 
 #define MSG_ID			'M'
 
@@ -98,7 +99,7 @@ static inline int stress_socket_fd_recv(const int fd)
 {
 	struct iovec iov;
 	struct msghdr msg ALIGN64;
-	struct cmsghdr *cmsg;
+	const struct cmsghdr *cmsg;
 	char msg_data[1] = { 0 };
 	char ctrl[CMSG_SPACE(sizeof(int))];
 
@@ -125,7 +126,7 @@ static inline int stress_socket_fd_recv(const int fd)
 	    (cmsg->cmsg_level == SOL_SOCKET) &&
 	    (cmsg->cmsg_type == SCM_RIGHTS) &&
 	    ((size_t)cmsg->cmsg_len >= (size_t)CMSG_LEN(sizeof(int)))) {
-		int *const ptr = (int *)(uintptr_t)CMSG_DATA(cmsg);
+		const int *const ptr = (int *)(uintptr_t)CMSG_DATA(cmsg);
 		return *ptr;
 	}
 
@@ -145,15 +146,17 @@ static int OPTIMIZE3 stress_socket_client(
 	int *fds,
 	const size_t fds_size)
 {
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 
 	do {
-		int fd, retries = 0;
-		ssize_t n;
 		socklen_t addr_len = 0;
+		ssize_t n;
+		int fd;
+		int retries = 0;
 		int so_reuseaddr = 1;
 
 		(void)shim_memset(fds, 0, fds_size);
@@ -173,14 +176,13 @@ retry:
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
-
 		if (UNLIKELY(stress_net_sockaddr_set(args->name, args->instance,
 						     mypid, AF_UNIX, socket_fd_port,
 						     &addr, &addr_len, NET_ADDR_ANY) < 0)) {
 			(void)close(fd);
 			return EXIT_FAILURE;
 		}
-		if (UNLIKELY(connect(fd, addr, addr_len) < 0)) {
+		if (UNLIKELY(connect(fd, (struct sockaddr *)&addr, addr_len) < 0)) {
 			(void)close(fd);
 			if (retries++ > 100) {
 				/* Give up.. */
@@ -211,7 +213,8 @@ retry:
 
 #if defined(FIONREAD)
 			{
-				int rc, nbytes;
+				int rc;
+				int nbytes;
 
 				/* Attempt to read a byte from the fd */
 				rc = ioctl(fds[n], FIONREAD, &nbytes);
@@ -231,8 +234,8 @@ retry:
 
 #if defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
-	if (addr) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	{
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -254,14 +257,15 @@ static int OPTIMIZE3 stress_socket_server(
 	const int socket_fd_port,
 	const bool socket_fd_reuse)
 {
+	struct sockaddr_storage addr;
+	socklen_t addr_len = 0;
+	uint64_t msgs = 0;
 	int fd;
 	int so_reuseaddr = 1;
-	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
-	uint64_t msgs = 0;
 	int rc = EXIT_SUCCESS;
 	const int bad_fd = stress_fs_bad_fd_get();
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (stress_signal_stop_stressing(args->name, SIGALRM)) {
 		rc = EXIT_FAILURE;
 		goto die;
@@ -279,17 +283,16 @@ static int OPTIMIZE3 stress_socket_server(
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-
 	if (stress_net_sockaddr_set(args->name, args->instance, ppid,
 				AF_UNIX, socket_fd_port,
 				&addr, &addr_len, NET_ADDR_ANY) < 0) {
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 		if (errno == EADDRINUSE) {
 			rc = EXIT_NO_RESOURCE;
-			pr_inf_skip("%s: cannot bind, skipping stressor, errno=%d (%s)\n",
+			pr_inf_skip("%s: bind failed, skipping stressor, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			goto die_close;
 		}
@@ -378,8 +381,8 @@ die_close:
 die:
 #if defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
-	if (addr) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	{
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -395,13 +398,15 @@ die:
  */
 static int stress_sockfd(stress_args_t *args)
 {
-	pid_t pid, mypid = getpid();
+	pid_t pid;
+	const pid_t mypid = getpid();
 	ssize_t max_fd = (ssize_t)stress_fs_file_limit_get();
+	size_t fds_size;
 	int socket_fd_port = DEFAULT_SOCKET_FD_PORT;
-	int ret = EXIT_SUCCESS, reserved_port;
+	int ret = EXIT_SUCCESS;
+	int reserved_port;
 	int *fds;
 	bool socket_fd_reuse = false;
-	size_t fds_size;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -444,7 +449,7 @@ static int stress_sockfd(stress_args_t *args)
 	fds_size = sizeof(*fds) * (size_t)max_fd;
 	fds = (int *)malloc(fds_size);
 	if (!fds) {
-		pr_inf_skip("%s: failed to allocate %zd file descriptors%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zd file descriptors failed%s, skipping stressor\n",
 			args->name, max_fd, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -452,11 +457,9 @@ static int stress_sockfd(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
-	pid = fork();
+
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			ret = EXIT_SUCCESS;
 			goto finish;
@@ -487,12 +490,33 @@ finish:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("recvmsg"),
+#if defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("sendmsg"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("shutdown"),
+	STRESS_EX_SYSCALL("socket"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sockfd_info = {
 	.stressor = stress_sockfd,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sockfd_info = {
@@ -501,6 +525,6 @@ const stressor_info_t stress_sockfd_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "only supported on Linux"
+	.unimplemented_reason = "only supported on Linux with struct iovec"
 };
 #endif

@@ -107,8 +107,8 @@ static bool stress_dirdeep_make(
 		    (errno == EMLINK) || (errno == EPERM)) {
 			return true;
 		}
-		pr_fail("%s: mkdir failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
+			args->name, path, errno, strerror(errno));
 		return true;
 	}
 	stress_bogo_inc(args);
@@ -122,7 +122,7 @@ static bool stress_dirdeep_make(
 
 		fd = creat(linkpath, S_IRUSR | S_IWUSR);
 		if (fd < 0) {
-			pr_fail("%s: create %s failed, errno=%d (%s)\n",
+			pr_fail("%s: create '%s' failed, errno=%d (%s)\n",
 				args->name, linkpath, errno, strerror(errno));
 			return true;
 		}
@@ -259,7 +259,8 @@ static int stress_dir_exercise(
 	const size_t path_len)
 {
 	struct dirent **namelist = NULL;
-	int i, n;
+	int i;
+	int n;
 #if defined(HAVE_FUTIMENS)
 	const double now = stress_time_now();
 	const time_t sec = (time_t)now;
@@ -498,9 +499,35 @@ static int stress_dirdeep(stress_args_t *args)
 static const stress_opt_t opts[] = {
 	{ OPT_dirdeep_bytes,  "dirdeep-bytes",  TYPE_ID_OFF_T, MIN_DIRDEEP_BYTES, MAX_DIRDEEP_BYTES, NULL },
 	{ OPT_dirdeep_dirs,   "dirdeep-dirs",   TYPE_ID_UINT32, 1, sizeof(stress_dir_names) - 1, NULL },
-	{ OPT_dirdeep_inodes, "dirdeep-inodes", TYPE_ID_CALLBACK, 0, 0, (void *)stress_dirdeep_inodes },
+	{ OPT_dirdeep_inodes, "dirdeep-inodes", TYPE_ID_CALLBACK, 0, 0, stress_dirdeep_inodes },
 	{ OPT_dirdeep_files,  "dirdeep-files",  TYPE_ID_UINT32, 0, 65535, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("directory"),
+	STRESS_EX_FEATURE("io-thermal"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+
+	STRESS_EX_SYSCALL("creat"),
+	STRESS_EX_SYSCALL("fsync"),
+#if defined(HAVE_FUTIMENS)
+	STRESS_EX_SYSCALL("futimens"),
+#endif
+#if defined(HAVE_LINKAT) &&	\
+    defined(O_DIRECTORY)
+	STRESS_EX_SYSCALL("linkat"),
+	STRESS_EX_SYSCALL("unlinkat"),
+#endif
+	STRESS_EX_SYSCALL("mkdir"),
+#if defined(HAVE_SYNCFS)
+	STRESS_EX_SYSCALL("syncfs"),
+#else
+	STRESS_EX_SYSCALL("sync"),
+#endif
+	STRESS_EX_SYSCALL("symlink"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_dirdeep_info = {
@@ -508,5 +535,6 @@ const stressor_info_t stress_dirdeep_info = {
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

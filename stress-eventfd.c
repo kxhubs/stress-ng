@@ -49,8 +49,12 @@ static const stress_opt_t opts[] = {
 static int stress_eventfd(stress_args_t *args)
 {
 	pid_t pid;
-	int fd1, fd2, test_fd, rc;
-	int flags = 0, parent_cpu;
+	int fd1;
+	int fd2;
+	int test_fd;
+	int rc;
+	int flags = 0;
+	int parent_cpu;
 	bool eventfd_nonblock = false;
 
 	(void)stress_setting_get("eventfd-nonblock", &eventfd_nonblock);
@@ -93,13 +97,10 @@ static int stress_eventfd(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
-	parent_cpu = stress_cpu_get();
-	pid = fork();
-	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 
+	parent_cpu = stress_cpu_get();
+	pid = stress_retry_fork(args, 0);
+	if (pid < 0) {
 		(void)close(fd1);
 		(void)close(fd2);
 
@@ -251,12 +252,23 @@ exit_parent:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-migrations"),
+
+	STRESS_EX_SYSCALL("eventfd"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_eventfd_info = {
 	.stressor = stress_eventfd,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_eventfd_info = {

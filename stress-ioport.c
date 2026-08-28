@@ -72,8 +72,8 @@ static const char *stress_ioport_port(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_ioport_opts, "ioport-opts", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_ioport_opts },
-	{ OPT_ioport_port, "ioport-port", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_ioport_port },
+	{ OPT_ioport_opts, "ioport-opts", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_ioport_opts },
+	{ OPT_ioport_port, "ioport-port", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_ioport_port },
 	END_OPT,
 };
 
@@ -97,7 +97,7 @@ static int stress_ioport_supported(const char *name)
 		case EINVAL:
 		case EIO:
 		default:
-			pr_inf_skip("%s cannot access port 0x%x, skipping stressor\n",
+			pr_inf_skip("%s access port 0x%x failed, skipping stressor\n",
 				name, (unsigned int)IO_PORT_POST);
 			return -1;
 		}
@@ -124,19 +124,48 @@ static int stress_ioport_ioperm(
 	return 0;
 }
 
+#define	INBx8(port)		\
+do {				\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+	(void)inb(port);	\
+} while (0);
+
+#define OUTBx8(v, port)		\
+do {				\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+	(void)outb(v, port);	\
+} while (0);
+
 /*
  *  stress_ioport()
  *	stress performs I/O port I/O transactions
  */
 static int stress_ioport(stress_args_t *args)
 {
-	int ret, fd, rc = EXIT_SUCCESS;
-	size_t ioport_opt = 2, ioport_idx = 0;
+	int ret;
+	int fd;
+	int rc = EXIT_SUCCESS;
+	size_t ioport_opt = 2;
+	size_t ioport_idx = 0;
 	uint32_t flag = 0;
 	unsigned short port;
 	unsigned char v;
-	double duration_in = 0.0, count_in = 0.0;
-	double duration_out = 0.0, count_out = 0.0;
+	double duration_in = 0.0;
+	double count_in = 0.0;
+	double duration_out = 0.0;
+	double count_out = 0.0;
 	double rate;
 	char msg[40];
 
@@ -150,7 +179,7 @@ static int stress_ioport(stress_args_t *args)
 
 	ret = ioperm(port, 1, 1);
 	if (ret < 0) {
-		pr_err("%s: cannot access port 0x%x, errno=%d (%s)\n",
+		pr_err("%s: access port 0x%x failed, errno=%d (%s)\n",
 			args->name, (unsigned int)port, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -168,75 +197,19 @@ static int stress_ioport(stress_args_t *args)
 
 		if (flag & IOPORT_OPT_IN) {
 			t = stress_time_now();
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
-			(void)inb(port);
+			INBx8(port);
+			INBx8(port);
+			INBx8(port);
+			INBx8(port);
 			duration_in += stress_time_now() - t;
 			count_in += 32.0;
 		}
 		if (flag & IOPORT_OPT_OUT) {
 			t = stress_time_now();
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
-			outb(v, port);
+			OUTBx8(v, port);
+			OUTBx8(v, port);
+			OUTBx8(v, port);
+			OUTBx8(v, port);
 			duration_out += stress_time_now() - t;
 			count_out += 32.0;
 		}
@@ -337,13 +310,25 @@ static int stress_ioport(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("ioport-read"),
+	STRESS_EX_FEATURE("ioport-write"),
+
+	STRESS_EX_SYSCALL("ioperm"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ioport_info = {
 	.stressor = stress_ioport,
 	.supported = stress_ioport_supported,
 	.classifier = CLASS_CPU,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_ioport_info = {

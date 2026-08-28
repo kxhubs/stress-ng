@@ -236,7 +236,9 @@ static void stress_vecshuf_call_method(
 	stress_vec_data_t *data,
 	const size_t method)
 {
-	double dt, ops, bytes;
+	double dt;
+	double ops;
+	double bytes;
 	const stress_vecshuf_funcs_t *const func = &stress_vecshuf_funcs[method];
 	stress_vecshuf_data_t *vecshuf_data = &stress_vecshuf_data[method];
 
@@ -271,14 +273,6 @@ do {								\
 	}							\
 } while (0)
 
-#if defined(HAVE_INT128_T)
-static inline __uint128_t vec_mwc128(void)
-{
-	return ((__uint128_t)stress_mwc64() << 64) |
-		(__uint128_t)stress_mwc64();
-}
-#endif
-
 /*
  *  stress_vecshuf_set_data()
  *	set random data, initial value r and shuffled data s
@@ -292,7 +286,7 @@ static void stress_vecshuf_set_data(stress_vec_data_t *data)
 	VEC_SET_DATA(u32,  16, stress_mwc32);
 	VEC_SET_DATA(u64,   8, stress_mwc64);
 #if defined(HAVE_INT128_T)
-	VEC_SET_DATA(u128,  4, vec_mwc128);
+	VEC_SET_DATA(u128,  4, stress_mwc128);
 #endif
 
 }
@@ -370,7 +364,7 @@ static int stress_vecshuf(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes for vectors%s, "
+		pr_inf_skip("%s: mmap %zu bytes for vectors failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*data),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -424,7 +418,7 @@ static int stress_vecshuf(stress_args_t *args)
 			if ((duration > 0.0) && (ops > 0.0) &&
 			    (bytes > 0.0) && (total_duration > 0.0)) {
 				const double ops_rate = (ops / duration) / 1000000.0;
-				const double bytes_rate = (bytes / duration) / (1.0 * MB);
+				const double bytes_rate = (bytes / duration) / (1.0 * STRESS_MB);
 
 				inverse_sum_ops += 1.0 / ops_rate;
 				inverse_sum_bytes += 1.0 / bytes_rate;
@@ -460,8 +454,24 @@ static const char *stress_vecshuf_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-        { OPT_vecshuf_method, "vecshuf-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_vecshuf_method },
+        { OPT_vecshuf_method, "vecshuf-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_vecshuf_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("cpu-vector"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("registers"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_vecshuf_info = {
@@ -469,12 +479,14 @@ const stressor_info_t stress_vecshuf_info = {
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE | CLASS_VECTOR,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
+
 #else
 
 static const stress_opt_t opts[] = {
-        { OPT_vecshuf_method, "vecshuf-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+        { OPT_vecshuf_method, "vecshuf-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

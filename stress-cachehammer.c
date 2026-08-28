@@ -67,7 +67,7 @@ typedef struct stress_cachehammer_context {
 } stress_cachehammer_context_t;
 
 typedef struct {
-	char *name;
+	const char *name;
 	bool permute;
 	bool (*valid)(void);
 	hammer_func_t hammer;
@@ -92,7 +92,7 @@ static const char *stress_cachehammer_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-        { OPT_cachehammer_method, "cachehammer-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_cachehammer_method },
+        { OPT_cachehammer_method, "cachehammer-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_cachehammer_method },
 	{ OPT_cachehammer_numa,   "cachehammer-numa",   TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
 };
@@ -302,7 +302,8 @@ static void OPTIMIZE3 hammer_write64(
 	const bool is_bad_addr,
 	const bool verify)
 {
-	volatile uint64_t *vptr1, *vptr2;
+	volatile uint64_t *vptr1;
+	volatile uint64_t *vptr2;
 	const uint64_t pattern = (uint64_t)0xaa55a55a55aa5aa5ULL;
 
 	if (UNLIKELY(is_bad_addr))
@@ -332,13 +333,13 @@ static void OPTIMIZE3 hammer_write64(
 		size_t i;
 
 		for (i = 0; i < 8; i++) {
-			volatile uint64_t *vptr = (i & 1) ? (vptr2 + i) : (vptr1 + i);
+			const volatile uint64_t *vptr = (i & 1) ? (vptr2 + i) : (vptr1 + i);
 			const uint64_t val = *vptr;
 
 			if (UNLIKELY(val != pattern)) {
 				pr_fail("%s: write64: read back of stored value at address "
 					"%p not %" PRIx64 ", got %" PRIx64 " instead\n",
-					args->name, (volatile void *)vptr, pattern, val);
+					args->name, (const volatile void *)vptr, pattern, val);
 			}
 		}
 	}
@@ -402,7 +403,8 @@ static void OPTIMIZE3 hammer_readwrite64(
 	const bool is_bad_addr,
 	const bool verify)
 {
-	volatile uint64_t *vptr1, *vptr2;
+	volatile uint64_t *vptr1;
+	volatile uint64_t *vptr2;
 
 	(void)args;
 	(void)verify;
@@ -489,7 +491,8 @@ static void OPTIMIZE3 hammer_writeread64(
 	const bool is_bad_addr,
 	const bool verify)
 {
-	volatile uint64_t *vptr1, *vptr2;
+	volatile uint64_t *vptr1;
+	volatile uint64_t *vptr2;
 	const uint64_t pattern = (uint64_t)0xa5a55a5a5555aaaaULL;
 
 	if (UNLIKELY(is_bad_addr))
@@ -519,13 +522,13 @@ static void OPTIMIZE3 hammer_writeread64(
 		size_t i;
 
 		for (i = 0; i < 8; i += 2) {
-			volatile uint64_t *vptr = (i & 2) ? (vptr2 + i) : (vptr1 + i);
+			const volatile uint64_t *vptr = (i & 2) ? (vptr2 + i) : (vptr1 + i);
 			const uint64_t val = *vptr;
 
 			if (UNLIKELY(val != pattern)) {
 				pr_fail("%s: writeread64: read back of stored value at address "
 					"%p not %" PRIx64 ", got %" PRIx64 " instead\n",
-					args->name, (volatile void *)vptr, pattern, val);
+					args->name, (const volatile void *)vptr, pattern, val);
 			}
 		}
 	}
@@ -1640,7 +1643,7 @@ static void stress_cache_hammer_flags_to_str(
 	for (i = 0; i < N_FUNCS; i++) {
 		if (flags & (1U << i)) {
 			const char *name = stress_cachehammer_funcs[i].name;
-			const size_t len = strlen(name);
+			const size_t len = shim_strlen(name);
 
 			(void)shim_strscpy(ptr, " ", buf_len);
 			buf_len--;
@@ -1791,21 +1794,22 @@ static void OPTIMIZE3 stress_cachehammer_exercise(stress_args_t *args)
  */
 static int OPTIMIZE3 stress_cachehammer(stress_args_t *args)
 {
-	NOCLOBBER int ret = EXIT_SUCCESS, fd;
+	CLOBBERED int ret = EXIT_SUCCESS;
+	CLOBBERED int fd;
 	uint8_t *const buffer = g_shared->mem_cache.buffer;
 	const size_t buffer_size = (size_t)g_shared->mem_cache.size;
 	size_t i;
 	size_t j;
 	size_t cachehammer_method = CACHEHAMMER_METHOD_RANDOM;
-	NOCLOBBER size_t tries = 0;
+	CLOBBERED size_t tries = 0;
 	char buf[1024];
 	double mantissa;
 	uint64_t exponent;
 	int *permutations = NULL;
-	NOCLOBBER size_t n_permutations = 0;
-	NOCLOBBER size_t permutation = 0;
-	NOCLOBBER size_t max_flags = 0;
-	NOCLOBBER size_t permutations_exercised = 0;
+	CLOBBERED size_t n_permutations = 0;
+	CLOBBERED size_t permutation = 0;
+	CLOBBERED size_t max_flags = 0;
+	CLOBBERED size_t permutations_exercised = 0;
 
 	(void)shim_memset(&ctxt, 0, sizeof(ctxt));
 	ctxt.cachehammer_numa = false;
@@ -1842,7 +1846,7 @@ static int OPTIMIZE3 stress_cachehammer(stress_args_t *args)
 		uint32_t flags = 0;
 
 		for (i = 0; i < N_FUNCS; i++) {
-			uint32_t mask = 1U << i;
+			const uint32_t mask = 1U << i;
 
 			if (stress_cachehammer_funcs[i].permute &&
 			    (ctxt.valid & mask)) {
@@ -2050,9 +2054,9 @@ bail_out:
 	}
 
 	if (j > 0) {
-		double inverse_n = 1.0 / (double)j;
-		double geomean = pow(mantissa, inverse_n) *
-				 pow(2.0, (double)exponent * inverse_n);
+		const double inverse_n = 1.0 / (double)j;
+		const double geomean = pow(mantissa, inverse_n) *
+				       pow(2.0, (double)exponent * inverse_n);
 
 		pr_dbg("%s: %.2f cachehammer ops per second (geometric mean of per stressor bogo-op rates)\n",
 			args->name, geomean);
@@ -2077,6 +2081,21 @@ free_permutations:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("d-cache-prefetch"),
+	STRESS_EX_FEATURE("memory-bound"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+
+#if defined(HAVE_MSYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_cachehammer_info = {
 	.stressor = stress_cachehammer,
 	.init = stress_cachehammer_init,
@@ -2085,7 +2104,8 @@ const stressor_info_t stress_cachehammer_info = {
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_cachehammer_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(stress_cachehammer_funcs),
+	.exercises = exercises,
 };
 
 #else
@@ -2096,7 +2116,7 @@ const stressor_info_t stress_cachehammer_info = {
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

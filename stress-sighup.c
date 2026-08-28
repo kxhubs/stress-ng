@@ -54,14 +54,12 @@ static void MLOCKED_TEXT stress_sighup_handler(int num)
 
 static int stress_sighup_raise_signal(stress_args_t *args)
 {
-	pid_t pid, ret;
+	pid_t pid;
+	pid_t ret;
 	int status;
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			return 0;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -95,7 +93,7 @@ rewait:
 	return 0;
 }
 
-static void stress_sighup_closefds(int fds[2])
+static void stress_sighup_closefds(const int fds[2])
 {
 	(void)close(fds[0]);
 	(void)close(fds[1]);
@@ -103,18 +101,16 @@ static void stress_sighup_closefds(int fds[2])
 
 static int stress_sighup_process_group(stress_args_t *args)
 {
-	pid_t pid, ret;
+	pid_t pid;
+	pid_t ret;
 	int status;
 	char msg = 'x';
 
 	VOID_RET(int, stress_signal_handler(args->name, SIGHUP, stress_sighup_handler, NULL));
 
 	sighup_info->pid = 0;
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			return 0;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -229,7 +225,7 @@ static int stress_sighup(stress_args_t *args)
 				MAP_SHARED | MAP_ANONYMOUS,
 				-1, 0);
 	if (sighup_info == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte sighup information%s, "
+		pr_inf_skip("%s: mmap %zu byte sighup information failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*sighup_info),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -268,9 +264,28 @@ static int stress_sighup(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-kernel"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("pipe"),
+	STRESS_EX_SYSCALL("raise"),
+	STRESS_EX_SYSCALL("read"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("waitpid"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sighup_info = {
 	.stressor = stress_sighup,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -58,12 +58,12 @@ void stress_rapl_domains_free(stress_rapl_domain_t *rapl_domains)
  *  stress_rapl_domain_unique()
  *	returns true if domain_name is not in rapl_domains
  */
-static bool stress_rapl_domain_unique(stress_rapl_domain_t *rapl_domains, const char *domain_name)
+static bool stress_rapl_domain_unique(const stress_rapl_domain_t *rapl_domains, const char *domain_name)
 {
-	stress_rapl_domain_t *rapl_domain;
+	const stress_rapl_domain_t *rapl_domain;
 
 	for (rapl_domain = rapl_domains; rapl_domain; rapl_domain = rapl_domain->next) {
-		if (!strcmp(rapl_domain->domain_name, domain_name))
+		if (!shim_strcmp(rapl_domain->domain_name, domain_name))
 			return false;
 	}
 	return true;
@@ -78,7 +78,7 @@ static void stress_rapl_add_list(stress_rapl_domain_t **rapl_domains, stress_rap
 	stress_rapl_domain_t **l;
 
 	for (l = rapl_domains; *l; l = &(*l)->next) {
-		if (strcmp((*l)->domain_name, rapl_domain->domain_name) > 0) {
+		if (shim_strcmp((*l)->domain_name, rapl_domain->domain_name) > 0) {
 			rapl_domain->next = *l;
 			break;
 		}
@@ -110,7 +110,7 @@ int stress_rapl_domains_get(stress_rapl_domain_t **rapl_domains)
 		double ujoules;
 
 		/* Ignore non Intel RAPL interfaces */
-		if (strncmp(entry->d_name, "intel-rapl", 10))
+		if (shim_strncmp(entry->d_name, "intel-rapl", 10))
 			continue;
 
 		/* Check if energy_uj is readable */
@@ -162,11 +162,15 @@ int stress_rapl_domains_get(stress_rapl_domain_t **rapl_domains)
 		if ((fp = fopen(path, "r")) != NULL) {
 			char domain_name[128];
 
+			(void)shim_memset(domain_name, 0, sizeof(domain_name));
 			if (fgets(domain_name, sizeof(domain_name), fp) != NULL) {
-				domain_name[strcspn(domain_name, "\n")] = '\0';
+				const size_t idx = shim_strcspn(domain_name, "\n");
+
+				if (LIKELY(idx < sizeof(domain_name)))
+					domain_name[idx] = '\0';
 
 				/* Truncate package name */
-				if (!strncmp(domain_name, "package-", 8)) {
+				if (!shim_strncmp(domain_name, "package-", 8)) {
 					char buf[sizeof(domain_name)];
 
 					(void)snprintf(buf, sizeof(buf), "pkg-%s", domain_name + 8);

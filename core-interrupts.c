@@ -92,7 +92,7 @@ static void stress_interrupts_count(stress_interrupts_t *counters, const int whi
 	 *  Get SMI count, x86 only AND when run as root AND smi driver is installed
 	 */
 	for (i = 0; i < SIZEOF_ARRAY(info); i++) {
-		if (!strncmp("SMI:", info[i].type, 4)) {
+		if (!shim_strncmp("SMI:", info[i].type, 4)) {
 			unsigned int cpu;
 
 			if ((shim_getcpu(&cpu, NULL, NULL) == 0) &&
@@ -109,10 +109,10 @@ static void stress_interrupts_count(stress_interrupts_t *counters, const int whi
 
 	while (fgets(buffer, sizeof(buffer), fp)) {
 		for (i = 0; i < SIZEOF_ARRAY(info); i++) {
-			char *ptr;
+			const char *ptr;
 
 			/* Find a match */
-			ptr = strstr(buffer, info[i].type);
+			ptr = shim_strstr(buffer, info[i].type);
 			if (ptr) {
 				count = 0;
 				ptr += shim_strnlen(info[i].type, sizeof(info[i].type));
@@ -172,7 +172,11 @@ void stress_interrupts_stop(stress_interrupts_t *counters)
  *	set rc to EXIT_FAILURE and report a failure for failure
  *	specific interrupts (e.g. MCE machine check error interrupts)
  */
-void stress_interrupts_check_failure(const char *name, stress_interrupts_t *counters, uint32_t instance, int *rc)
+void stress_interrupts_check_failure(
+	const char *name,
+	const stress_interrupts_t *counters,
+	const uint32_t instance,
+	int *rc)
 {
 	size_t i;
 
@@ -281,11 +285,11 @@ static void stress_interrupts_parse_field(
 {
 	const char *ptr;
 
-	ptr = strstr(str, field);
+	ptr = shim_strstr(str, field);
 	if (!ptr)
 		return;
 
-	ptr += strlen(field); /* skip over field */
+	ptr += shim_strlen(field); /* skip over field */
 
 	while (*ptr && (*ptr != ' '))
 		ptr++;

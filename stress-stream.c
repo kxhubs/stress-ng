@@ -30,6 +30,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-cpu.h"
 #include "core-cpu-cache.h"
 #include "core-mmap.h"
@@ -41,9 +42,9 @@
 
 #include <math.h>
 
-#define MIN_STREAM_L3_SIZE	(4 * KB)
+#define MIN_STREAM_L3_SIZE	(4 * STRESS_KB)
 #define MAX_STREAM_L3_SIZE	(MAX_MEM_LIMIT)
-#define DEFAULT_STREAM_L3_SIZE	(4 * MB)
+#define DEFAULT_STREAM_L3_SIZE	(4 * STRESS_MB)
 
 #if defined(HAVE_NT_STORE_DOUBLE)
 #define NT_STORE(dst, src)		stress_nt_store_double(&dst, src)
@@ -96,7 +97,8 @@ static const stress_stream_madvise_info_t stream_madvise_info[] = {
 static void stress_stream_checksum_to_hexstr(char *str, const size_t len, const double checksum)
 {
 	const unsigned char *ptr = (const unsigned char *)&checksum;
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	for (i = 0, j = 0; (i < sizeof(checksum)) && ((j + 2) < len); i++, j += 2) {
 		(void)snprintf(str + j, 3, "%2.2x", ptr[i]);
@@ -839,7 +841,8 @@ static inline ALWAYS_INLINE void stress_stream_init_data(
 
 	register const uint32_t r = stress_mwc32();
 	register double v = (double)r * divisor;
-	register double *ptr, *ptr_end;
+	register double *ptr;
+	register const double *ptr_end;
 
 PRAGMA_UNROLL_N(4)
 	for (ptr = a, ptr_end = a + n; ptr < ptr_end; ptr += 4) {
@@ -901,7 +904,7 @@ static inline void *stress_stream_mmap(
 		MAP_ANONYMOUS, -1, 0);
 	/* Coverity Scan believes NULL can be returned, doh */
 	if (!ptr || (ptr == MAP_FAILED)) {
-		pr_err("%s: failed to mmap %" PRIu64 " bytes%s, errno=%d (%s)\n",
+		pr_err("%s: mmap %" PRIu64 " bytes failed%s, errno=%d (%s)\n",
 			args->name, sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		ptr = MAP_FAILED;
@@ -928,9 +931,9 @@ static inline void *stress_stream_mmap(
 
 static inline uint64_t get_stream_L3_size(stress_args_t *args)
 {
-	uint64_t cache_size = 2 * MB;
+	uint64_t cache_size = 2 * STRESS_MB;
 	stress_cpu_cache_cpus_t *cpu_caches;
-	stress_cpu_cache_t *cache = NULL;
+	const stress_cpu_cache_t *cache = NULL;
 	uint16_t max_cache_level;
 	long int numa_nodes = stress_numa_nodes();
 
@@ -1018,7 +1021,8 @@ static void OPTIMIZE3 TARGET_CLONES stress_stream_exercise(
 	const bool has_sse2,
 	const bool stream_prefetch)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 
 #if !defined(HAVE_PRAGMA_PREFETCH)
 	(void)stream_prefetch;
@@ -1142,12 +1146,13 @@ static int OPTIMIZE3 TARGET_CLONES stress_stream_verify(
 
 	new_checksum = stress_stream_checksum_data(a, b, c, n);
 	if ((*old_checksum > 0.0) && (fabs(new_checksum - *old_checksum) > 0.001)) {
-		char new_str[32], old_str[32];
+		char new_str[32];
+		char old_str[32];
 
 		stress_stream_checksum_to_hexstr(new_str, sizeof(new_str), new_checksum);
 		stress_stream_checksum_to_hexstr(old_str, sizeof(old_str), *old_checksum);
 
-		if (strcmp(old_str, new_str)) {
+		if (shim_strcmp(old_str, new_str)) {
 			pr_fail("%s: checksum failure, got 0x%s, expecting 0x%s\n",
 				args->name, new_str, old_str);
 			return EXIT_FAILURE;
@@ -1164,17 +1169,29 @@ static int OPTIMIZE3 TARGET_CLONES stress_stream_verify(
  */
 static int stress_stream(stress_args_t *args)
 {
-	stress_mmap_stats_t stats, stats_total;
+	stress_mmap_stats_t stats;
+	stress_mmap_stats_t stats_total;
 	int rc = EXIT_FAILURE;
-	double *a = (double *)MAP_FAILED, *b = (double *)MAP_FAILED, *c = (double *)MAP_FAILED;
-	size_t *idx1 = (size_t *)MAP_FAILED, *idx2 = (size_t *)MAP_FAILED, *idx3 = (size_t *)MAP_FAILED;
+	double *a = (double *)MAP_FAILED;
+	double *b = (double *)MAP_FAILED;
+	double *c = (double *)MAP_FAILED;
+	size_t *idx1 = (size_t *)MAP_FAILED;
+	size_t *idx2 = (size_t *)MAP_FAILED;
+	size_t *idx3 = (size_t *)MAP_FAILED;
 	const double q = 3.0;
 	double old_checksum = -1.0;
-	double fp_ops = 0.0, dt;
-	uint32_t w, z, stream_index = 0;
-	uint64_t L3, sz, n, sz_idx;
+	double fp_ops = 0.0;
+	double dt;
+	uint64_t L3;
+	uint64_t sz;
+	uint64_t n;
+	uint64_t sz_idx;
 	uint64_t stream_L3_size = DEFAULT_STREAM_L3_SIZE;
-	uint32_t init_counter, init_counter_max;
+	uint32_t w;
+	uint32_t z;
+	uint32_t stream_index = 0;
+	uint32_t init_counter;
+	uint32_t init_counter_max;
 	bool guess = false;
 	bool stream_discontiguous = false;
 	bool stream_mlock = false;
@@ -1185,8 +1202,9 @@ static int stress_stream(stress_args_t *args)
 #else
 	const bool has_sse2 = false;
 #endif
-	double rd_bytes = 0.0, wr_bytes = 0.0;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
+	double rd_bytes = 0.0;
+	double wr_bytes = 0.0;
 
 	stress_signal_catch_sigill();
 
@@ -1321,8 +1339,8 @@ case_stream_index_1:
 	} while (stress_continue(args));
 
 	if (dt >= 4.5) {
-		const double mb_rd_rate = (rd_bytes / (double)MB) / dt;
-		const double mb_wr_rate = (wr_bytes / (double)MB) / dt;
+		const double mb_rd_rate = (rd_bytes / (double)STRESS_MB) / dt;
+		const double mb_wr_rate = (wr_bytes / (double)STRESS_MB) / dt;
 		const double fp_rate = (fp_ops / 1000000.0) / dt;
 
 		pr_inf("%s: memory rate: %.2f MB read/sec, %.2f MB write/sec, %.2f double precision Mflop/sec"
@@ -1393,10 +1411,24 @@ static const stress_opt_t opts[] = {
 	{ OPT_stream_discontiguous, "stream-discontiguous", TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_stream_index,         "stream-index",         TYPE_ID_UINT32, 0, 3, NULL },
 	{ OPT_stream_l3_size,       "stream-l3-size",       TYPE_ID_UINT64_BYTES_VM, MIN_STREAM_L3_SIZE, MAX_STREAM_L3_SIZE, NULL },
-	{ OPT_stream_madvise,       "stream-madvise",       TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_stream_madvise },
+	{ OPT_stream_madvise,       "stream-madvise",       TYPE_ID_SIZE_T_METHOD, 0, 0, stress_stream_madvise },
 	{ OPT_stream_mlock,         "stream-mlock",         TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_stream_prefetch,      "stream-prefetch",      TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-ll-read"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("memory-bound"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("memory-stream"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_stream_info = {
@@ -1404,5 +1436,6 @@ const stressor_info_t stress_stream_info = {
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_CPU_CACHE | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -22,9 +22,9 @@
 #include "core-cpu-cache.h"
 #include "core-signal.h"
 
-#define MIN_RADIXSORT_SIZE	(1 * KB)
-#define MAX_RADIXSORT_SIZE	(4 * MB)
-#define DEFAULT_RADIXSORT_SIZE	(256 * KB)
+#define MIN_RADIXSORT_SIZE	(1 * STRESS_KB)
+#define MAX_RADIXSORT_SIZE	(4 * STRESS_MB)
+#define DEFAULT_RADIXSORT_SIZE	(256 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"radixsort N",		"start N workers radix sorting random strings" },
@@ -116,19 +116,20 @@ static int radixsort_nonlibc(
 {
 	const unsigned char **b;
 	register int digit;
-	unsigned short int *lengths, max;
+	unsigned short int *lengths;
+	unsigned short int max;
 	register int i;
 	unsigned char endchar;
 
 	if (nmemb < 2)
 		return 0;
 
-	b = (const unsigned char **)malloc(sizeof(*b) * nmemb);
+	b = (const unsigned char **)calloc(nmemb, sizeof(*b));
 	if (!b) {
 		errno = ENOMEM;
 		return -1;
 	}
-	lengths = (unsigned short int *)malloc(sizeof(*lengths) * nmemb);
+	lengths = (unsigned short int *)calloc(nmemb, sizeof(*lengths));
 	if (!lengths) {
 		free(b);
 		errno = ENOMEM;
@@ -180,7 +181,7 @@ static const char *stress_radixsort_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_radixsort_method,	"radixsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_radixsort_method },
+	{ OPT_radixsort_method,	"radixsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_radixsort_method },
 	{ OPT_radixsort_size,	"radixsort-size",   TYPE_ID_UINT64, MIN_RADIXSORT_SIZE, MAX_RADIXSORT_SIZE, NULL },
 	END_OPT,
 };
@@ -193,11 +194,13 @@ static int stress_radixsort(stress_args_t *args)
 {
 	uint64_t radixsort_size = DEFAULT_RADIXSORT_SIZE;
 	const unsigned char **data;
-	unsigned char *text, *ptr;
-	int n, i;
+	unsigned char *text;
+	unsigned char *ptr;
 	unsigned char revtable[256];
+	int n;
+	int i;
 	size_t radixsort_method = 0;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
 	int ret;
@@ -222,14 +225,14 @@ static int stress_radixsort(stress_args_t *args)
 
 	text = (unsigned char *)calloc((size_t)n, STR_SIZE);
 	if (!text) {
-		pr_inf_skip("%s: calloc failed allocating %d strings%s, "
+		pr_inf_skip("%s: allocating %d strings%s failed, "
 			"skipping stressor\n", args->name, n,
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 	data = (const unsigned char **)calloc((size_t)n, sizeof(*data));
 	if (!data) {
-		pr_inf_skip("%s: calloc failed allocating %d string pointers%s, "
+		pr_inf_skip("%s: allocating %d string pointers failed%s, "
 			"skipping stressor\n", args->name, n,
 			stress_memory_free_get());
 		free(text);
@@ -274,7 +277,7 @@ static int stress_radixsort(stress_args_t *args)
 
 		if (g_opt_flags & OPT_FLAGS_VERIFY) {
 			for (i = 0; i < n - 1; i++) {
-				if (strcmp((const char *)data[i], (const char *)data[i + 1]) > 0) {
+				if (shim_strcmp((const char *)data[i], (const char *)data[i + 1]) > 0) {
 					pr_fail("%s: sort error "
 						"detected, incorrect ordering "
 						"found\n", args->name);
@@ -289,7 +292,7 @@ static int stress_radixsort(stress_args_t *args)
 
 		if (g_opt_flags & OPT_FLAGS_VERIFY) {
 			for (i = 0; i < n - 1; i++) {
-				if (strcmp((const char *)data[i], (const char *)data[i + 1]) < 0) {
+				if (shim_strcmp((const char *)data[i], (const char *)data[i + 1]) < 0) {
 					pr_fail("%s: sort error "
 						"detected, incorrect ordering "
 						"found\n", args->name);
@@ -319,10 +322,22 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("i-tlb-read-miss"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("bsd"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_radixsort_info = {
 	.stressor = stress_radixsort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

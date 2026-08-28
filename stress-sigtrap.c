@@ -29,7 +29,8 @@ static const stress_help_t help[] = {
 #if defined(SIGTRAP)
 
 static volatile uint64_t counter;
-static volatile double t, duration;
+static volatile double t;
+static volatile double duration;
 
 static void MLOCKED_TEXT stress_sigtrap_handler(int num)
 {
@@ -100,11 +101,23 @@ static int stress_sigtrap(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("raise"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigtrap_info = {
 	.stressor = stress_sigtrap,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 

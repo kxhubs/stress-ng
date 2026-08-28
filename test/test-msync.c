@@ -33,13 +33,15 @@ int main(void)
 {
 	char buffer[8192];
 	static const char filename[] = "/tmp/test-msync.tmp";
-	int fd, ret, err = 1;
+	int fd;
+	int ret;
+	int err = 1;
 	void *ptr;
 	ssize_t rc;
 	const size_t sz = sizeof buffer;
 
 	(void)memset(buffer, 0, sizeof(buffer));
-	fd = open(filename, O_RDWR | O_CREAT, 0666);
+	fd = open(filename, O_RDWR | O_CREAT, 0600);
 	if (fd < 0)
 		return 1;
 	(void)unlink(filename);

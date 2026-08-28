@@ -28,6 +28,7 @@
 #endif
 
 #include <dirent.h>
+#include <pwd.h>
 #include <sched.h>
 #include <sys/resource.h>
 
@@ -566,6 +567,8 @@ typedef struct shim_ns_id_req {
 	uint64_t user_ns_id;
 } shim_ns_id_req_t;
 
+extern long int shim_enosys(long sysnr, ...);
+
 /*
  *  shim_unconstify_ptr()
  *      some older system calls require non-const void *
@@ -573,16 +576,72 @@ typedef struct shim_ns_id_req {
  */
 static inline ALWAYS_INLINE CONST void *shim_unconstify_ptr(const void *ptr)
 {
-	union stress_unconstify {
-		const void *cptr;
-		void *ptr;
-	} su;
-
-	su.cptr = ptr;
-	return su.ptr;
+	return (void *)(uintptr_t)ptr;
 }
 
-extern int shim_sched_yield(void);
+/*
+ *  shim_unvolatile_ptr()
+ * 	dirty hack to turn a void unvolatile * ptr into a void * ptr
+ */
+static inline ALWAYS_INLINE void * shim_unvolatile_ptr(void volatile * ptr)
+{
+	return (void *)(uintptr_t)ptr;
+}
+
+/*
+ *  shim_mincore()
+ *	wrapper for mincore(2) -  determine whether pages are resident in memory
+ */
+static inline ALWAYS_INLINE int shim_mincore(void *addr, size_t length, unsigned char *vec)
+{
+#if defined(HAVE_MINCORE) &&	\
+    NEED_GLIBC(2,2,0)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__) || defined(__sun__)
+	return mincore(addr, length, (char *)vec);
+#else
+	return mincore(addr, length, vec);
+#endif
+#elif defined(__NR_mincore) &&	\
+      defined(HAVE_SYSCALL)
+	return (int)syscall(__NR_mincore, addr, length, vec);
+#else
+	return (int)shim_enosys(0, addr, length, vec);
+#endif
+}
+
+/*
+ *  shim_mlock()
+ *	wrapper for mlock(2) - lock memory
+ */
+static inline ALWAYS_INLINE int shim_mlock(const void *addr, size_t len)
+{
+#if defined(HAVE_MLOCK)
+	return mlock(shim_unconstify_ptr(addr), len);
+#elif defined(__NR_mlock) &&	\
+      defined(HAVE_SYSCALL)
+	return (int)syscall(__NR_mlock, addr, len);
+#else
+	return (int)shim_enosys(0, addr, len);
+#endif
+}
+
+/*
+ *  shim_sched_yield()
+ *  	wrapper for sched_yield(2) - yield the processor
+ */
+static inline ALWAYS_INLINE int shim_sched_yield(void)
+{
+#if defined(HAVE_SCHED_YIELD)
+	return sched_yield();
+#elif defined(__NR_sched_yield) &&	\
+      defined(HAVE_SYSCALL)
+	return syscall(__NR_sched_yield);
+#else
+	return sleep(0);
+#endif
+}
+
 extern int shim_cacheflush(char *addr, int nbytes, int cache);
 extern ssize_t shim_copy_file_range(int fd_in, shim_off64_t *off_in, int fd_out,
 	shim_off64_t *off_out, size_t len, unsigned int flags);
@@ -619,7 +678,6 @@ extern int shim_sched_getattr(pid_t pid, struct shim_sched_attr *attr,
 	unsigned int size, unsigned int flags);
 extern int shim_sched_setattr(pid_t pid, struct shim_sched_attr *attr,
 	unsigned int flags);
-extern int shim_mlock(const void *addr, size_t len);
 extern int shim_munlock(const void *addr, size_t len);
 extern int shim_mlock2(const void *addr, size_t len, int flags);
 extern int shim_mlockall(int flags);
@@ -631,7 +689,6 @@ extern char *shim_getlogin(void);
 extern int shim_msync(void *addr, size_t length, int flags);
 extern int shim_sysfs(int option, ...);
 extern int shim_madvise(void *addr, size_t length, int advice);
-extern int shim_mincore(void *addr, size_t length, unsigned char *vec);
 extern int shim_statx(int dfd, const char *filename, int flags,
 	unsigned int mask, shim_statx_t *buffer);
 extern int shim_futex_wake(const void *futex, const int n);
@@ -702,8 +759,10 @@ extern int shim_lremovexattr(const char *path, const char *name);
 extern int shim_fremovexattr(int fd, const char *name);
 extern ssize_t shim_llistxattr(const char *path, char *list, size_t size);
 extern int shim_reboot(int magic, int magic2, int cmd, void *arg);
+#if defined(HAVE_IOVEC)
 extern ssize_t shim_process_madvise(int pidfd, const struct iovec *iovec,
 	unsigned long int vlen, int advice, unsigned int flags);
+#endif
 extern int shim_clock_getres(clockid_t clk_id, struct timespec *res);
 extern int shim_clock_adjtime(clockid_t clk_id, shim_timex_t *buf);
 extern int shim_clock_gettime(clockid_t clk_id, struct timespec *tp);
@@ -765,5 +824,11 @@ extern ssize_t shim_listns(const struct shim_ns_id_req *req, uint64_t *ns_ids,
         size_t nr_ns_ids, unsigned int flags);
 extern int shim_rseq_slice_yield(void);
 extern int shim_open_tree(int dirfd, const char *path, unsigned int flags);
+extern char *shim_strtok_r(char *str, const char *delim,
+	char **saveptr);
+extern struct tm *shim_localtime_r(const time_t *timep,
+	struct tm *result);
+int shim_getpwuid_r(uid_t uid, struct passwd *pwd, char *buf,
+        size_t size, struct passwd **result);
 
 #endif

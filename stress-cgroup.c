@@ -17,10 +17,12 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-killpid.h"
 #include "core-signal.h"
 
+#include <ctype.h>
 #if defined(HAVE_SYS_MOUNT_H)
 #include <sys/mount.h>
 #endif
@@ -66,7 +68,7 @@ static inline void stress_cgroup_remove_nl(char *str)
 {
 	char *ptr;
 
-	ptr = strchr(str, '\n');
+	ptr = shim_strchr(str, '\n');
 	if (ptr)
 		*ptr = '\0';
 }
@@ -86,7 +88,8 @@ static int stress_cgroup_mounted_state(const char *path)
 		return STRESS_CGROUP_UNKNOWN;
 
 	while (fgets(buf, sizeof(buf), fp)) {
-		const char *mnt, *type;
+		const char *mnt;
+		const char *type;
 		char *ptr;
 
 		ptr = buf;
@@ -111,8 +114,8 @@ static int stress_cgroup_mounted_state(const char *path)
 			break;
 		*ptr = '\0';
 
-		if ((strcmp(type, "cgroup2") == 0) &&
-		    (strcmp(mnt, path) == 0)) {
+		if ((shim_strcmp(type, "cgroup2") == 0) &&
+		    (shim_strcmp(mnt, path) == 0)) {
 			ret = STRESS_CGROUP_MOUNTED;
 			break;
 		}
@@ -187,7 +190,7 @@ static void stress_cgroup_umount(
 			return;
 		default:
 			/* Unexpected, so report it */
-			pr_inf("%s: umount failed %s, errno=%d %s\n", args->name,
+			pr_inf("%s: umount '%s' failed, errno=%d %s\n", args->name,
 				path, errno, strerror(errno));
 			break;
 		}
@@ -200,7 +203,8 @@ static void stress_cgroup_umount(
  */
 static void stress_cgroup_read(const char *path)
 {
-	int fd, i;
+	int fd;
+	int i;
 	char buf[1024];
 	off_t len = 0;
 	struct stat statbuf;
@@ -237,6 +241,7 @@ static void stress_cgroup_controllers(const char *realpathname)
 	char controllers[512];
 	const char *token;
 	char *ptr;
+	char *saveptr = NULL;
 	ssize_t ret;
 
 	(void)snprintf(path, sizeof(path), "%s/%s", realpathname, "cgroup.subtree_control");
@@ -248,7 +253,7 @@ static void stress_cgroup_controllers(const char *realpathname)
 	(void)snprintf(path, sizeof(path), "%s/%s", realpathname, "cgroup.subtree_control");
 
 	/* Add existing controllers to already set subtree control, should be OK */
-	for (ptr = controllers; (token = strtok(ptr, " ")) != NULL; ptr = NULL) {
+	for (ptr = controllers; (token = shim_strtok_r(ptr, " ", &saveptr)) != NULL; ptr = NULL) {
 		char controller[256];
 
 		ret = (ssize_t)snprintf(controller, sizeof(controller), "+%s\n", token);
@@ -262,30 +267,22 @@ static void stress_cgroup_controllers(const char *realpathname)
  */
 static void stress_cgroup_read_files(const char *realpathname)
 {
-	static const char * const filenames[] = {
-		"cgroup.type",
-		"cgroup.procs",
-		"cgroup.threads",
-		"cgroup.controllers",
-		"cgroup.subtree_control",
-		"cgroup.events",
-		"cgroup.max.descendants",
-		"cgroup.max.depth",
-		"cgroup.stat",
-		"cgroup.freeze",
-		"cgroup.kill",
-		"cgroup.pressure",
-		"irq.pressure",
-	};
+	DIR *dir;
+	struct dirent *de;
 
-	size_t i;
+	dir = opendir(realpathname);
+	if (!dir)
+		return;
 
-	for (i = 0; i < SIZEOF_ARRAY(filenames); i++) {
-		char path[PATH_MAX + 32];
+	while ((de = readdir(dir)) != NULL) {
+		if (de->d_type == DT_REG) {
+			char path[PATH_MAX + 256];
 
-		(void)snprintf(path, sizeof(path), "%s/%s", realpathname, filenames[i]);
-		stress_cgroup_read(path);
+			(void)snprintf(path, sizeof(path), "%s/%s", realpathname, de->d_name);
+			stress_cgroup_read(path);
+		}
 	}
+	(void)closedir(dir);
 }
 
 /*
@@ -294,7 +291,8 @@ static void stress_cgroup_read_files(const char *realpathname)
  */
 static void stress_cgroup_add_pid(const char *realpathname, const pid_t pid)
 {
-	char filename[PATH_MAX + 64], cmd[64];
+	char filename[PATH_MAX + 64];
+	char cmd[64];
 	ssize_t len;
 
 	len = (ssize_t)snprintf(cmd, sizeof(cmd), "%" PRIdMAX "\n", (intmax_t)pid);
@@ -308,12 +306,40 @@ static void stress_cgroup_add_pid(const char *realpathname, const pid_t pid)
  */
 static void stress_cgroup_del_pid(const char *realpathname, const pid_t pid)
 {
-	char filename[PATH_MAX + 64], cmd[64];
+	char filename[PATH_MAX + 64];
+	char cmd[64];
 	ssize_t len;
 
 	len = (ssize_t)snprintf(cmd, sizeof(cmd), "%" PRIdMAX "\n", (intmax_t)pid);
 	(void)snprintf(filename, sizeof(filename), "%s/cgroup.procs", realpathname);
 	stress_fs_file_write(filename, cmd, len);
+}
+
+/*
+ *  stress_cgroup_is_numeric()
+ *	return true if string is numeric and no more than one '\n'
+ */
+static inline bool stress_cgroup_is_numeric(const char *str)
+{
+	register int newlines = 0;
+	register int decpoints = 0;
+	register const char *ptr = str;
+
+	while (*ptr) {
+		if (*ptr == '.') {
+			decpoints++;
+			if (decpoints > 1)
+				return false;
+		} else if (*ptr == '\n') {
+			newlines++;
+			if (newlines > 1)
+				return false;
+		} else if (!isdigit((int)*ptr)) {
+			return false;
+		}
+		ptr++;
+	}
+	return (ptr - str) > 1;
 }
 
 /*
@@ -333,7 +359,7 @@ static void stress_cgroup_new_group(stress_args_t *args, const char *realpathnam
 		stress_make_it_fail_set();
 		do {
 			void *ptr;
-			const size_t sz = MB;
+			const size_t sz = STRESS_MB;
 
 			ptr = mmap(NULL, sz, PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_SHARED, -1, 0);
@@ -347,6 +373,8 @@ static void stress_cgroup_new_group(stress_args_t *args, const char *realpathnam
 		int status;
 		size_t i;
 		char path[PATH_MAX + 64];
+		DIR *dir;
+		struct dirent *de;
 
 		static const stress_cgroup_values_t values[] = {
 			{ "cpu.stat",			NULL },
@@ -458,10 +486,35 @@ static void stress_cgroup_new_group(stress_args_t *args, const char *realpathnam
 			stress_cgroup_read(filename);
 
 			if (values[i].value) {
-				(void)stress_fs_file_write(filename, values[i].value, strlen(values[i].value));
+				(void)stress_fs_file_write(filename, values[i].value, shim_strlen(values[i].value));
 				stress_cgroup_read(filename);
 			}
 			stress_cgroup_del_pid(realpathname, pid);
+		}
+
+		/*
+		 *  read and write back values if they are single numeric values
+		 *  to exercise pointless cgroup value updates while moving pid
+		 *  to/freom cgroup. This way we at least read and write all
+		 *  adjustable numeric values
+		 */
+		dir = opendir(realpathname);
+		if (dir) {
+			while ((de = readdir(dir)) != NULL) {
+				if (de->d_type == DT_REG) {
+					char filename[PATH_MAX + 256];
+					char buf[4096];
+
+					stress_cgroup_add_pid(realpathname, pid);
+					(void)snprintf(filename, sizeof(filename), "%s/%s", realpathname, de->d_name);
+					if ((stress_fs_file_read(filename, buf, sizeof(buf)) > 0) &&
+					    stress_cgroup_is_numeric(buf)) {
+							(void)stress_fs_file_write(filename, buf, sizeof(buf));
+					}
+					stress_cgroup_del_pid(realpathname, pid);
+				}
+			}
+			(void)closedir(dir);
 		}
 		stress_kill_pid_wait(pid, &status);
 		(void)rmdir(path);
@@ -477,7 +530,8 @@ static int stress_cgroup_child(stress_args_t *args)
 {
 	char pathname[PATH_MAX], realpathname[PATH_MAX];
 	int rc = EXIT_SUCCESS;
-	uint64_t mount_retry = 0, umount_retry = 0;
+	uint64_t mount_retry = 0;
+	uint64_t umount_retry = 0;
 	static const char skip[] = "skipping stressor";
 
 	stress_parent_died_alarm();
@@ -485,12 +539,12 @@ static int stress_cgroup_child(stress_args_t *args)
 
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name, args->pid, args->instance);
 	if (mkdir(pathname, S_IRGRP | S_IWGRP) < 0) {
-		pr_fail("%s: cannot mkdir %s, errno=%d (%s)\n",
+		pr_fail("%s: cannot mkdir '%s', errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
 	if (!realpath(pathname, realpathname)) {
-		pr_fail("%s: cannot realpath %s, errno=%d (%s)\n",
+		pr_fail("%s: cannot realpath '%s', errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return EXIT_FAILURE;
@@ -502,11 +556,12 @@ static int stress_cgroup_child(stress_args_t *args)
     defined(HAVE_FSMOUNT) &&	\
     defined(HAVE_MOVE_MOUNT) &&	\
     defined(HAVE_SYS_MOUNT_H)
-		int fd, fd_mnt;
+		int fd;
+		int fd_mnt;
 
 		fd = fsopen("cgroup2", FSOPEN_CLOEXEC);
 		if (fd < 0) {
-			pr_inf_skip("%s: fsopen failed, errno=%d (%s), "
+			pr_inf_skip("%s: fsopen 'cgroup2' failed, errno=%d (%s), "
 				"skipping stressor\n",
 				args->name, errno, strerror(errno));
 			(void)stress_fs_temp_dir_rm_args(args);
@@ -584,7 +639,7 @@ static int stress_cgroup_child(stress_args_t *args)
 cleanup:
 	stress_cgroup_umount(args, realpathname, &umount_retry);
 	if (stress_cgroup_mounted_state(realpathname) == STRESS_CGROUP_MOUNTED)
-		pr_dbg("%s: could not unmount of %s\n", args->name, realpathname);
+		pr_dbg("%s: could not unmount '%s'\n", args->name, realpathname);
 
 	(void)stress_fs_temp_dir_rm_args(args);
 	if ((mount_retry + umount_retry) > 0) {
@@ -609,14 +664,8 @@ static int stress_cgroup_mount(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-again:
-		if (UNLIKELY(!stress_continue_flag()))
-			break;
-
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -644,7 +693,7 @@ again:
 					pr_dbg("%s: assuming killed by OOM killer, "
 						"restarting again (instance %" PRIu32 ")\n",
 						args->name, args->instance);
-					goto again;
+					continue;
 				}
 			} else if (WEXITSTATUS(status) == EXIT_FAILURE) {
 				pr_fail("%s: child mount/umount failed\n", args->name);
@@ -666,12 +715,32 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+#if defined(HAVE_FSOPEN) &&	\
+    defined(HAVE_FSCONFIG) &&	\
+    defined(HAVE_FSMOUNT) &&	\
+    defined(HAVE_MOVE_MOUNT) &&	\
+    defined(HAVE_SYS_MOUNT_H)
+	STRESS_EX_SYSCALL("fsopen"),
+	STRESS_EX_SYSCALL("fsconfig"),
+	STRESS_EX_SYSCALL("fsmount"),
+	STRESS_EX_SYSCALL("move_mount"),
+#else
+	STRESS_EX_SYSCALL("mount"),
+#endif
+	STRESS_EX_SYSCALL("umount"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_cgroup_info = {
 	.stressor = stress_cgroup_mount,
 	.classifier = CLASS_OS,
 	.supported = stress_cgroup_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_cgroup_info = {

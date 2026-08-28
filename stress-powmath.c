@@ -663,7 +663,7 @@ static const char *stress_powmath_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_powmath_method, "powmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_powmath_method },
+	{ OPT_powmath_method, "powmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_powmath_method },
 	END_OPT,
 };
 
@@ -679,8 +679,23 @@ const stressor_info_t stress_powmath_info = {
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_powmath_method, "powmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_powmath_method, "powmath-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp"),
+#if defined(HAVE_COMPLEX_H)
+	STRESS_EX_FEATURE("fp-complex"),
+#endif
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_powmath_info = {
@@ -688,7 +703,8 @@ const stressor_info_t stress_powmath_info = {
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #endif

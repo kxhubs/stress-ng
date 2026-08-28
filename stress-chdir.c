@@ -50,15 +50,23 @@ static const stress_opt_t opts[] = {
  */
 static int stress_chdir(stress_args_t *args)
 {
-	uint32_t i, chdir_dirs = DEFAULT_CHDIR_DIRS;
+	uint32_t i;
+	uint32_t chdir_dirs = DEFAULT_CHDIR_DIRS;
 	stress_chdir_info_t *chdir_info;
-	char path[PATH_MAX], cwd[PATH_MAX], badpath[PATH_MAX], longpath[PATH_MAX + 16];
-	int rc, ret = EXIT_FAILURE;
+	char path[PATH_MAX];
+	char cwd[PATH_MAX];
+	char badpath[PATH_MAX];
+	char longpath[PATH_MAX + 16];
+	int rc;
+	int ret = EXIT_FAILURE;
 	struct stat statbuf;
 	const bool is_root = stress_capabilities_check(SHIM_CAP_IS_ROOT);
 	bool got_statbuf = false;
 	bool tidy_info = false;
-	double count = 0.0, duration = 0.0, rate, start_time;
+	double count = 0.0;
+	double duration = 0.0;
+	double rate;
+	double start_time;
 
 	if (!stress_setting_get("chdir-dirs", &chdir_dirs)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -125,22 +133,19 @@ static int stress_chdir(stress_args_t *args)
 			}
 			ret = stress_exit_status(errno);
 			if (ret == EXIT_FAILURE)
-				pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
+				pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 					args->name, path, errno, strerror(errno));
 			goto abort;
 		}
 		chdir_info[i].mkdir_ok = true;
 		chdir_info[i].fd = open(chdir_info[i].path, flags);
 
-		if (!got_statbuf) {
-			if (shim_stat(path, &statbuf) == 0)
-				got_statbuf = true;
-
-		}
+		if ((!got_statbuf) && (shim_stat(path, &statbuf) == 0))
+			got_statbuf = true;
 	}
 
 	if (!got_statbuf && *path) {
-		pr_fail("%s: stat on %s failed, errno=%d (%s)%s\n",
+		pr_fail("%s: stat '%s' failed, errno=%d (%s)%s\n",
 			args->name, path, errno, strerror(errno),
 			stress_fs_type_get(path));
 		goto abort;
@@ -163,7 +168,7 @@ static int stress_chdir(stress_args_t *args)
 					count += 1.0;
 				} else {
 					if (errno != ENOMEM) {
-						pr_fail("%s: chdir %s failed, errno=%d (%s)%s\n",
+						pr_fail("%s: chdir '%s' failed, errno=%d (%s)%s\n",
 							args->name, chdir_info[i].path,
 							errno, strerror(errno),
 							stress_fs_type_get(path));
@@ -172,14 +177,12 @@ static int stress_chdir(stress_args_t *args)
 				}
 			}
 
-			if ((fd >= 0) && (fchdir(fd) < 0)) {
-				if (errno != ENOMEM) {
-					pr_fail("%s: fchdir failed, errno=%d (%s)%s\n",
-						args->name,
-						errno, strerror(errno),
-						stress_fs_type_get(chdir_info[j].path));
-					goto abort;
-				}
+			if ((fd >= 0) && (fchdir(fd) < 0) && (errno != ENOMEM)) {
+				pr_fail("%s: fchdir failed, errno=%d (%s)%s\n",
+					args->name,
+					errno, strerror(errno),
+					stress_fs_type_get(chdir_info[j].path));
+				goto abort;
 			}
 
 			/*
@@ -220,7 +223,7 @@ static int stress_chdir(stress_args_t *args)
 				}
 				/* Maybe low memory, force retry */
 				if (errno != ENOMEM) {
-					pr_fail("%s: chdir %s failed, errno=%d (%s)%s\n",
+					pr_fail("%s: chdir '%s' failed, errno=%d (%s)%s\n",
 						args->name, cwd,
 						errno, strerror(errno),
 						stress_fs_type_get(cwd));
@@ -259,7 +262,7 @@ static int stress_chdir(stress_args_t *args)
 	ret = EXIT_SUCCESS;
 abort:
 	if (chdir(cwd) < 0)
-		pr_fail("%s: chdir %s failed, errno=%d (%s)%s\n",
+		pr_fail("%s: chdir '%s' failed, errno=%d (%s)%s\n",
 			args->name, cwd, errno, strerror(errno),
 			stress_fs_type_get(cwd));
 tidy:
@@ -292,10 +295,21 @@ err:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("chdir"),
+	STRESS_EX_SYSCALL("fchdir"),
+	STRESS_EX_SYSCALL("fchmod"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_chdir_info = {
 	.stressor = stress_chdir,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -20,18 +20,10 @@
 #include "core-affinity.h"
 #include "core-builtin.h"
 #include "core-out-of-memory.h"
+#include "core-sched.h"
 
 #include <math.h>
 #include <sched.h>
-
-#if defined(HAVE_SCHED_SETAFFINITY) &&					     \
-    (defined(_POSIX_PRIORITY_SCHEDULING) || defined(__linux__)) &&	     \
-    (defined(SCHED_OTHER) || defined(SCHED_BATCH) || defined(SCHED_IDLE)) && \
-    !defined(__OpenBSD__) &&						     \
-    !defined(__minix__) &&						     \
-    !defined(__APPLE__)
-#define HAVE_SCHEDULING
-#endif
 
 #define DEFAULT_CHILDREN		(8)
 
@@ -84,7 +76,7 @@ static const char *stress_race_sched_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_race_sched_method, "race-sched-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_race_sched_method },
+	{ OPT_race_sched_method, "race-sched-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_race_sched_method },
 	END_OPT,
 };
 
@@ -220,7 +212,8 @@ static int stress_race_sched_exercise(
 	const size_t method_index)
 {
 	stress_race_sched_child_t *child;
-	int i, rc = 0;
+	int i;
+	int rc = 0;
 
 	for (i = 0; LIKELY(stress_continue_flag() && (i < 20)); i++)  {
 		for (child = children.head; child; child = child->next) {
@@ -338,7 +331,7 @@ static int stress_race_sched_child(stress_args_t *args, void *context)
 
 	do {
 		const bool low_mem_reap = ((g_opt_flags & OPT_FLAGS_OOM_AVOID) &&
-					   stress_memory_low_check((size_t)(1 * MB)));
+					   stress_memory_low_check((size_t)(1 * STRESS_MB)));
 		const uint8_t rnd = stress_mwc8();
 
 		cpu_idx = stress_call_race_sched_method_idx(cpu_idx, method_index);
@@ -459,12 +452,25 @@ static int stress_race_sched(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("sched_getaffinity"),
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_race_sched_info = {
 	.stressor = stress_race_sched,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

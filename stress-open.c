@@ -19,9 +19,12 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-filesystem.h"
 #include "core-killpid.h"
 
-#if defined(HAVE_LINUX_OPENAT2_H)
+#if defined(HAVE_LINUX_OPENAT2_H) &&	\
+    !defined(HAVE_COMPILER_TCC) &&	\
+    !defined(HAVE_COMPILER_PCC)
 #include <linux/openat2.h>
 #endif
 
@@ -147,48 +150,9 @@ static const int open_flags[] = {
 #endif
 };
 
-static size_t stress_get_max_fds(void)
-{
-	const size_t max_size = (size_t)-1;
-	size_t max_fds = 0;
-
-#if defined(RLIMIT_NOFILE)
-	struct rlimit rlim;
-
-	if (getrlimit(RLIMIT_NOFILE, &rlim) == 0) {
-		struct rlimit new_rlim = rlim;
-
-		new_rlim.rlim_cur = new_rlim.rlim_max;
-		if (setrlimit(RLIMIT_NOFILE, &new_rlim) == 0) {
-			max_fds = stress_fs_max_file_limit_get();
-			(void)setrlimit(RLIMIT_NOFILE, &rlim);
-		}
-	}
-#endif
-
-	if (max_fds == 0)
-		max_fds = stress_fs_max_file_limit_get();
-	if (max_fds > max_size)
-		max_fds = max_size;
-
-	return max_fds;
-}
-
-static void stress_open_max(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
-{
-	size_t *open_max = (size_t *)value;
-	const size_t max_fds = stress_get_max_fds();
-
-	(void)opt_name;
-
-	*type_id = TYPE_ID_SIZE_T;
-	*open_max = (size_t)stress_get_uint64_percent(opt_arg, 1, (uint64_t)max_fds, NULL,
-                        "cannot determine maximum number of file descriptors");
-}
-
 static const stress_opt_t opts[] = {
 	{ OPT_open_fd,  "open-fd",  TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_open_max,	"open-max", TYPE_ID_CALLBACK, 0, 1, (void *)stress_open_max },
+	{ OPT_open_max,	"open-max", TYPE_ID_CALLBACK, 0, 1, stress_fs_max_fd },
 	END_OPT,
 };
 
@@ -473,7 +437,8 @@ static int open_tmp_rdwr(
 	double *duration,
 	double *count)
 {
-	int fd, flags = O_TMPFILE;
+	int fd;
+	int flags = O_TMPFILE;
 
 	(void)args;
 	(void)temp_dir;
@@ -737,7 +702,8 @@ static int open_with_openat_dir_fd(
 	double *count)
 {
 	char filename[PATH_MAX];
-	int fd, dir_fd;
+	int fd;
+	int dir_fd;
 	const uint32_t rnd32 = stress_mwc32();
 
 	(void)args;
@@ -909,7 +875,8 @@ static int open_rdonly_trunc(
 	double *count)
 {
 	char filename[PATH_MAX];
-	int fd1, fd2;
+	int fd1;
+	int fd2;
 
 	(void)args;
 
@@ -1074,17 +1041,22 @@ static void stress_fd_dir(const char *path, double *duration, double *count)
  */
 static int stress_open(stress_args_t *args)
 {
-	int *fds, ret;
-	char path[PATH_MAX], temp_dir[PATH_MAX];
-	const size_t max_size = (size_t)-1;
-	size_t open_max = stress_fs_max_file_limit_get();
-	size_t i, sz;
+	int *fds;
+	int ret;
+	char path[PATH_MAX];
+	char temp_dir[PATH_MAX];
+	const uint64_t max_size = (uint64_t)-1LL;
+	uint64_t open_max = stress_fs_max_file_limit_get();
+	size_t i;
+	size_t sz;
 	pid_t pid = -1;
 	const pid_t mypid = getpid();
 	struct stat statbuf;
 	bool open_fd = false;
 	int all_open_flags;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	/*
 	 *  32 bit systems may OOM if we have too many open fds, so
@@ -1113,17 +1085,17 @@ static int stress_open(stress_args_t *args)
 	if (open_max < 1)
 		open_max = 1;
 
-	sz = open_max * sizeof(*fds);
+	sz = (size_t)open_max * sizeof(*fds);
 	fds = (int *)mmap(NULL, sz, PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (fds == MAP_FAILED) {
 		/* shrink */
 		open_max = 1024 * 1024;
-		sz = open_max * sizeof(*fds);
+		sz = (size_t)open_max * sizeof(*fds);
 		fds = (int *)mmap(NULL, sz, PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 		if (fds == MAP_FAILED) {
-			pr_inf_skip("%s: cannot mmap %zu file descriptors%s, "
+			pr_inf_skip("%s: mmap %" PRIu64 " file descriptors failed%s, "
 				"errno=%d (%s), skipping stressor\n",
 				args->name, open_max, stress_memory_free_get(),
 				errno, strerror(errno));
@@ -1131,7 +1103,7 @@ static int stress_open(stress_args_t *args)
 		}
 	}
 	if (!args->instance)
-		pr_inf("%s: using a maximum of %zu file descriptors\n", args->name, open_max);
+		pr_inf("%s: using a maximum of %" PRIu64 " file descriptors\n", args->name, open_max);
 	stress_memory_anon_name_set(fds, sz, "fds");
 
 	if (open_fd) {
@@ -1159,7 +1131,8 @@ static int stress_open(stress_args_t *args)
 
 	do {
 		size_t n;
-		unsigned int min_fd = UINT_MAX, max_fd = 0;
+		unsigned int min_fd = UINT_MAX;
+		unsigned int max_fd = 0;
 
 		for (i = 0; i < open_max; i++) {
 			for (;;) {
@@ -1258,10 +1231,34 @@ close_all:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-thermal"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("dup"),
+#if defined(HAVE_FUTIMES)
+	STRESS_EX_SYSCALL("futimes"),
+#endif
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_OPENAT)
+	STRESS_EX_SYSCALL("openat"),
+#endif
+#if defined(HAVE_OPENAT2)
+	STRESS_EX_SYSCALL("openat2"),
+#endif
+#if defined(HAVE_POSIX_OPENPT)
+	STRESS_EX_SYSCALL("openpt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_open_info = {
 	.stressor = stress_open,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-mmap.h"
 #include "core-sort.h"
 
@@ -240,7 +241,7 @@ done:
 static inline void stress_signest_shuffle(void)
 {
 	register size_t i;
-	
+
 	for (i = 0; i < max_signals; i++) {
 		register const size_t j = (size_t)stress_mwc32modn((uint32_t)max_signals);
 		stress_signal_t tmp;
@@ -265,13 +266,18 @@ static int stress_signest_cmp(const void *p1, const void *p2)
  */
 static int stress_signest(stress_args_t *args)
 {
-	size_t i, sz;
-	int n, ret, rc;
+	size_t i;
+	size_t sz;
+	int n;
+	int ret;
+	int rc;
 	uint8_t *altstack;
-	char *buf, *ptr;
+	char *buf;
+	char *ptr;
 	const size_t altstack_size = STRESS_MINSIGSTKSZ * MAX_SIGNALS;
 	double rate;
-	NOCLOBBER double t, duration;
+	CLOBBERED double t = 0.0;
+	CLOBBERED double duration;
 
 	raised = 0;
 	handled = 0;
@@ -312,7 +318,7 @@ static int stress_signest(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (altstack == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte alternative signal stack%s, "
+		pr_inf_skip("%s: mmap %zu byte alternative signal stack failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, altstack_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -371,7 +377,7 @@ finish:
 			const char *name = stress_signal_name(signals[i].signum);
 
 			n++;
-			sz += name ? (strlen(name) + 1) : 32;
+			sz += name ? (shim_strlen(name) + 1) : 32;
 		}
 	}
 
@@ -386,7 +392,7 @@ finish:
 					const size_t len = buf + sz - ptr;
 
 					if (name) {
-						if (strncmp(name, "SIG", 3) == 0)
+						if (shim_strncmp(name, "SIG", 3) == 0)
 							name += 3;
 						written = (ssize_t)snprintf(ptr, len, " %s", name);
 					} else {
@@ -428,11 +434,23 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("raise"),
+#if defined(__linux__)
+        STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_signest_info = {
 	.stressor = stress_signest,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -442,7 +460,7 @@ const stressor_info_t stress_signest_info = {
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

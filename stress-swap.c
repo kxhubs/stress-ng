@@ -136,7 +136,10 @@ static void stress_swap_self(const size_t page_size)
 	 * Look for field 0060b000-0060c000 r--p 0000b000 08:01 1901726
 	 */
 	while (fgets(buffer, sizeof(buffer), fp)) {
-		uint64_t begin, end, len, offset;
+		uint64_t begin;
+		uint64_t end;
+		uint64_t len;
+		uint64_t offset;
 		char tmppath[1024];
 		char prot[6];
 
@@ -152,7 +155,7 @@ static void stress_swap_self(const size_t page_size)
 			continue;
 #endif
 		/* Avoid vdso and vvar */
-		if (strncmp("[v", tmppath, 2) == 0)
+		if (shim_strncmp("[v", tmppath, 2) == 0)
 			continue;
 
 		if ((begin > UINTPTR_MAX) || (end > UINTPTR_MAX))
@@ -278,7 +281,7 @@ static void stress_swap_check_swapped(uint64_t *swapped_out)
 		return;
 
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
-		if (strncmp(buf, "pswpout", 7) == 0) {
+		if (shim_strncmp(buf, "pswpout", 7) == 0) {
 			swapout = (uint64_t)atoll(buf + 8);
 			break;
 		}
@@ -330,13 +333,16 @@ static void stress_swap_clean_dir(stress_args_t *args)
 static int stress_swap_child(stress_args_t *args, void *context)
 {
 	char filename[PATH_MAX];
-	int fd, ret;
+	int fd;
+	int ret;
 	uint8_t *page;
 	uint64_t swapped_out = 0;
 	int32_t max_swap_pages;
 	const size_t page_size = args->page_size;
 	bool swap_self = false;
-	double t, duration, rate;
+	double t;
+	double duration;
+	double rate;
 
 	(void)context;
 
@@ -348,7 +354,7 @@ static int stress_swap_child(stress_args_t *args, void *context)
 	page = (uint8_t *)mmap(NULL, page_size, PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap 1 page%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap 1 page failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, stress_memory_free_get(), errno, strerror(errno));
 		ret = EXIT_NO_RESOURCE;
 		goto tidy_ret;
@@ -368,7 +374,7 @@ static int stress_swap_child(stress_args_t *args, void *context)
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		ret = stress_exit_status(errno);
-		pr_fail("%s: open swap file %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open swap file '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_rm;
 	}
@@ -430,6 +436,7 @@ static int stress_swap_child(stress_args_t *args, void *context)
 		/* Periodically create bad swap header */
 		if (stress_mwc8() < 16) {
 			const size_t idx = stress_mwc8modn(SIZEOF_ARRAY(bad_header_flags));
+
 			bad_flags = bad_header_flags[idx];
 		} else {
 			bad_flags = SWAP_HDR_SANE;	/* No bad header */
@@ -568,13 +575,32 @@ static int stress_swap(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("swap"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("swapoff"),
+	STRESS_EX_SYSCALL("swapon"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_swap_info = {
 	.stressor = stress_swap,
 	.supported = stress_swap_supported,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_swap_info = {

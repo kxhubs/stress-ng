@@ -45,11 +45,15 @@ typedef struct {
 } stress_domain_t;
 
 static const stress_domain_t domains[] = {
+#if defined(AF_INET)
 	{ "ipv4",	AF_INET,	DOMAIN_INET },
+#endif
 #if defined(AF_INET6)
 	{ "ipv6",	AF_INET6,	DOMAIN_INET6 },
 #endif
+#if defined(AF_UNIX)
 	{ "unix",	AF_UNIX,	DOMAIN_UNIX },
+#endif
 };
 
 /*
@@ -60,7 +64,8 @@ static const stress_domain_t domains[] = {
 int stress_net_interface_exists(const char *interface, const int domain, struct sockaddr *addr)
 {
 #if defined(HAVE_IFADDRS_H)
-	struct ifaddrs *ifaddr, *ifa;
+	struct ifaddrs *ifaddr;
+	const struct ifaddrs *ifa;
 	int ret = -1;
 
 	if (UNLIKELY(!interface))
@@ -77,7 +82,7 @@ int stress_net_interface_exists(const char *interface, const int domain, struct 
 			continue;
 		if (ifa->ifa_addr->sa_family != domain)
 			continue;
-		if (strcmp(ifa->ifa_name, interface) == 0) {
+		if (shim_strcmp(ifa->ifa_name, interface) == 0) {
 			(void)shim_memcpy(addr, ifa->ifa_addr, sizeof(*addr));
 			ret = 0;
 			break;
@@ -141,7 +146,7 @@ int stress_net_domain_set(
 
 	for (i = 0; i < SIZEOF_ARRAY(domains); i++) {
 		if ((domain_mask & domains[i].domain_flags) &&
-		    !strcmp(domain_name, domains[i].name)) {
+		    !shim_strcmp(domain_name, domains[i].name)) {
 			*domain = domains[i].domain;
 			return 0;
 		}
@@ -166,7 +171,7 @@ int stress_net_sockaddr_if_set(
 	const int domain,
 	const int port,
 	const char *ifname,
-	struct sockaddr **sockaddr,
+	struct sockaddr_storage *addr,
 	socklen_t *len,
 	const int net_addr)
 {
@@ -175,7 +180,6 @@ int stress_net_sockaddr_if_set(
 	(void)instance;
 	(void)pid;
 
-	*sockaddr = NULL;
 	*len = 0;
 
 	/* omit ports 0..1023 */
@@ -185,52 +189,47 @@ int stress_net_sockaddr_if_set(
 	switch (domain) {
 #if defined(AF_INET)
 	case AF_INET: {
-		static struct sockaddr_in addr;
+		struct sockaddr_in *addr_in = (struct sockaddr_in *)addr;
 
-		(void)shim_memset(&addr, 0, sizeof(addr));
-
-		if ((!ifname) || (!stress_net_interface_exists(ifname, domain, (struct sockaddr *)&addr))) {
+		if ((!ifname) || (!stress_net_interface_exists(ifname, domain, (struct sockaddr *)addr))) {
 			switch (net_addr) {
 			case NET_ADDR_LOOPBACK:
-				addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+				addr_in->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 				break;
 			case NET_ADDR_ANY:
 			default:
-				addr.sin_addr.s_addr = htonl(INADDR_ANY);
+				addr_in->sin_addr.s_addr = htonl(INADDR_ANY);
 				break;
 			}
 		}
-		addr.sin_family = (sa_family_t)domain;
-		addr.sin_port = htons(sin_port);
-		*sockaddr = (struct sockaddr *)&addr;
-		*len = sizeof(addr);
+		addr_in->sin_family = (sa_family_t)domain;
+		addr_in->sin_port = htons(sin_port);
+		*len = sizeof(*addr_in);
 		break;
 	}
 #endif
 #if defined(AF_INET6)
 	case AF_INET6: {
-		static struct sockaddr_in6 addr;
+		struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)addr;
+
 #if defined(__minix__)
 		static const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 		static const struct in6_addr in6addr_loopback = IN6ADDR_LOOPBACK_INIT;
 #endif
-		(void)shim_memset(&addr, 0, sizeof(addr));
-
-		if ((!ifname) || (!stress_net_interface_exists(ifname, domain, (struct sockaddr *)&addr))) {
+		if ((!ifname) || (!stress_net_interface_exists(ifname, domain, (struct sockaddr *)addr))) {
 			switch (net_addr) {
 			case NET_ADDR_LOOPBACK:
-				addr.sin6_addr = in6addr_loopback;
+				addr_in6->sin6_addr = in6addr_loopback;
 				break;
 			case NET_ADDR_ANY:
 			default:
-				addr.sin6_addr = in6addr_any;
+				addr_in6->sin6_addr = in6addr_any;
 				break;
 			}
 		}
-		addr.sin6_family = (sa_family_t)domain;
-		addr.sin6_port = htons(sin_port);
-		*sockaddr = (struct sockaddr *)&addr;
-		*len = sizeof(addr);
+		addr_in6->sin6_family = (sa_family_t)domain;
+		addr_in6->sin6_port = htons(sin_port);
+		*len = sizeof(*addr_in6);
 		break;
 	}
 #endif
@@ -238,15 +237,13 @@ int stress_net_sockaddr_if_set(
     defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
 	case AF_UNIX: {
-		static struct sockaddr_un addr;
+		struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
 
-		(void)shim_memset(&addr, 0, sizeof(addr));
-		addr.sun_family = AF_UNIX;
-		(void)snprintf(addr.sun_path, sizeof(addr.sun_path),
+		addr_un->sun_family = AF_UNIX;
+		(void)snprintf(addr_un->sun_path, sizeof(addr_un->sun_path),
 			"/tmp/stress-ng-%" PRIdMAX "-%" PRIu32,
 			(intmax_t)pid, instance);
-		*sockaddr = (struct sockaddr *)&addr;
-		*len = sizeof(addr);
+		*len = sizeof(*addr_un);
 		break;
 	}
 #endif
@@ -267,11 +264,11 @@ int stress_net_sockaddr_set(
 	const pid_t pid,
 	const int domain,
 	const int port,
-	struct sockaddr **sockaddr,
+	struct sockaddr_storage *addr,
 	socklen_t *len,
 	const int net_addr)
 {
-	return stress_net_sockaddr_if_set(name, instance, pid, domain, port, NULL, sockaddr, len, net_addr);
+	return stress_net_sockaddr_if_set(name, instance, pid, domain, port, NULL, addr, len, net_addr);
 }
 
 /*
@@ -362,6 +359,8 @@ static void stress_net_local_bind_ports_get(uint8_t *bind_ports)
 				case 0x00000000000000000000000001000000ULL:
 					STRESS_SETBIT(bind_ports, port);
 					break;
+				default:
+					break;
 				}
 			}
 		}
@@ -382,7 +381,8 @@ int stress_net_reserve_ports(
 	const int start_port,
 	const int end_port)
 {
-	int i, port = -1;
+	int i;
+	int port = -1;
 	const int quantity = (end_port - start_port) + 1;
 	uint8_t bind_ports[65536 / sizeof(uint8_t)];
 
@@ -511,4 +511,24 @@ int stress_net_port_wraparound(const int port)
 	const int port_range = (MAX_PORT - MIN_PORT + 1);
 
 	return MIN_PORT + (((port - MIN_PORT) % port_range) + port_range) % port_range;
+}
+
+/*
+ *  stress_net_af_unix_unlink()
+ *  	unlink an AF_UNIX file
+ */
+void stress_net_af_unix_unlink(const int domain, struct sockaddr_storage *addr)
+{
+#if defined(AF_UNIX) &&		\
+    defined(HAVE_SYS_UN_H) &&	\
+    defined(HAVE_SOCKADDR_UN)
+	if (domain == AF_UNIX) {
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+
+		(void)shim_unlink(addr_un->sun_path);
+	}
+#else
+	(void)domain;
+	(void)addr;
+#endif
 }

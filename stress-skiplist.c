@@ -19,9 +19,9 @@
  */
 #include "stress-ng.h"
 
-#define MIN_SKIPLIST_SIZE	(1 * KB)
-#define MAX_SKIPLIST_SIZE	(4 * MB)
-#define DEFAULT_SKIPLIST_SIZE	(1 * KB)
+#define MIN_SKIPLIST_SIZE	(1 * STRESS_KB)
+#define MAX_SKIPLIST_SIZE	(4 * STRESS_MB)
+#define DEFAULT_SKIPLIST_SIZE	(1 * STRESS_KB)
 
 typedef struct skip_node {
 	uint32_t value;
@@ -104,7 +104,8 @@ static skip_node_t OPTIMIZE3 *skip_list_insert(skip_list_t *list, const uint32_t
 {
 	skip_node_t **skip_nodes;
 	skip_node_t *skip_node = list->head;
-	register size_t i, level;
+	register size_t i;
+	register size_t level;
 
 	skip_nodes = (skip_node_t **)calloc(list->max_level + 1, sizeof(*skip_nodes));
 	if (UNLIKELY(!skip_nodes))
@@ -154,9 +155,9 @@ static skip_node_t OPTIMIZE3 *skip_list_insert(skip_list_t *list, const uint32_t
  *  skip_list_search()
  *	search the skiplist for a specific value
  */
-static skip_node_t OPTIMIZE3 *skip_list_search(skip_list_t *list, const unsigned long int value)
+static skip_node_t OPTIMIZE3 *skip_list_search(const skip_list_t *list, const unsigned long int value)
 {
-	skip_node_t *skip_node = list->head;
+	const skip_node_t *skip_node = list->head;
 	register size_t i;
 
 	for (i = list->level; i >= 1; i--) {
@@ -211,7 +212,9 @@ static void skip_list_free(skip_list_t *list)
  */
 static int OPTIMIZE3 stress_skiplist(stress_args_t *args)
 {
-	uint32_t n, i, ln2n;
+	uint32_t n;
+	uint32_t i;
+	uint32_t ln2n;
 	uint32_t skiplist_size = DEFAULT_SKIPLIST_SIZE;
 	int rc = EXIT_FAILURE;
 
@@ -287,10 +290,21 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_skiplist_info = {
 	.stressor = stress_skiplist,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

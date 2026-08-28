@@ -95,11 +95,8 @@ static int stress_sigchld(stress_args_t *args)
 	do {
 		pid_t pid;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -141,9 +138,23 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("kill"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("waitpid"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigchld_info = {
 	.stressor = stress_sigchld,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

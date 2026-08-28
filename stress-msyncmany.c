@@ -35,7 +35,8 @@ static int stress_msyncmany_child(stress_args_t *args, void *context)
 	long int max = sysconf(_SC_MAPPED_FILES);
 	uint64_t **mappings;
 	int fd = *(int *)context;
-	size_t i, n;
+	size_t i;
+	size_t n;
 	uint64_t *mapped = NULL;
 	int rc = EXIT_SUCCESS;
 
@@ -83,7 +84,8 @@ static int stress_msyncmany_child(stress_args_t *args, void *context)
 	}
 
 	do {
-		int ret, failed = 0;
+		int ret;
+		int failed = 0;
 		const uint64_t pattern = stress_mwc64();
 
 		*mapped = pattern;
@@ -130,7 +132,8 @@ finish:
  */
 static int stress_msyncmany(stress_args_t *args)
 {
-	int ret, fd;
+	int ret;
+	int fd;
 	char filename[PATH_MAX];
 
 	ret = stress_fs_temp_dir_make_args(args);
@@ -140,7 +143,7 @@ static int stress_msyncmany(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_inf_skip("%s: cannot create %s, skipping stressor\n", args->name, filename);
+		pr_inf_skip("%s: open '%s' failed, skipping stressor\n", args->name, filename);
 		(void)stress_fs_temp_dir_rm_args(args);
 		return EXIT_NO_RESOURCE;
 	}
@@ -148,7 +151,7 @@ static int stress_msyncmany(stress_args_t *args)
 
 	ret = shim_fallocate(fd, 0, 0, (off_t)args->page_size);
 	if (ret < 0) {
-		pr_inf_skip("%s: cannot allocate data for file %s, skipping stressor\n", args->name, filename);
+		pr_inf_skip("%s: cannot allocate data for file '%s', skipping stressor\n", args->name, filename);
 		(void)stress_fs_temp_dir_rm_args(args);
 		(void)close(fd);
 		return EXIT_NO_RESOURCE;
@@ -160,11 +163,22 @@ static int stress_msyncmany(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_msyncmany_info = {
 	.stressor = stress_msyncmany,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_msyncmany_info = {

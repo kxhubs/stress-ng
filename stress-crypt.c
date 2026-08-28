@@ -59,7 +59,7 @@ static const char * stress_crypt_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_crypt_method, "crypt-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_crypt_method },
+	{ OPT_crypt_method, "crypt-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_crypt_method },
 	END_OPT,
 };
 
@@ -84,7 +84,8 @@ static int stress_crypt_id(
 	)
 {
 	const char *encrypted;
-	double t1, t2;
+	double t1;
+	double t2;
 	errno = 0;
 
 #if defined(HAVE_CRYPT_R)
@@ -256,13 +257,29 @@ static int stress_crypt(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("crypto"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("crypt"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_crypt_info = {
 	.stressor = stress_crypt,
 	.classifier = CLASS_CPU,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(crypt_methods)
+	.max_metrics_items = SIZEOF_ARRAY(crypt_methods),
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_crypt_info = {

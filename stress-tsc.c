@@ -250,38 +250,9 @@ static void stress_tsc_check(
 #endif
 
 #if defined(HAVE_STRESS_TSC_CAPABILITY)
-/*
- *  Unrolled 32 times, no verify
- */
-#define TSCx32()	\
+
+#define RDTSCx8()	\
 do {			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-			\
 	rdtsc();	\
 	rdtsc();	\
 	rdtsc();	\
@@ -293,36 +264,46 @@ do {			\
 } while (0)
 
 /*
+ *  Unrolled 32 times, no verify
+ */
+#define TSCx32()	\
+do {			\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
+} while (0)
+
+/*
+ *  Unrolled 32 times, verify monotonically increasing at end
+ */
+#define __TSCx32_verify(args, tsc, old_tsc, ret)	\
+do {			\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	rdtsc();	\
+	rdtsc();	\
+	rdtsc();	\
+	rdtsc();	\
+	rdtsc();	\
+	rdtsc();	\
+	rdtsc();	\
+	tsc = rdtsc();	\
+	stress_tsc_check(args, tsc, old_tsc, &ret);	\
+	old_tsc = tsc;	\
+} while (0)
+
+
+/*
  *  Unrolled 32 times, verify monotonically increasing at end
  */
 #define TSCx32_verify(args, tsc, old_tsc, ret)	\
 do {			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-			\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
-	rdtsc();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
+	RDTSCx8();	\
 			\
 	rdtsc();	\
 	rdtsc();	\
@@ -338,38 +319,9 @@ do {			\
 
 #if defined(HAVE_STRESS_TSC_CAPABILITY) &&	\
     defined(HAVE_ASM_X86_RDTSCP)
-/*
- *  Unrolled 32 times, no verify
- */
-#define TSCPx32()			\
+
+#define ASM_X86_RDTSCPx8()		\
 do {					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-					\
 	stress_asm_x86_rdtscp();	\
 	stress_asm_x86_rdtscp();	\
 	stress_asm_x86_rdtscp();	\
@@ -381,36 +333,24 @@ do {					\
 } while (0)
 
 /*
+ *  Unrolled 32 times, no verify
+ */
+#define TSCPx32()			\
+do {					\
+	ASM_X86_RDTSCPx8();		\
+	ASM_X86_RDTSCPx8();		\
+	ASM_X86_RDTSCPx8();		\
+	ASM_X86_RDTSCPx8();		\
+} while (0)
+
+/*
  *  Unrolled 32 times, verify monotonically increasing at end
  */
 #define TSCPx32_verify(args, tsc, old_tsc, ret)	\
 do {					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-					\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
-	stress_asm_x86_rdtscp();	\
+	ASM_X86_RDTSCPx8();		\
+	ASM_X86_RDTSCPx8();		\
+	ASM_X86_RDTSCPx8();		\
 					\
 	stress_asm_x86_rdtscp();	\
 	stress_asm_x86_rdtscp();	\
@@ -428,95 +368,54 @@ do {					\
 #if defined(HAVE_STRESS_TSC_LFENCE)
 
 #define rdtsc_lfence()		\
-	do {			\
-		rdtsc();	\
-		lfence();	\
-	} while (0)
+do {				\
+	rdtsc();		\
+	lfence();		\
+} while (0)
+
+#define RDTSC_LFENCEx8()	\
+do {				\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+} while (0)
+
 
 /*
  *  Unrolled 32 times, no verify with lfence
  */
-#define TSCx32_lfence()	\
-do {			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
+#define TSCx32_lfence()		\
+do {				\
+	RDTSC_LFENCEx8();	\
+	RDTSC_LFENCEx8();	\
+	RDTSC_LFENCEx8();	\
+	RDTSC_LFENCEx8();	\
 } while (0)
 
 /*
  *  Unrolled 32 times, verify monotonically increasing at end, with lfence
  */
 #define TSCx32_lfence_verify(args, tsc, old_tsc, ret)	\
-do {			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-			\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	rdtsc_lfence();	\
-	tsc = rdtsc();	\
+do {				\
+	RDTSC_LFENCEx8();	\
+	RDTSC_LFENCEx8();	\
+	RDTSC_LFENCEx8();	\
+				\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	rdtsc_lfence();		\
+	tsc = rdtsc();		\
 	stress_tsc_check(args, tsc, old_tsc, &ret);	\
-	old_tsc = tsc;	\
+	old_tsc = tsc;		\
 } while (0)
 
 #endif
@@ -527,7 +426,8 @@ static int stress_tsc_lfence(stress_args_t *args, const bool verify, double *dur
 	int ret = EXIT_SUCCESS;
 
 	if (verify) {
-		uint64_t tsc, old_tsc;
+		uint64_t tsc;
+		uint64_t old_tsc;
 
 		old_tsc = rdtsc();
 		do {
@@ -565,7 +465,8 @@ static int stress_tsc_rdtscp(stress_args_t *args, const bool verify, double *dur
 	int ret = EXIT_SUCCESS;
 
 	if (verify) {
-		uint64_t tsc, old_tsc;
+		uint64_t tsc;
+		uint64_t old_tsc;
 
 		old_tsc = rdtsc();
 		do {
@@ -601,7 +502,8 @@ static int stress_tsc_generic(stress_args_t *args, const bool verify, double *du
 	int ret = EXIT_SUCCESS;
 
 	if (verify) {
-		uint64_t tsc, old_tsc;
+		uint64_t tsc;
+		uint64_t old_tsc;
 
 		old_tsc = rdtsc();
 		do {
@@ -687,7 +589,8 @@ static int stress_tsc(stress_args_t *args)
 
 	if (tsc_supported) {
 		const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
-		double duration = 0.0, count;
+		double duration = 0.0;
+		double count;
 
 		ret = tsc_func(args, verify, &duration);
 		count = 32.0 * 4.0 * (double)stress_bogo_get(args);
@@ -700,14 +603,25 @@ static int stress_tsc(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("timer"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tsc_info = {
 	.stressor = stress_tsc,
 	.supported = stress_tsc_supported,
 	.classifier = CLASS_CPU,
 	.verify = VERIFY_OPTIONAL,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
+
 #else
 
 static int stress_tsc_supported(const char *name)
@@ -717,6 +631,7 @@ static int stress_tsc_supported(const char *name)
 	return -1;
 }
 
+
 const stressor_info_t stress_tsc_info = {
 	.stressor = stress_unimplemented,
 	.supported = stress_tsc_supported,
@@ -724,6 +639,6 @@ const stressor_info_t stress_tsc_info = {
 	.verify = VERIFY_OPTIONAL,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "built without RISC-V rdtime, x86 rdtsc, s390 stck instructions or powerpc __ppc_get_timebase()"
+	.unimplemented_reason = "built without RISC-V rdtime, x86 rdtsc, s390 stck instructions or powerpc __ppc_get_timebase()",
 };
 #endif

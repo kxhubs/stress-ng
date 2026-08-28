@@ -21,7 +21,7 @@
 
 #include "stress-ng.h"
 
-extern const char *stress_signal_name(const int signum);
+extern PURE const char *stress_signal_name(const int signum);
 extern const char *stress_signal_str(const int signum) RETURNS_NONNULL;
 extern void stress_signal_longjump_mask(sigset_t *set);
 extern WARN_UNUSED int stress_signal_handler(const char *name, const int signum,
@@ -38,9 +38,8 @@ extern NORETURN void stress_signal_exit_handler(int signum);
 extern void stress_signal_ignore_handler(int sig);
 extern void stress_signal_catch_sigill(void);
 extern void stress_signal_catch_sigsegv(void);
-extern NORETURN void stress_signal_siglongjmp(const int signum, sigjmp_buf jmp_env, const int val);
-extern void stress_signal_siglongjmp_flag(const int signum, sigjmp_buf jmp_env, const int val,
-	volatile bool *do_jmp);
+
+#if defined(HAVE_SIGLONGJMP)
 
 /*
  *  stress_signal_siglongjmp()
@@ -70,5 +69,7 @@ do {							\
 	*(do_jmp) = false;				\
 	stress_signal_siglongjmp(signum, jmp_env, val);	\
 } while (0)
+
+#endif
 
 #endif

@@ -193,7 +193,8 @@ static int issue_aio_sync_request(
 {
 	while (stress_continue_flag()) {
 		int ret;
-#if O_SYNC == D_SYNC
+#if (O_SYNC == D_SYNC) ||	\
+    defined(__CYGWIN__)
 		const int op = O_SYNC;
 #else
 		const int op = stress_mwc1() ? O_SYNC : O_DSYNC;
@@ -202,7 +203,7 @@ static int issue_aio_sync_request(
 		io_req->request = 0;
 		io_req->status = EINPROGRESS;
 		io_req->aiocb.aio_fildes = fd;
-		io_req->aiocb.aio_buf = 0;
+		io_req->aiocb.aio_buf = NULL;
 		io_req->aiocb.aio_nbytes = 0;
 		io_req->aiocb.aio_reqprio = 0;
 		io_req->aiocb.aio_offset = 0;
@@ -230,13 +231,20 @@ static int issue_aio_sync_request(
  */
 static int stress_aio(stress_args_t *args)
 {
-	int ret, fd, rc = EXIT_FAILURE;
+	int ret;
+	int fd;
+	int rc = EXIT_FAILURE;
 	stress_io_req_t *io_reqs;
-	struct sigaction sa, sa_old;
+	struct sigaction sa;
+	struct sigaction sa_old;
 	char filename[PATH_MAX];
-	uint32_t i, opt_aio_requests = DEFAULT_AIO_REQUESTS;
+	uint32_t i;
+	uint32_t opt_aio_requests = DEFAULT_AIO_REQUESTS;
 	uint64_t total = 0;
-	double t1 = 0.0, t2 = 0.0, dt, rate;
+	double t1 = 0.0;
+	double t2 = 0.0;
+	double dt;
+	double rate;
 	const char *fs_type;
 
 	if (!stress_setting_get("aio-requests", &opt_aio_requests)) {
@@ -265,7 +273,7 @@ static int stress_aio(stress_args_t *args)
 
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open on %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto finish;
 	}
@@ -377,12 +385,27 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-async"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("futex"),
+	STRESS_EX_SYSCALL("sigqueueinfo"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_aio_info = {
 	.stressor = stress_aio,
 	.classifier = CLASS_IO | CLASS_INTERRUPT | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_aio_info = {

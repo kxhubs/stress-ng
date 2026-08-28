@@ -35,7 +35,9 @@ static int stress_kill(stress_args_t *args)
 	pid_t pid;
 	const pid_t ppid = getpid();
 	int ret;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	if (stress_signal_handler(args->name, SIGUSR1, SIG_IGN, NULL) < 0)
 		return EXIT_FAILURE;
@@ -172,9 +174,18 @@ static int stress_kill(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("kill"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_kill_info = {
 	.stressor = stress_kill,
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

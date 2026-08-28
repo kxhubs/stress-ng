@@ -67,7 +67,8 @@ static int stress_pidfd_open(const pid_t pid, const unsigned int flag)
 
 static int stress_pidfd_supported(const char *name)
 {
-	int pidfd, ret;
+	int pidfd;
+	int ret;
 	const pid_t pid = getpid();
 	siginfo_t info;
 
@@ -127,11 +128,8 @@ static int stress_pidfd(stress_args_t *args)
 	while ((rc == EXIT_SUCCESS) && stress_continue(args)) {
 		pid_t pid;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -144,7 +142,8 @@ again:
 			_exit(0);
 		} else {
 			/* Parent */
-			int pidfd, ret;
+			int pidfd;
+			int ret;
 			struct stat statbuf;
 			void *ptr;
 
@@ -200,7 +199,7 @@ again:
 			if (UNLIKELY(ret != 0)) {
 				if (errno == ENOSYS) {
 					if (stress_instance_zero(args))
-						pr_inf_skip("%s: skipping stressor, system call is not implemented\n",
+						pr_inf_skip("%s: system call is not implemented, skipping stressor\n",
 							args->name);
 					stress_pidfd_reap(pid, pidfd);
 					return EXIT_NOT_IMPLEMENTED;
@@ -246,12 +245,23 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("pidfd_open"),
+	STRESS_EX_SYSCALL("pidfd_send_signal"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pidfd_info = {
 	.stressor = stress_pidfd,
 	.classifier = CLASS_INTERRUPT | CLASS_OS,
 	.supported = stress_pidfd_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 

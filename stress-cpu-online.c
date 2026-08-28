@@ -47,8 +47,9 @@ static const stress_opt_t opts[] = {
  */
 static inline void stress_cpu_online_set_affinity(const uint32_t cpu)
 {
-#if defined(HAVE_SCHED_GETAFFINITY) &&	\
+#if defined(HAVE_SCHED_GETAFFINITY) && \
     defined(HAVE_SCHED_SETAFFINITY)
+
 	cpu_set_t mask;
 
 	CPU_ZERO(&mask);
@@ -86,7 +87,7 @@ static int stress_cpu_online_set(
 			/* Not strictly a failure */
 			return EXIT_NO_RESOURCE;
 		default:
-			pr_fail("%s: write to %s failed, errno=%d (%s)\n",
+			pr_fail("%s: write to '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			/* Anything else is a failure */
 			return EXIT_FAILURE;
@@ -139,7 +140,7 @@ static int stress_cpu_online_supported(const char *name)
 
 	if (geteuid() != 0) {
 		pr_inf_skip("%s stressor will be skipped, "
-		       "need to be running as root for this stressor\n", name);
+		       "need to be running with CAP_SYS_ADMIN rights for this stressor\n", name);
 		return -1;
 	}
 
@@ -160,8 +161,10 @@ static int stress_cpu_online_supported(const char *name)
 static int stress_cpu_online(stress_args_t *args)
 {
 	int32_t cpus = stress_cpus_configured_get();
-	int32_t i, cpu_online_count = 0;
-	uint32_t cpu, prev_cpu;
+	int32_t i;
+	int32_t cpu_online_count = 0;
+	uint32_t cpu;
+	uint32_t prev_cpu;
 	bool *cpu_online;
 	bool cpu_online_affinity = false;
 	bool cpu_online_all = false;
@@ -169,8 +172,10 @@ static int stress_cpu_online(stress_args_t *args)
 	int rc = EXIT_SUCCESS;
 	int fds[2] = { -1, -1 };
 	pid_t pid = -1;
-	double offline_duration = 0.0, offline_count = 0.0;
-	double online_duration  = 0.0, online_count = 0.0;
+	double offline_duration = 0.0;
+	double offline_count = 0.0;
+	double online_duration  = 0.0;
+	double online_count = 0.0;
 	double rate;
 
 	(void)stress_setting_get("cpu-online-affinity", &cpu_online_affinity);
@@ -411,15 +416,25 @@ static int stress_cpu_online(stress_args_t *args)
 	}
 	free(cpu_online);
 
-	rate = (offline_count > 0.0) ? (double)offline_duration / offline_count : 0.0;
+	rate = (offline_count > 0.0) ? offline_duration / offline_count : 0.0;
 	stress_metrics_set(args, "millisecs per offline action",
 		rate * STRESS_DBL_MILLISECOND, STRESS_METRIC_HARMONIC_MEAN);
-	rate = (online_count > 0.0) ? (double)online_duration / online_count : 0.0;
+	rate = (online_count > 0.0) ? online_duration / online_count : 0.0;
 	stress_metrics_set(args, "millisecs per online action",
 		rate * STRESS_DBL_MILLISECOND, STRESS_METRIC_HARMONIC_MEAN);
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] =
+{
+	STRESS_EX_FEATURE("hotplug"),
+
+#if defined(HAVE_SCHED_SETAFFINITY)
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+#endif
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_cpu_online_info = {
 	.stressor = stress_cpu_online,
@@ -427,7 +442,8 @@ const stressor_info_t stress_cpu_online_info = {
 	.classifier = CLASS_CPU | CLASS_OS | CLASS_PATHOLOGICAL,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_cpu_online_info = {

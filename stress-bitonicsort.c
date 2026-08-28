@@ -23,9 +23,9 @@
 #include "core-signal.h"
 #include "core-sort.h"
 
-#define MIN_BITONICSORT_SIZE		(1 * KB)
-#define MAX_BITONICSORT_SIZE		(4 * MB)
-#define DEFAULT_BITONICSORT_SIZE	(256 * KB)
+#define MIN_BITONICSORT_SIZE		(1 * STRESS_KB)
+#define MAX_BITONICSORT_SIZE		(4 * STRESS_MB)
+#define DEFAULT_BITONICSORT_SIZE	(256 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -123,11 +123,15 @@ static inline void OPTIMIZE3 bitonicsort32_rev(void *base, const size_t nmemb)
 static int OPTIMIZE3 stress_bitonicsort(stress_args_t *args)
 {
 	uint64_t bitonicsort_size = DEFAULT_BITONICSORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, data_size;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t data_size;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	double rate;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
@@ -281,10 +285,23 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_bitonicsort_info = {
 	.stressor = stress_bitonicsort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

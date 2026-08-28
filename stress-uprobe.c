@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-capabilities.h"
 
 static const stress_help_t help[] = {
@@ -62,13 +63,14 @@ static int stress_uprobe_supported(const char *name)
  */
 static int stress_uprobe_write(const char *path, const int flags, const char *str)
 {
-	int fd, rc = 0;
+	int fd;
+	int rc = 0;
 
 	fd = open(path, flags, S_IRUSR | S_IWUSR);
 	if (UNLIKELY(fd < 0))
 		return -errno;
 	errno = 0;
-	if (write(fd, str, strlen(str)) < 0)
+	if (write(fd, str, shim_strlen(str)) < 0)
 		rc = -errno;
 
 	(void)close(fd);
@@ -82,10 +84,17 @@ static int stress_uprobe_write(const char *path, const int flags, const char *st
  */
 static void *stress_uprobe_libc_start(const pid_t pid, char *libc_path)
 {
-	char path[PATH_MAX], perm[5], buf[PATH_MAX];
+	char buf[PATH_MAX];
+	char path[PATH_MAX];
+	char perm[5];
 	FILE *fp;
-	uint64_t start, end, offset, dev_major, dev_minor, inode;
 	void *addr = NULL;
+	uint64_t start;
+	uint64_t end;
+	uint64_t offset;
+	uint64_t dev_major;
+	uint64_t dev_minor;
+	uint64_t inode;
 
 	(void)snprintf(path, sizeof(path), "/proc/%" PRIdMAX "/maps", (intmax_t)pid);
 	fp = fopen(path, "r");
@@ -103,13 +112,12 @@ static void *stress_uprobe_libc_start(const pid_t pid, char *libc_path)
 		/*
 		 *  name /libc-*.so or /libc.so found?
 		 */
-		if ((n == 8) && !strncmp(perm, "r-xp", 4) &&
-		    strstr(libc_path, ".so")) {
-			if (strstr(libc_path, "/libc-") ||
-			    strstr(libc_path, "/libc.so")) {
-				addr = (void *)(intptr_t)(start - offset);
-				break;
-			}
+		if (((n == 8) && !shim_strncmp(perm, "r-xp", 4) &&
+		     shim_strstr(libc_path, ".so")) &&
+		    (shim_strstr(libc_path, "/libc-") ||
+		     shim_strstr(libc_path, "/libc.so"))) {
+			addr = (void *)(intptr_t)(start - offset);
+			break;
 		}
 	}
 	(void)fclose(fp);
@@ -123,15 +131,19 @@ static void *stress_uprobe_libc_start(const pid_t pid, char *libc_path)
  */
 static int stress_uprobe(stress_args_t *args)
 {
-	char buf[PATH_MAX + 256], libc_path[PATH_MAX + 1];
-	int ret;
+	char buf[PATH_MAX + 256];
+	char libc_path[PATH_MAX + 1];
 	char event[128];
-	ptrdiff_t offset;
 	void *libc_addr;
+	ptrdiff_t offset;
+	pid_t pid = getpid();
+	int ret;
 	int rc = EXIT_SUCCESS;
 	int fd;
-	pid_t pid = getpid();
-	double t_start, duration = 0.0, bytes = 0.0, rate;
+	double t_start;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 
 	libc_addr = stress_uprobe_libc_start(pid, libc_path);
 	if (!libc_addr) {
@@ -251,7 +263,7 @@ static int stress_uprobe(stress_args_t *args)
 			 */
 			ptr = data;
 			do {
-				ptr = strstr(ptr, event);
+				ptr = shim_strstr(ptr, event);
 				if (!ptr)
 					break;
 				ptr++;
@@ -279,18 +291,32 @@ terminate:
 	duration = stress_time_now() - t_start;
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB trace data per second",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("getpid"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("sched_yield"),
+#if defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_uprobe_info = {
 	.stressor = stress_uprobe,
 	.classifier = CLASS_CPU,
 	.supported = stress_uprobe_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_uprobe_info = {

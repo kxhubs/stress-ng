@@ -58,10 +58,13 @@ static inline int shim_signalfd4(
  */
 static int stress_sigfd(stress_args_t *args)
 {
-	pid_t pid, ppid = args->pid;
-	int sfd, parent_cpu, rc = EXIT_SUCCESS;
-	const int bad_fd = stress_fs_bad_fd_get();
 	sigset_t mask;
+	pid_t pid;
+	pid_t ppid = args->pid;
+	int sfd;
+	int parent_cpu;
+	int rc = EXIT_SUCCESS;
+	const int bad_fd = stress_fs_bad_fd_get();
 
 	(void)sigemptyset(&mask);
 	(void)sigaddset(&mask, SIGRTMIN);
@@ -108,12 +111,10 @@ static int stress_sigfd(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -194,11 +195,27 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("read"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("signalfd"),
+	STRESS_EX_SYSCALL("sigprocmask"),
+	STRESS_EX_SYSCALL("sigqueue"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigfd_info = {
 	.stressor = stress_sigfd,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigfd_info = {

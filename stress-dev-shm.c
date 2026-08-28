@@ -49,7 +49,7 @@ static inline int stress_dev_shm_child(
 	int rc = EXIT_SUCCESS;
 	const int fd = context->fd;
 	const size_t page_size = args->page_size;
-	const size_t page_thresh = 16 * MB;
+	const size_t page_thresh = 16 * STRESS_MB;
 	ssize_t sz = (ssize_t)page_size;
 	uint32_t *addr;
 
@@ -188,7 +188,7 @@ static int stress_dev_shm(stress_args_t *args)
 		args->instance, getpid(), stress_mwc32());
 	context->fd = open(path, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
 	if (context->fd < 0) {
-		pr_inf("%s: cannot create %s, errno=%d (%s)\n",
+		pr_inf("%s: cannot create '%s', errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = EXIT_FAILURE;
 		goto unmap_context;
@@ -215,11 +215,27 @@ unmap_context:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dev_shm_info = {
 	.stressor = stress_dev_shm,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_dev_shm_info = {

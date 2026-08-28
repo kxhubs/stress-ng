@@ -69,7 +69,7 @@ static int stress_sigabrt(stress_args_t *args)
 				MAP_SHARED | MAP_ANONYMOUS,
 				-1, 0);
 	if (sigabrt_info == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte sigabrt information%s, "
+		pr_inf_skip("%s: mmap %zu byte sigabrt information failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*sigabrt_info),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -93,11 +93,8 @@ static int stress_sigabrt(stress_args_t *args)
 		sigabrt_info->signalled = false;
 		sigabrt_info->handler_enabled = stress_mwc1();
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -180,9 +177,22 @@ sigabrt_info_munmap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-kernel"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("raise"),
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigabrt_info = {
 	.stressor = stress_sigabrt,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

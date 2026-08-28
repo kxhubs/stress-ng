@@ -57,7 +57,9 @@ static int stress_umount_supported(const char *name)
  */
 static int stress_umount_umount(stress_args_t *args, const char *path, const uint64_t ns_delay)
 {
-	int i, ret, rc = EXIT_SUCCESS;
+	int i;
+	int ret;
+	int rc = EXIT_SUCCESS;
 
 	/*
 	 *  umount is attempted at least twice, the first successful mount
@@ -88,8 +90,8 @@ static int stress_umount_umount(stress_args_t *args, const char *path, const uin
 		case EPERM:
 			if (!warned) {
 				warned = true;
-				pr_inf_skip("%s: umount failed, no permission, skipping stressor\n",
-					args->name);
+				pr_inf_skip("%s: umount '%s' failed, no permission, skipping stressor\n",
+					args->name, path);
 			}
 			return EXIT_NO_RESOURCE;
 		case EAGAIN:
@@ -108,7 +110,7 @@ static int stress_umount_umount(stress_args_t *args, const char *path, const uin
 			return rc;
 		default:
 			/* Unexpected, so report it */
-			pr_inf("%s: umount failed %s, errno=%d %s\n", args->name,
+			pr_inf("%s: umount '%s' failed, errno=%d %s\n", args->name,
 				path, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
@@ -168,7 +170,8 @@ static void NORETURN stress_umount_umounter(stress_args_t *args, const char *pat
  */
 static void NORETURN stress_umount_mounter(stress_args_t *args, const char *path)
 {
-	int i = 0, rc = EXIT_SUCCESS;
+	int i = 0;
+	int rc = EXIT_SUCCESS;
 	static const char skip[] = "skipping stressor";
 
 	stress_parent_died_alarm();
@@ -182,7 +185,8 @@ static void NORETURN stress_umount_mounter(stress_args_t *args, const char *path
     defined(HAVE_FSMOUNT) &&	\
     defined(HAVE_MOVE_MOUNT) &&	\
     defined(HAVE_SYS_MOUNT_H)
-		int fd, fd_mnt;
+		int fd;
+		int fd_mnt;
 
 		fd = fsopen(fs, FSOPEN_CLOEXEC);
 		if (fd < 0) {
@@ -281,11 +285,11 @@ static pid_t stress_umount_spawn(
 	stress_pid_t **s_pid_head,
 	stress_pid_t *s_pid)
 {
-again:
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
+	pid_t pid;
+
+	pid = stress_retry_fork(args, 0);
+	if (pid < 0) {
+		s_pid->pid = pid;
 		if (UNLIKELY(!stress_continue(args)))
 			return 0;
 		pr_inf("%s: fork failed, errno=%d (%s), skipping stressor\n",
@@ -306,9 +310,10 @@ again:
 
 		_exit(EXIT_SUCCESS);
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pid_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 
@@ -318,7 +323,8 @@ again:
  */
 static int stress_umount(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	int ret = EXIT_NO_RESOURCE;
 	char pathname[PATH_MAX], realpathname[PATH_MAX];
 
@@ -341,13 +347,13 @@ static int stress_umount(stress_args_t *args)
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name,
 		args->pid, args->instance);
 	if (mkdir(pathname, S_IRUSR | S_IWUSR | S_IXUSR) < 0) {
-		pr_fail("%s: cannot mkdir %s, errno=%d (%s)\n",
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		(void)stress_sync_s_pids_munmap(s_pids, STRESS_UMOUNT_PROCS);
 		return EXIT_FAILURE;
 	}
 	if (!realpath(pathname, realpathname)) {
-		pr_fail("%s: cannot realpath %s, errno=%d (%s)\n",
+		pr_fail("%s: realpath '%s' failed, errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		(void)stress_sync_s_pids_munmap(s_pids, STRESS_UMOUNT_PROCS);
@@ -381,12 +387,33 @@ reap:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+#if defined(HAVE_FSOPEN) &&	\
+    defined(HAVE_FSCONFIG) &&	\
+    defined(HAVE_FSMOUNT) &&	\
+    defined(HAVE_MOVE_MOUNT) &&	\
+    defined(HAVE_SYS_MOUNT_H)
+	STRESS_EX_SYSCALL("fsopen"),
+	STRESS_EX_SYSCALL("fsconfig"),
+	STRESS_EX_SYSCALL("fsmount"),
+	STRESS_EX_SYSCALL("move_mount"),
+#else
+	STRESS_EX_SYSCALL("mount"),
+#endif
+	STRESS_EX_SYSCALL("unount"),
+#if defined(HAVE_UMOUNT2)
+	STRESS_EX_SYSCALL("umount2"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_umount_info = {
 	.stressor = stress_umount,
 	.classifier = CLASS_OS,
 	.supported = stress_umount_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_umount_info = {

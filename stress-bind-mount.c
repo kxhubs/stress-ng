@@ -67,8 +67,10 @@ static void MLOCKED_TEXT stress_bind_mount_child_handler(int signum)
  */
 static int stress_bind_mount_exercise(stress_args_t *args, const char *path)
 {
-	double mount_duration = 0.0, umount_duration = 0.0;
-	double mount_count = 0.0, umount_count = 0.0;
+	double mount_duration = 0.0;
+	double umount_duration = 0.0;
+	double mount_count = 0.0;
+	double umount_count = 0.0;
 	double rate;
 	static const char bind_to_path[] = "/bin";
 
@@ -88,7 +90,10 @@ static int stress_bind_mount_exercise(stress_args_t *args, const char *path)
 
 	do {
 		static const char skip[] = "skipping stressor";
-		int rc, retries, stat_count, stat_okay;
+		int rc;
+		int retries;
+		int stat_count;
+		int stat_okay;
 		DIR *dir;
 		const struct dirent *d;
 		double t;
@@ -105,7 +110,7 @@ static int stress_bind_mount_exercise(stress_args_t *args, const char *path)
     defined(HAVE_SYS_MOUNT_H)
 		fd = open_tree(-EBADF, bind_to_path, OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC);
 		if (fd < 0) {
-			pr_inf_skip("%s: open_tree on '%s' failed, errno=%d (%s), %s\n",
+			pr_inf_skip("%s: open_tree '%s' failed, errno=%d (%s), %s\n",
 				args->name, path, errno, strerror(errno), skip);
 			(void)shim_rmdir(path);
 			return EXIT_NO_RESOURCE;
@@ -222,7 +227,8 @@ bind_umount:
  */
 static int stress_bind_mount(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	char path[PATH_MAX];
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
@@ -233,7 +239,7 @@ static int stress_bind_mount(stress_args_t *args)
 	ret = mkdir(path, S_IRUSR | S_IWUSR);
 	if (ret < 0) {
 		(void)shim_rmdir(path);
-		pr_err("%s: mkdir %s failed, errno=%d (%s)\n",
+		pr_err("%s: mkdir '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -250,12 +256,31 @@ static int stress_bind_mount(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+#if defined(HAVE_OPEN_TREE) &&	\
+    defined(HAVE_MOVE_MOUNT) &&	\
+    defined(HAVE_SYS_MOUNT_H)
+	STRESS_EX_SYSCALL("open_tree"),
+	STRESS_EX_SYSCALL("move_mount"),
+#else
+	STRESS_EX_SYSCALL("mount"),
+#endif
+	STRESS_EX_SYSCALL("umount"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_bind_mount_info = {
 	.stressor = stress_bind_mount,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS | CLASS_PATHOLOGICAL,
 	.verify = VERIFY_ALWAYS,
 	.supported = stress_bind_mount_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_bind_mount_info = {

@@ -119,7 +119,8 @@ static inline int stress_eigen_exercise(
 	double mantissa;
 	uint64_t exponent;
 
-	register size_t i, j;
+	register size_t i;
+	register size_t j;
 	method_all_index = 1;
 
 	stress_zero_metrics(eigen_metrics, NUM_EIGEN_METHODS);
@@ -128,6 +129,7 @@ static inline int stress_eigen_exercise(
 
 	do {
 		int ret;
+
 		ret = func(eigen_size,
 			&eigen_metrics[eigen_method].duration,
 			&eigen_metrics[eigen_method].count);
@@ -214,9 +216,23 @@ static int stress_eigen(stress_args_t *args)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_eigen_method, "eigen-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_eigen_method },
+	{ OPT_eigen_method, "eigen-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_eigen_method },
 	{ OPT_eigen_size,   "eigen-size",    TYPE_ID_SIZE_T, MIN_MATRIX_SIZE, MAX_MATRIX_SIZE, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_eigen_info = {
@@ -225,13 +241,14 @@ const stressor_info_t stress_eigen_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(eigen_methods)
+	.max_metrics_items = SIZEOF_ARRAY(eigen_methods),
+	.exercises = exercises,
 };
 
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_eigen_method, "eigen-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_eigen_method, "eigen-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	{ OPT_eigen_size,   "eigen-size",    TYPE_ID_SIZE_T, MIN_MATRIX_SIZE, MAX_MATRIX_SIZE, NULL },
 	END_OPT,
 };

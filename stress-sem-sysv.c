@@ -54,7 +54,7 @@ typedef union stress_semun {
 
 static const stress_opt_t opts[] = {
 	{ OPT_sem_sysv_procs,  "sem-sysv-procs",  TYPE_ID_UINT64, MIN_SEM_SYSV_PROCS, MAX_SEM_SYSV_PROCS, NULL },
-	{ OPT_sem_sysv_setall, "sem-sysv-setall", TYPE_ID_BOOL, 0, 1, 0 },
+	{ OPT_sem_sysv_setall, "sem-sysv-setall", TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
 };
 
@@ -66,7 +66,8 @@ static const stress_opt_t opts[] = {
  */
 static void stress_semaphore_sysv_init(const uint32_t instances)
 {
-	int count = 0, sem_id;
+	int count = 0;
+	int sem_id;
 
 	(void)instances;
 
@@ -167,7 +168,8 @@ static int OPTIMIZE3 stress_semaphore_sysv_thrash(
 #endif
 
 	do {
-		int i, ret;
+		int i;
+		int ret;
 #if defined(__linux__)
 		bool get_procinfo = true;
 #endif
@@ -208,7 +210,8 @@ static int OPTIMIZE3 stress_semaphore_sysv_thrash(
 		UNEXPECTED
 #endif
 		for (i = 0; i < 1000; i++) {
-			struct sembuf semwait, semsignal;
+			struct sembuf semwait;
+			struct sembuf semsignal;
 
 			semwait.sem_num = 0;
 			semwait.sem_op = -1;
@@ -526,15 +529,15 @@ static pid_t semaphore_sysv_spawn(
 	stress_pid_t *s_pid,
 	const bool semaphore_sysv_setall)
 {
-again:
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
+	pid_t pid;
+
+	pid = stress_retry_fork(args, 0);
+	if (pid < 0) {
+		s_pid->pid = pid;
 		return -1;
-	} else if (s_pid->pid == 0) {
-		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
+	} else if (pid == 0) {
 		s_pid->pid = getpid();
+		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		stress_sync_start_wait_s_pid(s_pid);
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 		stress_make_it_fail_set();
@@ -544,9 +547,10 @@ again:
 
 		_exit(stress_semaphore_sysv_thrash(args, semaphore_sysv_setall));
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 /*
@@ -555,7 +559,8 @@ again:
  */
 static int stress_sem_sysv(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	uint64_t i;
 	uint64_t semaphore_sysv_procs = DEFAULT_SEM_SYSV_PROCS;
 	int rc = EXIT_SUCCESS;
@@ -582,7 +587,7 @@ static int stress_sem_sysv(stress_args_t *args)
 
 	s_pids = stress_sync_s_pids_mmap(MAX_SEM_SYSV_PROCS);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %d PIDs failed%s, skipping stressor\n",
 			args->name, MAX_SEM_SYSV_PROCS, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -612,6 +617,16 @@ reap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("ipc"),
+
+	STRESS_EX_SYSCALL("semctl"),
+	STRESS_EX_SYSCALL("semget"),
+	STRESS_EX_SYSCALL("semop"),
+	STRESS_EX_SYSCALL("semtimedop"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sem_sysv_info = {
 	.stressor = stress_sem_sysv,
 	.init = stress_semaphore_sysv_init,
@@ -619,7 +634,8 @@ const stressor_info_t stress_sem_sysv_info = {
 	.classifier = CLASS_OS | CLASS_SCHEDULER | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sem_sysv_info = {

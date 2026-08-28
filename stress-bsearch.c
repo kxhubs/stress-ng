@@ -34,9 +34,9 @@ typedef struct {
 	const bsearch_func_t bsearch_func;
 } stress_bsearch_method_t;
 
-#define MIN_BSEARCH_SIZE	(1 * KB)
-#define MAX_BSEARCH_SIZE	(64 * MB)
-#define DEFAULT_BSEARCH_SIZE	(64 * KB)
+#define MIN_BSEARCH_SIZE	(1 * STRESS_KB)
+#define MAX_BSEARCH_SIZE	(64 * STRESS_MB)
+#define DEFAULT_BSEARCH_SIZE	(64 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"bsearch N",	  	"start N workers that exercise a binary search" },
@@ -86,8 +86,10 @@ static void OPTIMIZE3 * bsearch_ternary(
 		register const size_t diff = upper - lower;
 		register const size_t mid1 = lower + (diff / 3);
 		register const size_t mid2 = upper - (diff / 3);
-		register const void *ptr1, *ptr2;
-		register int cmp1, cmp2;
+		register const void *ptr1;
+		register const void *ptr2;
+		register int cmp1;
+		register int cmp2;
 
 		ptr1 = (const void *)((const char *)base + (mid1 * size));
 		cmp1 = compare(key, ptr1);
@@ -130,10 +132,18 @@ static const char *stress_bsearch_method(const size_t i)
  */
 static int OPTIMIZE3 stress_bsearch(stress_args_t *args)
 {
-	int32_t *data, *ptr;
-	size_t n, n8, i, bsearch_method = 0, data_size;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t n8;
+	size_t i;
+	size_t bsearch_method = 0;
+	size_t data_size;
 	uint64_t bsearch_size = DEFAULT_BSEARCH_SIZE;
-	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
+	double rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double sorted = 0.0;
 	bsearch_func_t bsearch_func;
 	int rc = EXIT_SUCCESS;
 
@@ -173,7 +183,7 @@ static int OPTIMIZE3 stress_bsearch(stress_args_t *args)
 		stress_sort_compare_reset();
 		t = stress_time_now();
 		for (ptr = data, i = 0; i < n; i++, ptr++) {
-			int32_t *result;
+			const int32_t *result;
 
 			result = (int32_t *)bsearch_func(ptr, data, n, sizeof(*ptr), stress_sort_cmp_fwd_int32);
 			if (g_opt_flags & OPT_FLAGS_VERIFY) {
@@ -211,9 +221,22 @@ static int OPTIMIZE3 stress_bsearch(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 static const stress_opt_t opts[] = {
-	{ OPT_bsearch_size,   "bsearch-size",   TYPE_ID_UINT64,        MIN_BSEARCH_SIZE, MAX_BSEARCH_SIZE, NULL },
-	{ OPT_bsearch_method, "bsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_bsearch_method },
+	{ OPT_bsearch_size,   "bsearch-size",   TYPE_ID_UINT64, MIN_BSEARCH_SIZE, MAX_BSEARCH_SIZE, NULL },
+	{ OPT_bsearch_method, "bsearch-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_bsearch_method },
 	END_OPT,
 };
 
@@ -222,5 +245,6 @@ const stressor_info_t stress_bsearch_info = {
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

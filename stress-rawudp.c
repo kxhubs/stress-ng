@@ -168,7 +168,10 @@ static int OPTIMIZE3 stress_rawudp_server(
 	const struct iphdr *ip = (struct iphdr *)(void *)buf;
 	const struct udphdr *udp = (struct udphdr *)(void *)(buf + sizeof(struct iphdr));
 	const uint8_t *data = (uint8_t *)(buf + sizeof(struct iphdr) + sizeof(struct udphdr));
-	double t_start, duration = 0.0, bytes = 0.0, rate;
+	double t_start;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 	char msg[64];
 
 	if (stress_signal_stop_stressing(args->name, SIGALRM) < 0) {
@@ -224,7 +227,7 @@ static int OPTIMIZE3 stress_rawudp_server(
 	duration = stress_time_now() - t_start;
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB recv'd per sec",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (duration > 0.0) ? (double)stress_bogo_get(args) / duration : 0.0;
 	(void)snprintf(msg, sizeof(msg), "packets (%zu bytes) received per sec", PACKET_SIZE);
 	stress_metrics_set(args, msg, rate, STRESS_METRIC_HARMONIC_MEAN);
@@ -243,7 +246,9 @@ static int stress_rawudp(stress_args_t *args)
 {
 	pid_t pid;
 	int rawudp_port = DEFAULT_RAWUDP_PORT;
-	int rc = EXIT_FAILURE, reserved_port, parent_cpu;
+	int rc = EXIT_FAILURE;
+	int reserved_port;
+	int parent_cpu;
 	in_addr_t addr = (in_addr_t)inet_addr("127.0.0.1");
 	char *rawudp_if = NULL;
 
@@ -286,12 +291,10 @@ static int stress_rawudp(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto finish;
@@ -315,13 +318,26 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_SYSCALL("recv"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rawudp_info = {
 	.stressor = stress_rawudp,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.supported = stress_rawudp_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rawudp_info = {

@@ -20,9 +20,9 @@
 #include "stress-ng.h"
 #include "core-pragma.h"
 
-#define MIN_READAHEAD_BYTES	(1 * MB)
+#define MIN_READAHEAD_BYTES	(1 * STRESS_MB)
 #define MAX_READAHEAD_BYTES	(MAX_FILE_LIMIT)
-#define DEFAULT_READAHEAD_BYTES	(64 * MB)
+#define DEFAULT_READAHEAD_BYTES	(64 * STRESS_MB)
 
 #define BUF_ALIGNMENT		(4096)
 #define BUF_SIZE		(4096)
@@ -71,7 +71,7 @@ static int do_readahead(
 	stress_args_t *args,
 	const int fd,
 	const char *fs_type,
-	off_t *offsets)
+	const off_t *offsets)
 {
 	register int i;
 
@@ -91,15 +91,19 @@ static int do_readahead(
  */
 static int stress_readahead(stress_args_t *args)
 {
+	char filename[PATH_MAX];
 	buffer_t *buf = NULL;
-	uint64_t rounded_readahead_bytes, i;
-	uint64_t readahead_bytes, readahead_bytes_total = DEFAULT_READAHEAD_BYTES;
+	uint64_t i;
+	uint64_t rounded_readahead_bytes;
+	uint64_t readahead_bytes;
+	uint64_t readahead_bytes_total = DEFAULT_READAHEAD_BYTES;
 	uint64_t misreads = 0;
 	uint64_t baddata = 0;
-	int ret, rc = EXIT_FAILURE;
-	char filename[PATH_MAX];
+	int ret;
+	int rc = EXIT_FAILURE;
 	int flags = O_CREAT | O_RDWR | O_TRUNC;
-	int fd, fd_wr;
+	int fd;
+	int fd_wr;
 	struct stat statbuf;
 	const char *fs_type;
 	off_t offsets[MAX_OFFSETS] ALIGN64;
@@ -140,7 +144,7 @@ static int stress_readahead(stress_args_t *args)
 	ret = posix_memalign((void **)&buf, BUF_ALIGNMENT, BUF_SIZE);
 	if (ret || !buf) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: cannot allocate %d byte buffer%s\n",
+		pr_err("%s: allocate %d byte buffer failed%s\n",
 			args->name, BUF_SIZE, stress_memory_free_get());
 		(void)stress_fs_temp_dir_rm_args(args);
 		return rc;
@@ -152,7 +156,7 @@ static int stress_readahead(stress_args_t *args)
 	fd = open(filename, flags, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto finish;
 	}
@@ -337,12 +341,26 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+
+#if defined(HAVE_POSIX_FADVISE) &&	\
+    defined(SHIM_POSIX_FADV_DONTNEED)
+	STRESS_EX_SYSCALL("posix_fadvise"),
+#endif
+	STRESS_EX_SYSCALL("pread"),
+	STRESS_EX_SYSCALL("readahead"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_readahead_info = {
 	.stressor = stress_readahead,
 	.classifier = CLASS_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_readahead_info = {

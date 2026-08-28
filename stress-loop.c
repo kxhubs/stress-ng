@@ -29,9 +29,9 @@
 #include <linux/loop.h>
 #endif
 
-#define MIN_LOOP_BYTES		(1 * MB)
-#define MAX_LOOP_BYTES		(1 * GB)
-#define DEFAULT_LOOP_BYTES	(2 * MB)
+#define MIN_LOOP_BYTES		(1 * STRESS_MB)
+#define MAX_LOOP_BYTES		(1 * STRESS_GB)
+#define DEFAULT_LOOP_BYTES	(2 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"loop N",	"start N workers exercising loopback devices" },
@@ -112,7 +112,9 @@ static int stress_loop_supported(const char *name)
  */
 static int stress_loop(stress_args_t *args)
 {
-	int ret, backing_fd, rc = EXIT_FAILURE;
+	int ret;
+	int backing_fd;
+	int rc = EXIT_FAILURE;
 	char backing_file[PATH_MAX];
 	size_t loop_bytes = DEFAULT_LOOP_BYTES;
 	const int bad_fd = stress_fs_bad_fd_get();
@@ -133,7 +135,7 @@ static int stress_loop(stress_args_t *args)
 		backing_file, sizeof(backing_file), stress_mwc32());
 
 	if ((backing_fd = open(backing_file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)) < 0) {
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, backing_file, errno, strerror(errno));
 		goto tidy;
 	}
@@ -188,7 +190,7 @@ static int stress_loop(stress_args_t *args)
 		 */
 		ctrl_dev = open("/dev/loop-control", O_RDWR);
 		if (ctrl_dev < 0) {
-			pr_fail("%s: cannot open /dev/loop-control, errno=%d (%s)\n",
+			pr_fail("%s: cannot open '/dev/loop-control', errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			break;
 		}
@@ -442,7 +444,7 @@ clr_loop:
 				if (errno == EBUSY) {
 					(void)shim_usleep(1000);
 				} else {
-					pr_fail("%s: failed to disassociate %s from backing store, "
+					pr_fail("%s: failed to disassociate '%s' from backing store, "
 						"errno=%d (%s)\n",
 						args->name, dev_name, errno, strerror(errno));
 					goto close_loop;
@@ -492,13 +494,41 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("writeback-dirty-folio"),
+	STRESS_EX_FEATURE("io-thermal"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("ioctl"),
+#if defined(HAVE_FALLOCATE)
+	STRESS_EX_SYSCALL("fallocate"),
+#endif
+#if defined(F_GETFL) &&	\
+    defined(F_SETFL) &&	\
+    defined(O_DIRECT)
+	STRESS_EX_SYSCALL("fcntl"),
+#endif
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(MS_ASYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_loop_info = {
 	.stressor = stress_loop,
 	.supported = stress_loop_supported,
 	.classifier = CLASS_OS | CLASS_DEV,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 

@@ -3,9 +3,10 @@ Rules-Requires-Root: no
 Section: devel
 Priority: optional
 Maintainer: Colin Ian King <colin.i.king@gmail.com>
-Standards-Version: 4.7.4
+Standards-Version: 4.7.4.1
 Build-Depends: debhelper (>= 13),
                debhelper-compat (=13),
+               pkgconf,
                libacl1-dev,
                zlib1g-dev,
                libbsd-dev,
@@ -26,7 +27,8 @@ Build-Depends: debhelper (>= 13),
                libxxhash-dev,
                libglvnd-dev,
                libgbm-dev [linux-any],
-	       liblzma-dev
+               liblzma-dev,
+               libnl-3-dev [linux-any]
 Homepage: https://github.com/ColinIanKing/stress-ng
 
 Package: stress-ng

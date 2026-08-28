@@ -27,17 +27,18 @@
 
 #include <sched.h>
 
-#define CACHE_FLAGS_PREFETCH	(0x0001U)
-#define CACHE_FLAGS_CLFLUSH	(0x0002U)
-#define CACHE_FLAGS_FENCE	(0x0004U)
-#define CACHE_FLAGS_SFENCE	(0x0008U)
-#define CACHE_FLAGS_CLFLUSHOPT	(0x0010U)
-#define CACHE_FLAGS_CLDEMOTE	(0x0020U)
-#define CACHE_FLAGS_CLWB	(0x0040U)
-#define CACHE_FLAGS_PREFETCHW	(0x0080U)
+#define CACHE_FLAGS_PREFETCH	(0x00001U)
+#define CACHE_FLAGS_CLFLUSH	(0x00002U)
+#define CACHE_FLAGS_FENCE	(0x00004U)
+#define CACHE_FLAGS_SFENCE	(0x00008U)
+#define CACHE_FLAGS_CLFLUSHOPT	(0x00010U)
+#define CACHE_FLAGS_CLDEMOTE	(0x00020U)
+#define CACHE_FLAGS_CLWB	(0x00040U)
+#define CACHE_FLAGS_PREFETCHW	(0x00080U)
 
-#define CACHE_FLAGS_PERMUTE	(0x4000U)
-#define CACHE_FLAGS_NOAFF	(0x8000U)
+#define CACHE_FLAGS_PERMUTE	(0x04000U)
+#define CACHE_FLAGS_NOAFF	(0x08000U)
+#define CACHE_FLAGS_BADPAGE	(0x10000U)
 
 #define STRESS_CACHE_MIXED_OPS	(0)
 #define STRESS_CACHE_READ	(1)
@@ -66,6 +67,7 @@ typedef struct {
 
 static const stress_help_t help[] = {
 	{ "C N","cache N",	 	"start N CPU cache thrashing workers" },
+	{ NULL,	"cache-badpage",	"cache flush on unmapped (bad) page" },
 #if defined(HAVE_ASM_X86_CLDEMOTE)
 	{ NULL,	"cache-cldemote",	"cache line demote (x86 only)" },
 #endif
@@ -99,6 +101,7 @@ static const stress_help_t help[] = {
 };
 
 static const stress_opt_t opts[] = {
+	{ OPT_cache_badpage,     "cache-badpage",     TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_cache_cldemote,    "cache-cldemote",    TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_cache_clflushopt,  "cache-clflushopt",  TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_cache_enable_all,  "cache-enable-all",  TYPE_ID_BOOL, 0, 1, NULL },
@@ -109,7 +112,7 @@ static const stress_opt_t opts[] = {
 	{ OPT_cache_prefetch,    "cache-prefetch",    TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_cache_prefetchw,   "cache-prefetchw",   TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_cache_sfence,      "cache-sfence",      TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_cache_clwb,        "cache-clwb",         TYPE_ID_BOOL, 0, 1, NULL },
+	{ OPT_cache_clwb,        "cache-clwb",        TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
 };
 
@@ -219,7 +222,9 @@ static void OPTIMIZE3 stress_cache_write_mod_ ## x(			\
 	uint64_t *pk,							\
 	stress_metrics_t *metrics)					\
 {									\
-	register uint64_t i = *pi, j, k = *pk;				\
+	register uint64_t i = *pi;					\
+	register uint64_t j;						\
+	register uint64_t k = *pk;					\
 	uint8_t *const buffer = g_shared->mem_cache.buffer;		\
 	const uint64_t buffer_size = g_shared->mem_cache.size;		\
 	double t;							\
@@ -797,6 +802,7 @@ static void NORETURN MLOCKED_TEXT stress_cache_sigillhandler(int signum)
 	/* bit set? then disable it */
 	if (mask) {
 		size_t i = 0;
+
 		/* Find top bit that is set, work from most modern flag to least */
 		while (mask >>= 1)
 			i++;
@@ -816,7 +822,11 @@ static void NORETURN MLOCKED_TEXT stress_cache_sigillhandler(int signum)
 /*
  *  exercise invalid cache flush ops
  */
-static void stress_cache_flush(void *addr, void *bad_addr, int size)
+static void stress_cache_flush(
+	void *addr,
+	void *bad_addr,
+	const int size,
+	const uint32_t cache_flags)
 {
 	(void)shim_cacheflush((char *)addr, size, 0);
 	(void)shim_cacheflush((char *)addr, size, ~0);
@@ -828,9 +838,11 @@ static void stress_cache_flush(void *addr, void *bad_addr, int size)
 #else
 	UNEXPECTED
 #endif
-	(void)shim_cacheflush((char *)bad_addr, size, SHIM_ICACHE);
-	(void)shim_cacheflush((char *)bad_addr, size, SHIM_DCACHE);
-	(void)shim_cacheflush((char *)bad_addr, size, SHIM_ICACHE | SHIM_DCACHE);
+	if (cache_flags & CACHE_FLAGS_BADPAGE) {
+		(void)shim_cacheflush((char *)bad_addr, size, SHIM_ICACHE);
+		(void)shim_cacheflush((char *)bad_addr, size, SHIM_DCACHE);
+		(void)shim_cacheflush((char *)bad_addr, size, SHIM_ICACHE | SHIM_DCACHE);
+	}
 #if defined(HAVE_BUILTIN___CLEAR_CACHE)
 	__builtin___clear_cache(addr, (void *)((uint8_t *)addr - 1));
 #else
@@ -977,7 +989,7 @@ static void stress_cache_bzero(uint8_t *buffer, const uint64_t buffer_size)
 #endif
 }
 
-static void stress_cache_flags_get(const char *opt, uint32_t *cache_flags, uint32_t bitmask)
+static void stress_cache_flags_get(const char *opt, CLOBBERED uint32_t * cache_flags, uint32_t bitmask)
 {
 	bool flag = false;
 
@@ -1019,7 +1031,7 @@ static inline ALWAYS_INLINE void stress_cache_reverse(
  *  stress_cache_permute()
  *	generate next permutation of int array of perms
  */
-static void OPTIMIZE3 stress_cache_permute(int *perms_init, int *perms, const int n)
+static void OPTIMIZE3 stress_cache_permute(const int *perms_init, int *perms, const int n)
 {
 	int i, j;
 
@@ -1054,18 +1066,19 @@ static int stress_cache(stress_args_t *args)
     defined(HAVE_SCHED_SETAFFINITY) &&	\
     defined(HAVE_SCHED_GETCPU)
 	cpu_set_t proc_mask;
-	NOCLOBBER uint32_t cpu = 0;
+	CLOBBERED uint32_t cpu = 0;
 	uint32_t *cpus;
 	const uint32_t n_cpus = stress_affinity_cpus_get(&cpus, true);
-	NOCLOBBER bool pinned = false;
+	CLOBBERED bool pinned = false;
 #endif
-	NOCLOBBER uint32_t cache_flags = 0;
-	NOCLOBBER uint32_t cache_flags_mask = CACHE_FLAGS_MASK;
-	NOCLOBBER uint32_t ignored_flags = 0;
-	NOCLOBBER uint32_t total = 0;
-	NOCLOBBER size_t n_flags, perms_idx = 0;
-	NOCLOBBER size_t perms_total = 0;
-	NOCLOBBER size_t perms_max = 1;
+	CLOBBERED uint32_t cache_flags = 0;
+	CLOBBERED uint32_t cache_flags_mask = CACHE_FLAGS_MASK;
+	CLOBBERED uint32_t ignored_flags = 0;
+	CLOBBERED uint32_t total = 0;
+	CLOBBERED size_t n_flags = 0;
+	CLOBBERED size_t perms_idx = 0;
+	CLOBBERED size_t perms_total = 0;
+	CLOBBERED size_t perms_max = 1;
 	const size_t n_flag_bits = sizeof(masked_flags) * 8;
 	int ret = EXIT_SUCCESS;
 	int perms[n_flag_bits];
@@ -1074,13 +1087,14 @@ static int stress_cache(stress_args_t *args)
 	const uint64_t buffer_size = g_shared->mem_cache.size;
 	uint64_t i = stress_mwc64modn(buffer_size);
 	uint64_t k = i + (buffer_size >> 1);
-	NOCLOBBER uint64_t r = 0;
+	CLOBBERED uint64_t r = 0;
+	CLOBBERED uint8_t invalid_count = 0;
 	const uint64_t inc = (buffer_size >> 2) + 1;
-	NOCLOBBER void *bad_addr;
+	void * CLOBBERED bad_addr;
 	size_t j;
 	stress_metrics_t metrics[STRESS_CACHE_MAX];
 
-	static char *const metrics_description[] = {
+	static const char * const metrics_description[] = {
 		"cache ops per second",
 		"shared cache reads per second",
 		"shared cache writes per second",
@@ -1118,6 +1132,7 @@ static int stress_cache(stress_args_t *args)
 		goto tidy_cpus;
 	}
 
+	(void)stress_cache_flags_get("cache-badpage", &cache_flags, CACHE_FLAGS_BADPAGE);
 	(void)stress_cache_flags_get("cache-cldemote", &cache_flags, CACHE_FLAGS_CLDEMOTE);
 	(void)stress_cache_flags_get("cache-clflushopt", &cache_flags, CACHE_FLAGS_CLFLUSHOPT);
 	(void)stress_cache_flags_get("cache-enable-all", &cache_flags, CACHE_FLAGS_MASK);
@@ -1275,7 +1290,7 @@ static int stress_cache(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	if (masked_flags) {
-		for (n_flags = 0, j = 0; j < n_flag_bits; j++) {
+		for (j = 0; j < n_flag_bits; j++) {
 			if (masked_flags & 1U << j) {
 				perms[n_flags] = j;
 				perms_init[n_flags] = j; /* keep a copy */
@@ -1387,7 +1402,8 @@ static int stress_cache(stress_args_t *args)
 		/*
 		 * Periodically exercise invalid cache ops
 		 */
-		if ((r & 0x1f) == 0) {
+		if (invalid_count++ >= 24) {
+			invalid_count = 0;
 			jmpret = sigsetjmp(jmp_env, 1);
 			/*
 			 *  We return here if we segfault, so
@@ -1397,7 +1413,7 @@ static int stress_cache(stress_args_t *args)
 				break;
 
 			if (!jmpret)
-				stress_cache_flush(buffer, bad_addr, (int)args->page_size);
+				stress_cache_flush(buffer, bad_addr, (int)args->page_size, cache_flags);
 		}
 next:
 		/* Move forward a bit */
@@ -1410,13 +1426,14 @@ next:
 	 *  Hit an illegal instruction, report the disabled flags
 	 */
 	if (stress_instance_zero(args) && (disabled_flags)) {
-		char buf[1024], *ptr = buf;
+		char buf[1024];
+		char *ptr = buf;
 		size_t buf_len = sizeof(buf);
 
 		(void)shim_memset(buf, 0, sizeof(buf));
 		for (j = 0; j < SIZEOF_ARRAY(mask_flag_info); j++) {
 			if (mask_flag_info[j].flag & disabled_flags) {
-				const size_t len = strlen(mask_flag_info[j].name);
+				const size_t len = shim_strlen(mask_flag_info[j].name);
 
 				(void)shim_strscpy(ptr, " ", buf_len);
 				buf_len--;
@@ -1460,11 +1477,22 @@ tidy_cpus:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-write-miss"),
+
+#if defined(__NR_cacheflush)
+	STRESS_EX_SYSCALL("cacheflush"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_cache_info = {
 	.stressor = stress_cache,
 	.classifier = CLASS_CPU_CACHE,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -1474,7 +1502,7 @@ const stressor_info_t stress_cache_info = {
 	.classifier = CLASS_CPU_CACHE,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

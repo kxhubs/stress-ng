@@ -93,7 +93,8 @@ static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdtsc(void)
 {
 #if defined(STRESS_ARCH_X86) &&	\
     defined(HAVE_ASM_X86_RDTSC)
-	uint32_t lo, hi;
+	uint32_t lo;
+	uint32_t hi;
 
 	__asm__ __volatile__("rdtsc" : "=a" (lo), "=d" (hi));
 	return ((uint64_t)hi << 32) | lo;
@@ -109,7 +110,9 @@ static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdtscp(void)
 {
 #if defined(STRESS_ARCH_X86) &&	\
     defined(HAVE_ASM_X86_RDTSCP)
-	uint32_t lo, hi, tsc_aux;
+	uint32_t lo;
+	uint32_t hi;
+	uint32_t tsc_aux;
 
 	__asm__ __volatile__("rdtscp" : "=a" (lo), "=d" (hi), "=c" (tsc_aux));
 	return ((uint64_t)hi << 32) | lo;
@@ -126,7 +129,7 @@ static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdtscp(void)
  */
 static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdrand(void)
 {
-	uint64_t        ret;
+	uint64_t ret;
 
 	__asm__ __volatile__(
 	"1:;\n\
@@ -169,7 +172,7 @@ static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdrand(void)
  */
 static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdseed(void)
 {
-	uint64_t        ret;
+	uint64_t ret;
 
 	__asm__ __volatile__(
 	"1:;\n\
@@ -213,7 +216,7 @@ static inline uint64_t ALWAYS_INLINE stress_asm_x86_rdseed(void)
 
 #if defined(HAVE_ASM_X86_TPAUSE) && 	\
     !defined(HAVE_COMPILER_PCC)
-static inline int ALWAYS_INLINE stress_asm_x86_tpause__(int state, uint32_t hi, uint32_t lo)
+static inline int ALWAYS_INLINE stress_asm_x86_tpause__(int tpause_state, uint32_t hi, uint32_t lo)
 {
 	uint8_t cflags;
 
@@ -224,17 +227,17 @@ static inline int ALWAYS_INLINE stress_asm_x86_tpause__(int state, uint32_t hi, 
 		".byte 0x66,0x0f,0xae,0xf7;\n"	/* tpause %%edi; */
 		"setb %0;\n"
 		: "=r" (cflags)
-		: "r" (hi), "r" (lo), "r"(state)
+		: "r" (hi), "r" (lo), "r"(tpause_state)
 		: "cc", "eax", "edx", "edi");
 	return cflags;
 }
 
-static inline int ALWAYS_INLINE stress_asm_x86_tpause(const int state, const uint64_t delay)
+static inline int ALWAYS_INLINE stress_asm_x86_tpause(const int tpause_state, const uint64_t delay)
 {
 	register uint32_t lo = delay & 0xffffffff;
 	register uint32_t hi = (uint32_t)(delay >> 32);
 
-	return stress_asm_x86_tpause__(state, hi, lo);
+	return stress_asm_x86_tpause__(tpause_state, hi, lo);
 }
 #endif
 
@@ -332,7 +335,7 @@ static inline void ALWAYS_INLINE stress_asm_x86_prefetchwt1(void *p)
 #if !defined(HAVE_COMPILER_PCC) && 	\
     defined(STRESS_ARCH_X86_64) && 	\
     defined(STRESS_ARCH_X86_LP64)
-static inline int ALWAYS_INLINE stress_asm_x86_umwait__(int state, uint32_t hi, uint32_t lo)
+static inline int ALWAYS_INLINE stress_asm_x86_umwait__(int umwait_state, uint32_t hi, uint32_t lo)
 {
 	uint8_t cflags;
 
@@ -343,17 +346,17 @@ static inline int ALWAYS_INLINE stress_asm_x86_umwait__(int state, uint32_t hi, 
 		".byte 0xf2, 0x0f, 0xae, 0xf7;\n"	/* umwait %edi */
 		"setb %0;\n"
 		: "=r" (cflags)
-		: "r" (hi), "r" (lo), "r"(state)
+		: "r" (hi), "r" (lo), "r"(umwait_state)
 		: "cc", "eax", "edx", "edi");
 	return cflags;
 }
 
-static inline int ALWAYS_INLINE stress_asm_x86_umwait(const int state, const uint64_t delay)
+static inline int ALWAYS_INLINE stress_asm_x86_umwait(const int umwait_state, const uint64_t delay)
 {
 	register uint32_t lo = delay & 0xffffffff;
 	register uint32_t hi = (uint32_t)(delay >> 32);
 
-	return stress_asm_x86_umwait__(state, hi, lo);
+	return stress_asm_x86_umwait__(umwait_state, hi, lo);
 }
 
 static inline void ALWAYS_INLINE stress_asm_x86_umonitor(void *addr)
@@ -369,6 +372,21 @@ static inline void ALWAYS_INLINE stress_ds_store64(void *ptr, const uint64_t val
 {
         __asm__ __volatile__("movdiri %0, (%1)\n"
                         : :  "r" (val), "r" (ptr));
+}
+#endif
+
+#if defined(HAVE_ASM_X86_MOVNTDQA) &&	\
+    defined(HAVE_INT128_T)
+static inline ALWAYS_INLINE __uint128_t stress_asm_movntdqa(void *addr)
+{
+	__uint128_t ret;
+
+	__asm__ __volatile__ (
+		"movntdqa (%1),%0"
+		: "=x" (ret)
+		: "r" (addr)
+		: "memory");
+	return ret;
 }
 #endif
 

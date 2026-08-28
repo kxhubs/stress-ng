@@ -29,8 +29,8 @@
 #include <sys/mount.h>
 #endif
 
-#define MIN_RAMFS_SIZE	(1 * MB)
-#define MAX_RAMFS_SIZE	(2 * GB)
+#define MIN_RAMFS_SIZE	(1 * STRESS_MB)
+#define MAX_RAMFS_SIZE	(2 * STRESS_GB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"ramfs N",	 "start N workers exercising ramfs mounts" },
@@ -134,7 +134,7 @@ static void stress_ramfs_umount(stress_args_t *args, const char *path)
 			goto misc_tests;
 		default:
 			/* Unexpected, so report it */
-			pr_inf("%s: umount failed %s, errno=%d %s\n", args->name,
+			pr_inf("%s: umount failed '%s', errno=%d %s\n", args->name,
 				path, errno, strerror(errno));
 			break;
 		}
@@ -170,7 +170,8 @@ static int stress_ramfs_fs_ops(
 	char filename[PATH_MAX + 5];
 	char symlinkname[PATH_MAX + 5];
 	struct stat statbuf;
-	int fd, rc = EXIT_SUCCESS;
+	int fd;
+	int rc = EXIT_SUCCESS;
 
 	(void)stress_fs_make_filename(filename, sizeof(filename), pathname, "mnt");
 	(void)stress_fs_make_filename(symlinkname, sizeof(symlinkname), pathname, "lnk");
@@ -266,7 +267,7 @@ static int stress_ramfs_fs_ops(
 static int stress_ramfs_child(stress_args_t *args)
 {
 	char pathname[PATH_MAX], realpathname[PATH_MAX];
-	uint64_t ramfs_size = 2 * MB;
+	uint64_t ramfs_size = 2 * STRESS_MB;
 	bool ramfs_fill = false;
 	int i = 0;
 	int rc = EXIT_SUCCESS;
@@ -308,12 +309,12 @@ static int stress_ramfs_child(stress_args_t *args)
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name,
 		args->pid, args->instance);
 	if (mkdir(pathname, S_IRUSR | S_IWUSR | S_IXUSR) < 0) {
-		pr_fail("%s: cannot mkdir %s, errno=%d (%s)\n",
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
 	if (!realpath(pathname, realpathname)) {
-		pr_fail("%s: cannot realpath %s, errno=%d (%s)\n",
+		pr_fail("%s: realpath '%s' failed, errno=%d (%s)\n",
 			args->name, pathname, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return EXIT_FAILURE;
@@ -329,7 +330,8 @@ static int stress_ramfs_child(stress_args_t *args)
     defined(HAVE_FSMOUNT) &&		\
     defined(HAVE_MOVE_MOUNT) &&		\
     defined(HAVE_SYS_MOUNT_H)
-		int fd, fd_mnt;
+		int fd;
+		int fd_mnt;
 
 		fd = fsopen(fs, FSOPEN_CLOEXEC);
 		if (fd < 0) {
@@ -385,7 +387,6 @@ static int stress_ramfs_child(stress_args_t *args)
 		}
 		(void)close(fd_mnt);
 		(void)close(fd);
-	
 #else
 		(void)snprintf(opt, sizeof(opt), "size=%" PRIu64, ramfs_size);
 		if (mount("", realpathname, fs, 0, opt) < 0) {
@@ -430,14 +431,8 @@ static int stress_ramfs_mount(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-again:
-		if (UNLIKELY(!stress_continue_flag()))
-			break;
-
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -465,7 +460,7 @@ again:
 					pr_dbg("%s: assuming killed by OOM killer, "
 						"restarting again (instance %" PRIu32 ")\n",
 						args->name, args->instance);
-					goto again;
+					continue;
 				}
 			} else if (WEXITSTATUS(status) == EXIT_FAILURE) {
 				pr_fail("%s: child mount/umount failed\n", args->name);
@@ -486,13 +481,40 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("fstat"),
+#if defined(HAVE_FSOPEN) &&		\
+    defined(HAVE_FSCONFIG) &&		\
+    defined(HAVE_FSMOUNT) &&		\
+    defined(HAVE_MOVE_MOUNT) &&		\
+    defined(HAVE_SYS_MOUNT_H)
+	STRESS_EX_SYSCALL("fsopen"),
+	STRESS_EX_SYSCALL("fsconfig"),
+	STRESS_EX_SYSCALL("fsmount"),
+	STRESS_EX_SYSCALL("move_mount"),
+#else
+	STRESS_EX_SYSCALL("mount"),
+#endif
+	STRESS_EX_SYSCALL("lstat"),
+	STRESS_EX_SYSCALL("mkdir"),
+	STRESS_EX_SYSCALL("symlink"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_SYSCALL("umount"),
+#if defined(HAVE_UMOUNT2) &&	\
+    defined(MNT_FORCE)
+	STRESS_EX_SYSCALL("umount2"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ramfs_info = {
 	.stressor = stress_ramfs_mount,
 	.classifier = CLASS_OS,
 	.opts = opts,
 	.supported = stress_ramfs_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_ramfs_info = {

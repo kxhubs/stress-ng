@@ -160,17 +160,14 @@ int32_t stress_ticks_per_second_get(void)
  *  stress_load_average_get()
  *	get load average
  */
-int stress_load_average_get(
-	double *min1,
-	double *min5,
-	double *min15)
+int stress_load_average_get(stress_load_average_info_t *load_average_info)
 {
 #if defined(HAVE_GETLOADAVG) &&	\
     !defined(__UCLIBC__)
 	int rc;
 	double loadavg[3];
 
-	if (UNLIKELY(!min1 || !min5 || !min15))
+	if (UNLIKELY(!load_average_info))
 		return -1;
 
 	loadavg[0] = 0.0;
@@ -181,9 +178,9 @@ int stress_load_average_get(
 	if (UNLIKELY(rc < 0))
 		goto fail;
 
-	*min1 = loadavg[0];
-	*min5 = loadavg[1];
-	*min15 = loadavg[2];
+	load_average_info->min1 = loadavg[0];
+	load_average_info->min5 = loadavg[1];
+	load_average_info->min15 = loadavg[2];
 
 	return 0;
 fail:
@@ -193,23 +190,25 @@ fail:
 	struct sysinfo info;
 	const double scale = 1.0 / (double)(1 << SI_LOAD_SHIFT);
 
-	if (UNLIKELY(!min1 || !min5 || !min15))
+	if (UNLIKELY(!load_average_info))
 		return -1;
 
 	if (UNLIKELY(sysinfo(&info) < 0))
 		goto fail;
 
-	*min1 = info.loads[0] * scale;
-	*min5 = info.loads[1] * scale;
-	*min15 = info.loads[2] * scale;
+	load_average_info->min1 = info.loads[0] * scale;
+	load_average_info->min5 = info.loads[1] * scale;
+	load_average_info->min15 = info.loads[2] * scale;
 
 	return 0;
 fail:
 #else
-	if (UNLIKELY(!min1 || !min5 || !min15))
+	if (UNLIKELY(!load_average_info))
 		return -1;
 #endif
-	*min1 = *min5 = *min15 = 0.0;
+	load_average_info->min1 = 0.0;
+	load_average_info->min5 = 0.0;
+	load_average_info->min15 = 0.0;
 	return -1;
 }
 
@@ -246,7 +245,9 @@ int stress_process_dumpable(const bool dumpable)
 
 	(void)dumpable;
 
-#if defined(RLIMIT_CORE)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_CORE)
 	{
 		struct rlimit lim;
 		int ret;
@@ -314,7 +315,7 @@ void stress_timer_slack_set(const bool check_zero)
 		(void)prctl(PR_SET_TIMERSLACK, timer_slack);
 	}
 #else
-	UNEXPECTED
+	(void)check_zero;
 #endif
 }
 
@@ -372,8 +373,14 @@ void stress_proc_name_scramble(void)
 	char name[65];
 	char *ptr;
 	int i;
-	uint32_t a, b, c, d;
-	uint64_t rnd1, rnd2, rnd3, rnd4;
+	uint32_t a;
+	uint32_t b;
+	uint32_t c;
+	uint32_t d;
+	uint64_t rnd1;
+	uint64_t rnd2;
+	uint64_t rnd3;
+	uint64_t rnd4;
 	double now;
 
 	if (g_opt_flags & OPT_FLAGS_KEEP_NAME)
@@ -644,9 +651,6 @@ static char *stress_libc_version_get(void)
 #endif
 }
 
-#define XSTR(s) STR(s)
-#define STR(s) #s
-
 /*
  *  stress_buildinfo()
  *     info about compiler, built date and compilation flags
@@ -656,7 +660,7 @@ void stress_buildinfo(void)
 	if (g_opt_flags & OPT_FLAGS_BUILDINFO) {
 		pr_inf("compiler: %s\n", stress_compiler_get());
 #if defined(HAVE_SOURCE_DATE_EPOCH)
-		pr_inf("SOURCE_DATE_EPOCH: " XSTR(HAVE_SOURCE_DATE_EPOCH) "\n");
+		pr_inf("SOURCE_DATE_EPOCH: " STRESS_XSTRINGIFY(HAVE_SOURCE_DATE_EPOCH) "\n");
 #endif
 #if defined(HAVE_EXTRA_BUILDINFO)
 #if defined(HAVE_CFLAGS)
@@ -670,10 +674,10 @@ void stress_buildinfo(void)
 #endif
 #endif
 #if defined(__STDC_VERSION__)
-		pr_inf("STDC Version: " XSTR(__STDC_VERSION__) "\n");
+		pr_inf("STDC Version: " STRESS_XSTRINGIFY(__STDC_VERSION__) "\n");
 #endif
 #if defined(__STDC_HOSTED__)
-		pr_inf("STDC Hosted: " XSTR(__STDC_HOSTED__) "\n");
+		pr_inf("STDC Hosted: " STRESS_XSTRINGIFY(__STDC_HOSTED__) "\n");
 #endif
 #if defined(BUILD_STATIC)
 		pr_inf("build: static image\n");
@@ -695,7 +699,7 @@ void stress_yaml_buildinfo(FILE *yaml)
 	pr_yaml(yaml, "build-info:\n");
 	pr_yaml(yaml, "      compiler: '%s'\n", stress_compiler_get());
 #if defined(HAVE_SOURCE_DATE_EPOCH)
-	pr_yaml(yaml, "      source-date-epoch: " XSTR(HAVE_SOURCE_DATE_EPOCH) "\n");
+	pr_yaml(yaml, "      source-date-epoch: " STRESS_XSTRINGIFY(HAVE_SOURCE_DATE_EPOCH) "\n");
 #endif
 #if defined(HAVE_EXTRA_BUILDINFO)
 #if defined(HAVE_CFLAGS)
@@ -709,17 +713,13 @@ void stress_yaml_buildinfo(FILE *yaml)
 #endif
 #endif
 #if defined(__STDC_VERSION__)
-	pr_yaml(yaml, "      stdc-version: '" XSTR(__STDC_VERSION__) "'\n");
+	pr_yaml(yaml, "      stdc-version: '" STRESS_XSTRINGIFY(__STDC_VERSION__) "'\n");
 #endif
 #if defined(__STDC_HOSTED__)
-	pr_yaml(yaml, "      stdc-hosted: '" XSTR(__STDC_HOSTED__) "'\n");
+	pr_yaml(yaml, "      stdc-hosted: '" STRESS_XSTRINGIFY(__STDC_HOSTED__) "'\n");
 #endif
 	pr_yaml(yaml, "\n");
 }
-
-
-#undef XSTR
-#undef STR
 
 /*
  *  stress_runinfo()
@@ -728,10 +728,11 @@ void stress_yaml_buildinfo(FILE *yaml)
  */
 void stress_runinfo(void)
 {
-	char real_path[PATH_MAX], *real_path_ret;
+	char real_path[PATH_MAX];
+	char *real_path_ret;
 	const char *temp_path = stress_fs_temp_path_get();
 	const char *fs_type = stress_fs_type_get(temp_path);
-	size_t freemem, totalmem, freeswap, totalswap;
+	stress_memory_info_t info;
 #if defined(HAVE_UNAME) &&	\
     defined(HAVE_SYS_UTSNAME_H)
 	struct utsname uts;
@@ -764,12 +765,14 @@ void stress_runinfo(void)
 		stress_libc_version_get(),
 		stress_endian_str());
 #endif
-	if (stress_memory_info_get(&freemem, &totalmem, &freeswap, &totalswap) == 0) {
-		char ram_t[32], ram_f[32], ram_s[32];
+	if (stress_memory_info_get(&info) == 0) {
+		char ram_t[32];
+		char ram_f[32];
+		char ram_s[32];
 
-		stress_uint64_to_str(ram_t, sizeof(ram_t), (uint64_t)totalmem, 1, false);
-		stress_uint64_to_str(ram_f, sizeof(ram_f), (uint64_t)freemem, 1, false);
-		stress_uint64_to_str(ram_s, sizeof(ram_s), (uint64_t)freeswap, 1, false);
+		stress_uint64_to_str(ram_t, sizeof(ram_t), (uint64_t)info.totalmem, 1, false);
+		stress_uint64_to_str(ram_f, sizeof(ram_f), (uint64_t)info.freemem, 1, false);
+		stress_uint64_to_str(ram_s, sizeof(ram_s), (uint64_t)info.freeswap, 1, false);
 		pr_dbg("RAM total: %s, RAM free: %s, swap free: %s\n", ram_t, ram_f, ram_s);
 	}
 	real_path_ret = realpath(temp_path, real_path);
@@ -791,7 +794,7 @@ void stress_yaml_runinfo(FILE *yaml)
 	struct sysinfo info;
 #endif
 	time_t t;
-	struct tm *tm = NULL;
+	struct tm tm;
 	const size_t hostname_len = stress_hostname_length_get();
 	char *hostname;
 	const char *user = shim_getlogin();
@@ -800,17 +803,17 @@ void stress_yaml_runinfo(FILE *yaml)
 		return;
 
 	pr_yaml(yaml, "system-info:\n");
-	if (time(&t) != ((time_t)-1))
-		tm = localtime(&t);
 
 	pr_yaml(yaml, "      stress-ng-version: '" VERSION "'\n");
 	pr_yaml(yaml, "      run-by: '%s'\n", user ? user : "unknown");
-	if (LIKELY(tm != NULL)) {
-		pr_yaml(yaml, "      date-yyyy-mm-dd: '%4.4d:%2.2d:%2.2d'\n",
-			tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
-		pr_yaml(yaml, "      time-hh-mm-ss: '%2.2d:%2.2d:%2.2d'\n",
-			tm->tm_hour, tm->tm_min, tm->tm_sec);
-		pr_yaml(yaml, "      epoch-secs: %ld\n", (long int)t);
+	if (time(&t) != ((time_t)-1)) {
+		if (shim_localtime_r(&t, &tm)) {
+			pr_yaml(yaml, "      date-yyyy-mm-dd: '%4.4d:%2.2d:%2.2d'\n",
+				tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+			pr_yaml(yaml, "      time-hh-mm-ss: '%2.2d:%2.2d:%2.2d'\n",
+				tm.tm_hour, tm.tm_min, tm.tm_sec);
+			pr_yaml(yaml, "      epoch-secs: %ld\n", (long int)t);
+		}
 	}
 
 	hostname = (char *)malloc(hostname_len + 1);
@@ -865,7 +868,8 @@ unsigned int stress_cpu_get(void)
 #if defined(__PPC64__) || defined(__ppc64__) ||	\
     defined(__PPC__) || defined(__ppc__) ||	\
     defined(__s390x__)
-	unsigned int cpu, node;
+	unsigned int cpu;
+	unsigned int node;
 
 	if (UNLIKELY(shim_getcpu(&cpu, &node, NULL) < 0))
 		return 0;
@@ -876,16 +880,14 @@ unsigned int stress_cpu_get(void)
 	return (unsigned int)((cpu < 0) ? 0 : cpu);
 #endif
 #else
-	unsigned int cpu, node;
+	unsigned int cpu;
+	unsigned int node;
 
 	if (UNLIKELY(shim_getcpu(&cpu, &node, NULL) < 0))
 		return 0;
 	return cpu;
 #endif
 }
-
-#define XSTRINGIFY(s) STRINGIFY(s)
-#define STRINGIFY(s) #s
 
 /*
  *  stress_compiler_get()
@@ -897,45 +899,45 @@ const char *stress_compiler_get(void)
       defined(__INTEL_COMPILER) &&	\
       defined(__INTEL_COMPILER_UPDATE) && \
       defined(__INTEL_COMPILER_BUILD_DATE)
-	static const char cc[] = "icc " XSTRINGIFY(__INTEL_COMPILER) "." XSTRINGIFY(__INTEL_COMPILER_UPDATE) " Build " XSTRINGIFY(__INTEL_COMPILER_BUILD_DATE) "";
+	static const char cc[] = "icc " STRESS_XSTRINGIFY(__INTEL_COMPILER) "." STRESS_XSTRINGIFY(__INTEL_COMPILER_UPDATE) " Build " STRESS_XSTRINGIFY(__INTEL_COMPILER_BUILD_DATE) "";
 #elif defined(HAVE_COMPILER_ICC) && 		\
       defined(__INTEL_COMPILER) &&	\
       defined(__INTEL_COMPILER_UPDATE)
-	static const char cc[] = "icc " XSTRINGIFY(__INTEL_COMPILER) "." XSTRINGIFY(__INTEL_COMPILER_UPDATE) "";
+	static const char cc[] = "icc " STRESS_XSTRINGIFY(__INTEL_COMPILER) "." STRESS_XSTRINGIFY(__INTEL_COMPILER_UPDATE) "";
 #elif defined(__INTEL_CLANG_COMPILER)
-	static const char cc[] = "icx " XSTRINGIFY(__INTEL_CLANG_COMPILER) "";
+	static const char cc[] = "icx " STRESS_XSTRINGIFY(__INTEL_CLANG_COMPILER) "";
 #elif defined(__INTEL_LLVM_COMPILER)
-	static const char cc[] = "icx " XSTRINGIFY(__INTEL_LLVM_COMPILER) "";
+	static const char cc[] = "icx " STRESS_XSTRINGIFY(__INTEL_LLVM_COMPILER) "";
 #elif defined(__TINYC__)
-	static const char cc[] = "tcc " XSTRINGIFY(__TINYC__) "";
+	static const char cc[] = "tcc " STRESS_XSTRINGIFY(__TINYC__) "";
 #elif defined(__PCC__) &&			\
        defined(__PCC_MINOR__)
-	static const char cc[] = "pcc " XSTRINGIFY(__PCC__) "." XSTRINGIFY(__PCC_MINOR__) "." XSTRINGIFY(__PCC_MINORMINOR__) "";
+	static const char cc[] = "pcc " STRESS_XSTRINGIFY(__PCC__) "." STRESS_XSTRINGIFY(__PCC_MINOR__) "." STRESS_XSTRINGIFY(__PCC_MINORMINOR__) "";
 #elif defined(__clang_major__) &&	\
       defined(__clang_minor__) &&	\
       defined(__clang_patchlevel__)
-	static const char cc[] = "clang " XSTRINGIFY(__clang_major__) "." XSTRINGIFY(__clang_minor__) "." XSTRINGIFY(__clang_patchlevel__) "";
+	static const char cc[] = "clang " STRESS_XSTRINGIFY(__clang_major__) "." STRESS_XSTRINGIFY(__clang_minor__) "." STRESS_XSTRINGIFY(__clang_patchlevel__) "";
 #elif defined(__clang_major__) &&	\
       defined(__clang_minor__)
-	static const char cc[] = "clang " XSTRINGIFY(__clang_major__) "." XSTRINGIFY(__clang_minor__) "";
+	static const char cc[] = "clang " STRESS_XSTRINGIFY(__clang_major__) "." STRESS_XSTRINGIFY(__clang_minor__) "";
 #elif defined(__GNUC__) &&		\
       defined(__GNUC_MINOR__) &&	\
       defined(__GNUC_PATCHLEVEL__) &&	\
       defined(HAVE_COMPILER_MUSL)
-	static const char cc[] = "musl-gcc " XSTRINGIFY(__GNUC__) "." XSTRINGIFY(__GNUC_MINOR__) "." XSTRINGIFY(__GNUC_PATCHLEVEL__) "";
+	static const char cc[] = "musl-gcc " STRESS_XSTRINGIFY(__GNUC__) "." STRESS_XSTRINGIFY(__GNUC_MINOR__) "." STRESS_XSTRINGIFY(__GNUC_PATCHLEVEL__) "";
 #elif defined(__GNUC__) &&		\
       defined(__GNUC_MINOR__) &&	\
       defined(HAVE_COMPILER_MUSL)
-	static const char cc[] = "musl-gcc " XSTRINGIFY(__GNUC__) "." XSTRINGIFY(__GNUC_MINOR__) "";
+	static const char cc[] = "musl-gcc " STRESS_XSTRINGIFY(__GNUC__) "." STRESS_XSTRINGIFY(__GNUC_MINOR__) "";
 #elif defined(__GNUC__) &&		\
       defined(__GNUC_MINOR__) &&	\
       defined(__GNUC_PATCHLEVEL__) &&	\
       defined(HAVE_COMPILER_GCC)
-	static const char cc[] = "gcc " XSTRINGIFY(__GNUC__) "." XSTRINGIFY(__GNUC_MINOR__) "." XSTRINGIFY(__GNUC_PATCHLEVEL__) "";
+	static const char cc[] = "gcc " STRESS_XSTRINGIFY(__GNUC__) "." STRESS_XSTRINGIFY(__GNUC_MINOR__) "." STRESS_XSTRINGIFY(__GNUC_PATCHLEVEL__) "";
 #elif defined(__GNUC__) &&		\
       defined(__GNUC_MINOR__) &&	\
       defined(HAVE_COMPILER_GCC)
-	static const char cc[] = "gcc " XSTRINGIFY(__GNUC__) "." XSTRINGIFY(__GNUC_MINOR__) "";
+	static const char cc[] = "gcc " STRESS_XSTRINGIFY(__GNUC__) "." STRESS_XSTRINGIFY(__GNUC_MINOR__) "";
 #else
 	static const char cc[] = "cc unknown";
 #endif
@@ -983,7 +985,12 @@ int CONST stress_unimplemented(stress_args_t *args)
  *	turn 64 bit size to human readable string, if no_zero is true, truncate
  *	to integer if decimal part is zero
  */
-char *stress_uint64_to_str(char *str, size_t len, const uint64_t val, const int precision, bool no_zero)
+char *stress_uint64_to_str(
+	char *str,
+	const size_t len,
+	const uint64_t val,
+	const int precision,
+	const bool no_zero)
 {
 	typedef struct {
 		const uint64_t size;
@@ -991,12 +998,12 @@ char *stress_uint64_to_str(char *str, size_t len, const uint64_t val, const int 
 	} stress_size_info_t;
 
 	static const stress_size_info_t size_info[] = {
-		{ EB, "E" },
-		{ PB, "P" },
-		{ TB, "T" },
-		{ GB, "G" },
-		{ MB, "M" },
-		{ KB, "K" },
+		{ STRESS_EB, "E" },
+		{ STRESS_PB, "P" },
+		{ STRESS_TB, "T" },
+		{ STRESS_GB, "G" },
+		{ STRESS_MB, "M" },
+		{ STRESS_KB, "K" },
 	};
 	size_t i;
 	const char *suffix = "";
@@ -1100,7 +1107,7 @@ bool stress_is_dev_tty(const int fd)
 
 	if (UNLIKELY(!name))
 		return true;
-	return !strncmp("/dev/tty", name, 8);
+	return !shim_strncmp("/dev/tty", name, 8);
 #else
 	UNEXPECTED
 	(void)fd;
@@ -1120,7 +1127,10 @@ bool stress_is_dev_tty(const int fd)
  */
 bool stress_warn_once_hash(const char *filename, const int line)
 {
-	uint32_t free_slot, i, j, h = (stress_hash_pjw(filename) + (uint32_t)line);
+	uint32_t free_slot;
+	uint32_t i;
+	uint32_t j;
+	uint32_t h = (stress_hash_pjw(filename) + (uint32_t)line);
 	bool not_warned_yet = true;
 
 	if (UNLIKELY(!g_shared))
@@ -1192,6 +1202,9 @@ static CONST int stress_uid_comp(const void *p1, const void *p2)
 int stress_unused_uid_get(uid_t *uid)
 {
 	static uid_t cached_uid = 0;
+	struct passwd pwd;
+	struct passwd *pwd_ptr = NULL;
+	char buf[1024];
 	uid_t *uids;
 
 	if (!uid)
@@ -1202,12 +1215,15 @@ int stress_unused_uid_get(uid_t *uid)
 	 *  If we have a cached unused uid and it's no longer
 	 *  unused then force a rescan for a new one
 	 */
-	if ((cached_uid != 0) && (getpwuid(cached_uid) != NULL))
-		cached_uid = 0;
-
+	if (cached_uid != 0) {
+		(void)shim_getpwuid_r(cached_uid, &pwd, buf, sizeof(buf), &pwd_ptr);
+		if (pwd_ptr)
+			cached_uid = 0;
+	}
 	if (cached_uid == 0) {
 		struct passwd *pw;
-		size_t i, n;
+		size_t i;
+		size_t n;
 
 		setpwent();
 		for (n = 0; getpwent() != NULL; n++) {
@@ -1236,7 +1252,9 @@ int stress_unused_uid_get(uid_t *uid)
 			const uid_t uid_try = uids[i] + 250;
 
 			if (uids[i + 1] > uid_try) {
-				if (getpwuid(uid_try) == NULL) {
+				pwd_ptr = NULL;
+				(void)shim_getpwuid_r(uid_try, &pwd, buf, sizeof(buf), &pwd_ptr);
+				if (pwd_ptr == NULL) {
 					cached_uid = uid_try;
 					break;
 				}
@@ -1271,7 +1289,7 @@ int stress_unused_uid_get(uid_t *uid)
  */
 int CONST stress_kernel_release(const int major, const int minor, const int patchlevel)
 {
-	return (major * 10000) + (minor * 100) + patchlevel;
+	return (major * 10000) + (minor * 100) + ((patchlevel > 99) ? 99 : patchlevel);
 }
 
 /*
@@ -1284,7 +1302,9 @@ int stress_kernel_release_get(void)
 #if defined(HAVE_UNAME) &&	\
     defined(HAVE_SYS_UTSNAME_H)
 	struct utsname buf;
-	int major = 0, minor = 0, patchlevel = 0;
+	int major = 0;
+	int minor = 0;
+	int patchlevel = 0;
 
 	if (UNLIKELY(uname(&buf) < 0))
 		return -1;
@@ -1403,7 +1423,8 @@ int stress_tty_width_get(void)
 #if defined(HAVE_WINSIZE) &&	\
     defined(TIOCGWINSZ)
 	struct winsize ws;
-	int ret, fd;
+	int ret;
+	int fd;
 
 	if (stress_fs_pipe_check(fileno(stdout)))
 		fd = fileno(stdin);
@@ -1423,26 +1444,61 @@ int stress_tty_width_get(void)
 }
 
 /*
- *  stress_redo_fork()
- *	check fork errno (in err) and return true if
- *	an immediate fork can be retried due to known
- *	error cases that are retryable. Also force a
- *	scheduling yield.
+ *  stress_retry_fork()
+ *	retry fork until we timeout, stress_continue() is false
+ *	or an unexpected fork() error occurred. Return the pid
+ *	and errno set to that of the fork() return.
+ *
+ *	if retries > 0 then retry that many times, else retry forever
  */
-bool stress_redo_fork(stress_args_t *args, const int err)
+pid_t stress_retry_fork(stress_args_t *args, const int retries)
 {
-	/* Timed out! */
-	if (UNLIKELY(stress_time_now() > args->time_end)) {
-		stress_continue_set_flag(false);
-		return false;
+	pid_t pid;
+	int saved_errno;
+	int retry = 0;
+
+	for (;;) {
+		errno = 0;
+		pid = fork();
+
+		/* save error as it gets clobbered */
+		saved_errno = errno;
+
+		/* parent or child, OK fork paths */
+		if (LIKELY(pid >= 0))
+			break;
+
+		/* Clock time out */
+		if (UNLIKELY(stress_time_now() > args->time_end)) {
+			stress_continue_set_flag(false);
+			break;
+		}
+
+		/* SIGAALRM or bogo-ops reached? */
+		if (!stress_continue(args)) {
+			break;
+		}
+
+		/* An unexpected fork error occurred, bail out */
+		if ((saved_errno != EAGAIN) &&
+		    (saved_errno != EINTR) &&
+		    (saved_errno != ENOMEM)) {
+			break;
+		}
+		/*
+		 * fork may have failed because of low resources
+		 * or interrupt, so do yield sleep and try again
+		 */
+		if (retries > 0) {
+			if (retry++ > retries)
+				break;
+		} else {
+			stress_yield_sleep_ms();
+		}
 	}
-	/* More bogo-ops to go and errors indicate a fork retry? */
-	if (LIKELY(stress_continue(args)) &&
-	    ((err == EAGAIN) || (err == EINTR) || (err == ENOMEM))) {
-		(void)shim_sched_yield();
-		return true;
-	}
-	return false;
+	/* errno set to fork()'s errno */
+	errno = saved_errno;
+	return pid;
 }
 
 /*
@@ -1472,7 +1528,8 @@ size_t stress_flag_permutation(const int flags, int **permutations)
 {
 	unsigned int flag_bits;
 	unsigned int n_bits;
-	register unsigned int j, n_flags;
+	register unsigned int j;
+	register unsigned int n_flags;
 	int *perms;
 
 	if (UNLIKELY(!permutations))
@@ -1559,7 +1616,7 @@ static char *stress_proc_self_exe_path_get(
  */
 char *stress_proc_self_exe_get(char *path, const size_t path_len)
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__CYGWIN__)
 	return stress_proc_self_exe_path_get(path, "/proc/self/exe", path_len);
 #elif defined(__NetBSD__)
 	return stress_proc_self_exe_path_get(path, "/proc/curproc/exe", path_len);
@@ -1606,6 +1663,10 @@ char *stress_proc_self_exe_get(char *path, const size_t path_len)
 		return NULL;
 
 	(void)stress_proc_self_exe_path_get;
+
+	/* A plain filename is invalid if the program has been found in the PATH */
+	if (!shim_strchr(program_invocation_name, '/'))
+		return NULL;
 
 	/* this may return the wrong name if it's been argv modified */
 	(void)shim_strscpy(path, program_invocation_name, path_len);
@@ -1707,7 +1768,7 @@ int stress_bsd_getsysctl_int(const char *name)
 }
 #else
 
-int CONST stress_bsd_getsysctl(const char *name, void *ptr, size_t size)
+int stress_bsd_getsysctl(const char *name, void *ptr, size_t size)
 {
 	(void)name;
 	(void)ptr;
@@ -1716,28 +1777,28 @@ int CONST stress_bsd_getsysctl(const char *name, void *ptr, size_t size)
 	return 0;
 }
 
-uint64_t CONST stress_bsd_getsysctl_uint64(const char *name)
+uint64_t stress_bsd_getsysctl_uint64(const char *name)
 {
 	(void)name;
 
 	return 0ULL;
 }
 
-uint32_t CONST stress_bsd_getsysctl_uint32(const char *name)
+uint32_t stress_bsd_getsysctl_uint32(const char *name)
 {
 	(void)name;
 
 	return 0UL;
 }
 
-unsigned int CONST stress_bsd_getsysctl_uint(const char *name)
+unsigned int stress_bsd_getsysctl_uint(const char *name)
 {
 	(void)name;
 
 	return 0;
 }
 
-int CONST stress_bsd_getsysctl_int(const char *name)
+int stress_bsd_getsysctl_int(const char *name)
 {
 	(void)name;
 
@@ -1751,7 +1812,8 @@ int CONST stress_bsd_getsysctl_int(const char *name)
  */
 int stress_x86_readmsr64(const int cpu, const uint32_t reg, uint64_t *val)
 {
-#if defined(STRESS_ARCH_X86)
+#if defined(STRESS_ARCH_X86) &&	\
+    defined(HAVE_PREAD)
 	char buffer[PATH_MAX];
 	uint64_t value = 0;
 	int fd;
@@ -1825,7 +1887,10 @@ static void stress_process_info_dump(
 {
 	char path[4096];
 	char buf[8192];
-	char *ptr, *end, *begin, *emit;
+	char *ptr;
+	const char *end;
+	char *begin;
+	char *emit;
 	ssize_t ret;
 
 	if (UNLIKELY(!filename))
@@ -1961,9 +2026,9 @@ void stress_zero_metrics(stress_metrics_t *metrics, const size_t n)
 bool OPTIMIZE3 stress_data_is_not_zero(uint64_t *buffer, const size_t len)
 {
 	register const uint64_t *end64 = buffer + (len / sizeof(uint64_t));
-	register uint64_t *ptr64;
+	register const uint64_t *ptr64;
 	register const uint8_t *end8;
-	register uint8_t *ptr8;
+	register const uint8_t *ptr8;
 
 PRAGMA_UNROLL_N(8)
 	for (ptr64 = buffer; ptr64 < end64; ptr64++) {
@@ -1973,7 +2038,7 @@ PRAGMA_UNROLL_N(8)
 
 	end8 = ((uint8_t *)buffer) + len;
 PRAGMA_UNROLL_N(8)
-	for (ptr8 = (uint8_t *)ptr64; ptr8 < end8; ptr8++) {
+	for (ptr8 = (const uint8_t *)ptr64; ptr8 < end8; ptr8++) {
 		if (UNLIKELY(*ptr8))
 			return true;
 	}
@@ -2003,7 +2068,7 @@ char *stress_env_ld_library_path_get(void)
 	 */
 	parent_ld_path = getenv("LD_LIBRARY_PATH");
 	if (parent_ld_path) {
-		const size_t len = strlen(parent_ld_path) + 17;
+		const size_t len = shim_strlen(parent_ld_path) + 17;
 
 		ld_library_path = (char *)malloc(len);
 		if (ld_library_path)
@@ -2021,5 +2086,26 @@ void stress_make_it_fail_set(void)
 #if defined(__linux__)
 	if (g_opt_flags & OPT_FLAGS_MAKE_IT_FAIL)
 		(void)stress_fs_file_write("/proc/self/make-it-fail", "1\n", 2);
+#endif
+}
+
+/*
+ *  stress_log2()
+ *	log to the base 2 of n
+ */
+size_t stress_log2(const size_t n)
+{
+#if defined(HAVE_BUILTIN_CLZLL)
+	const long long int lln = (long long int)n;
+
+	return (8 * sizeof(lln)) - __builtin_clzll(lln) - 1;
+#else
+	register size_t l2;
+	register size_t i = n;
+
+	for (l2 = 0; i > 1; l2++)
+		i >>= 1;
+
+	return l2;
 #endif
 }

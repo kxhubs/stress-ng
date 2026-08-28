@@ -127,10 +127,11 @@ static int stress_kcmp(stress_args_t *args)
 
 #if defined(HAVE_SYS_EPOLL_H) &&	\
     NEED_GLIBC(2,3,2)
-	int efd = -1, sfd = -1;
+	int efd = -1;
+	int sfd = -1;
 	int so_reuseaddr = 1;
 	struct epoll_event ev;
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	socklen_t addr_len = 0;
 	const pid_t mypid = getpid();
 #endif
@@ -139,7 +140,8 @@ static int stress_kcmp(stress_args_t *args)
 	const bool is_root = stress_capabilities_check(SHIM_CAP_IS_ROOT);
 #if defined(HAVE_SYS_EPOLL_H) &&	\
     NEED_GLIBC(2,3,2)
-	int port = 23000, reserved_port;
+	int port = 23000;
+	int reserved_port;
 #endif
 
 	static const char *capfail =
@@ -147,13 +149,14 @@ static int stress_kcmp(stress_args_t *args)
 		"aborting stress test\n";
 
 	if ((fd1 = open("/dev/null", O_WRONLY)) < 0) {
-		pr_fail("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_fail("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
 
 #if defined(HAVE_SYS_EPOLL_H) &&	\
     NEED_GLIBC(2,3,2)
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	reserved_port = stress_net_reserve_ports(args, port, port);
 
 	if (reserved_port >= 0) {
@@ -169,13 +172,13 @@ static int stress_kcmp(stress_args_t *args)
 			goto again;
 		}
 		if (stress_net_sockaddr_set(args->name, args->instance, mypid,
-					    AF_INET, reserved_port, &addr,
-					    &addr_len, NET_ADDR_ANY) < 0) {
+					    AF_INET, reserved_port,
+					    &addr, &addr_len, NET_ADDR_ANY) < 0) {
 			(void)close(sfd);
 			sfd = -1;
 			goto again;
 		}
-		if (bind(sfd, addr, addr_len) < 0) {
+		if (bind(sfd, (struct sockaddr *)&addr, addr_len) < 0) {
 			(void)close(sfd);
 			sfd = -1;
 			goto again;
@@ -207,11 +210,12 @@ static int stress_kcmp(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
+#if defined(HAVE_SYS_EPOLL_H) &&	\
+    NEED_GLIBC(2,3,2)
 again:
-	pid1 = fork();
+#endif
+	pid1 = stress_retry_fork(args, 0);
 	if (pid1 < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		(void)close(fd1);
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
@@ -245,12 +249,13 @@ again:
 		_exit(EXIT_SUCCESS);
 	} else {
 		/* Parent */
-		int fd2, pid2;
+		int fd2;
+		int pid2;
 		const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 
 		pid2 = getpid();
 		if ((fd2 = open("/dev/null", O_WRONLY)) < 0) {
-			pr_fail("%s: open /dev/null failed, errno=%d (%s)\n",
+			pr_fail("%s: open '/dev/null' failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			ret = EXIT_FAILURE;
 			goto reap;
@@ -354,11 +359,21 @@ finish:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("kcmp"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_kcmp_info = {
 	.stressor = stress_kcmp,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_kcmp_info = {

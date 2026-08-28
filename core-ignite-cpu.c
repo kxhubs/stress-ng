@@ -77,7 +77,7 @@ static stress_settings_t settings[] = {
  *	if we cannot apply them.
  */
 static void stress_ignite_cpu_set(
-	bool maximize_freq,
+	const bool maximize_freq,
 	const int32_t cpu,
 	const uint64_t max_freq,
 	const uint64_t min_freq,
@@ -107,7 +107,7 @@ static void stress_ignite_cpu_set(
 		(void)snprintf(path, sizeof(path),
 			"/sys/devices/system/cpu/cpu%" PRId32
 			"/cpufreq/scaling_min_freq", cpu);
-		freq = (maximize_freq) ? max_freq : min_freq;
+		freq = maximize_freq ? max_freq : min_freq;
 		while ((retry++ < max_retries) && (freq_delta > 0) && (freq >= min_freq)) {
 			(void)snprintf(buffer, sizeof(buffer), "%" PRIu64 "\n", freq);
 			if (stress_fs_file_write(path, buffer, shim_strnlen(buffer, sizeof(buffer))) >= 0)
@@ -138,7 +138,7 @@ static void stress_ignite_cpu_set(
 		(void)snprintf(path, sizeof(path),
 			"/sys/devices/system/cpu/cpu%" PRId32
 			"/cpufreq/scaling_governor", cpu);
-		if (stress_fs_file_write(path, governor, strlen(governor)) < 0)
+		if (stress_fs_file_write(path, governor, shim_strlen(governor)) < 0)
 			*setting_flag &= ~SETTING_GOVERNOR;
 	}
 }
@@ -150,7 +150,8 @@ static void stress_ignite_cpu_set(
  */
 void stress_ignite_cpu_start(void)
 {
-	size_t i, n = 0;
+	size_t i;
+	size_t n = 0;
 
 	if (enabled)
 		return;
@@ -290,7 +291,7 @@ void stress_ignite_cpu_start(void)
 			continue;
 
 		settings[i].default_setting_len =
-			strlen(settings[i].default_setting);
+			shim_strlen(settings[i].default_setting);
 		/* If we can't update the setting, skip it */
 		ret = stress_fs_file_write(settings[i].path,
 			settings[i].default_setting,

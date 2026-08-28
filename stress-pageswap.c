@@ -112,7 +112,10 @@ static int stress_pageswap_child(stress_args_t *args, void *context)
 	size_t max = 0;
 	const size_t pageswap_pages = *(size_t *)context;
 	page_info_t *head = NULL;
-	double count = 0.0, t, duration, rate;
+	double count = 0.0;
+	double t;
+	double duration;
+	double rate;
 	int rc = EXIT_SUCCESS;
 
 	t = stress_time_now();
@@ -194,13 +197,26 @@ static int stress_pageswap(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("io-wait"),
+	STRESS_EX_FEATURE("swap"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mincore"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pageswap_info = {
 	.stressor = stress_pageswap,
 	.supported = stress_pageswap_supported,
 	.classifier = CLASS_OS | CLASS_VM,
 	.verify = VERIFY_OPTIONAL,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

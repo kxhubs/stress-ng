@@ -166,11 +166,14 @@ static int stress_mutex(stress_args_t *args)
 {
 	size_t i;
 	bool created = false;
-	int prio_min, prio_max;
+	int prio_min;
+	int prio_max;
 	pthread_info_t pthread_info[MAX_MUTEX_PROCS];
 	uint64_t mutex_procs = DEFAULT_MUTEX_PROCS;
 	bool mutex_affinity = false;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 #if defined(HAVE_PTHREAD_MUTEXATTR)
 	int mutexattr_ret;
 	pthread_mutexattr_t mutexattr;
@@ -283,12 +286,24 @@ static int stress_mutex(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("ipc"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mutex_info = {
 	.stressor = stress_mutex,
 	.classifier = CLASS_OS | CLASS_SCHEDULER,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mutex_info = {

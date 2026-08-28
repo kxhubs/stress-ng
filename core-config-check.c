@@ -19,6 +19,7 @@
 #include "stress-ng.h"
 #include "core-arch.h"
 #include "core-asm-x86.h"
+#include "core-builtin.h"
 #include "core-config-check.h"
 #include "core-cpu.h"
 #include "core-put.h"
@@ -82,9 +83,9 @@ static int stress_config_check_cpu_filter(const struct dirent *d)
 {
         if (UNLIKELY(!d))
                 return 0;
-	if (UNLIKELY(strlen(d->d_name) < 4))
+	if (UNLIKELY(shim_strlen(d->d_name) < 4))
 		return 0;
-        if (strncmp(d->d_name, "cpu", 3))
+        if (shim_strncmp(d->d_name, "cpu", 3))
 		return 0;
 	if (isdigit((unsigned char)d->d_name[3]))
 		return 1;
@@ -116,7 +117,8 @@ static int stress_config_read(const char *path, uint64_t *value)
  */
 void stress_config_check(void)
 {
-	size_t shmall = 0, freemem = 0, totalmem = 0, freeswap = 0, totalswap = 0, freetotal;
+	stress_memory_info_t info;
+	size_t freetotal;
 
 #if defined(__linux__)
 	if (g_opt_flags & OPT_FLAGS_METRICS) {
@@ -126,7 +128,8 @@ void stress_config_check(void)
 		static const char turbo_path[] = "/sys/devices/system/cpu/intel_pstate/no_turbo";
 		uint64_t value;
 		struct dirent **namelist = NULL;
-		int n, i;
+		int i;
+		int n;
 		int powersave = 0;
 
 		if ((stress_config_read(autogroup_path, &value) != -1) && (value > 0)) {
@@ -166,7 +169,7 @@ void stress_config_check(void)
 			(void)snprintf(filename, sizeof(filename), "%s/%s/cpufreq/scaling_governor", cpu_path, namelist[i]->d_name);
 			if (UNLIKELY(stress_fs_file_read(filename, buffer, sizeof(buffer)) < 0))
 				continue;
-			if (strncmp(buffer, "powersave", 9) == 0)
+			if (shim_strncmp(buffer, "powersave", 9) == 0)
 				powersave++;
 		}
 		stress_fs_dirent_list_free(namelist, n);
@@ -180,13 +183,13 @@ void stress_config_check(void)
 	}
 #endif
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-	freetotal = freemem + freeswap;
+	stress_memory_info_get(&info);
+	freetotal = info.freemem + info.freeswap;
 	if (!(g_opt_flags & OPT_FLAGS_OOM_AVOID) &&
-	    (((freemem > 0) && (freemem < (size_t)(256 * MB))) ||
-	    ((freetotal > 0) && (freetotal < (size_t)(512 * MB))))) {
+	    (((info.freemem > 0) && (info.freemem < (size_t)(256 * STRESS_MB))) ||
+	    ((freetotal > 0) && (freetotal < (size_t)(512 * STRESS_MB))))) {
 		pr_inf("note: system has only %zu MB of free memory and swap, "
-			"recommend using --oom-avoid\n", freetotal / (size_t)MB);
+			"recommend using --oom-avoid\n", freetotal / (size_t)STRESS_MB);
 	}
 
 	/* Now CPU specific functional checks */

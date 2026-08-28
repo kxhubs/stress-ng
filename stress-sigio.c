@@ -93,9 +93,16 @@ static void MLOCKED_TEXT stress_sigio_handler(int signum)
  */
 static int stress_sigio(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS, fds[2], flags = -1, parent_cpu;
-	double t_start, t_delta, rate;
-	char *buffers, *wr_buffer;
+	char *buffers;
+	char *wr_buffer;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	int fds[2];
+	int flags = -1;
+	int parent_cpu;
+	double t_start;
+	double t_delta;
+	double rate;
 
 	sigio_args = args;
 	rd_fd = -1;
@@ -108,7 +115,7 @@ static int stress_sigio(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buffers == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d byte I/O buffers%s, "
+		pr_inf_skip("%s: mmap %d byte I/O buffers failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, 2 * BUFFER_SIZE,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -149,12 +156,9 @@ static int stress_sigio(stress_args_t *args)
 	}
 
 	async_sigs = 0;
-again:
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -252,11 +256,25 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("lock-contention"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("read"),
+#if defined(__linux__)
+        STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigio_info = {
 	.stressor = stress_sigio,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigio_info = {

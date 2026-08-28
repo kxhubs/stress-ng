@@ -505,7 +505,8 @@ static void MLOCKED_TEXT NORETURN stress_sigill_handler(int signum)
  */
 static int stress_priv_instr(stress_args_t *args)
 {
-	size_t i, len;
+	size_t i;
+	size_t len;
 	int ret;
 	double rate;
 
@@ -565,7 +566,7 @@ finish:
 	/* Get an overestimated buffer length */
 	for (len = 0, i = 0; i < SIZEOF_ARRAY(op_info); i++) {
 		if (!op_info[i].trapped)
-			len += strlen(op_info[i].instr) + 3;
+			len += shim_strlen(op_info[i].instr) + 3;
 	}
 
 	if (len > 0) {
@@ -608,11 +609,19 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_priv_instr_info = {
 	.stressor = stress_priv_instr,
 	.classifier = CLASS_CPU,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

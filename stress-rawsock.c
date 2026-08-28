@@ -22,6 +22,7 @@
 #include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-hash.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-lock.h"
 #include "core-out-of-memory.h"
@@ -172,12 +173,11 @@ static int OPTIMIZE3 stress_rawsock_client(stress_args_t *args, const int rawsoc
 #if defined(SIOCOUTQ)
 		/* Occasionally exercise SIOCOUTQ */
 		if (UNLIKELY((pkt.data & 0xff) == 0)) {
-			int queued;
-
 			if (UNLIKELY(!stress_continue(args)))
 				break;
 
-			VOID_RET(int, ioctl(fd, SIOCOUTQ, &queued));
+			if (stress_ioctl_get_check(fd, SIOCOUTQ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCOUTQ failed, not getting value reliably\n", args->name);
 		}
 #endif
 	}
@@ -188,9 +188,14 @@ static int OPTIMIZE3 stress_rawsock_client(stress_args_t *args, const int rawsoc
 static int OPTIMIZE3 stress_rawsock_server(stress_args_t *args, const pid_t pid)
 {
 	/* Parent, server */
-	int rc = EXIT_SUCCESS, fd = -1, status;
+	int rc = EXIT_SUCCESS;
+	int fd = -1;
+	int status;
 	struct sockaddr_in addr;
-	double t_start, duration = 0.0, bytes = 0.0, rate;
+	double t_start;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 
 	if (UNLIKELY(stop_rawsock || !stress_continue(args)))
 		goto die;
@@ -246,12 +251,11 @@ static int OPTIMIZE3 stress_rawsock_server(stress_args_t *args, const pid_t pid)
 #if defined(SIOCINQ)
 		/* Occasionally exercise SIOCINQ */
 		if (UNLIKELY((pkt.data & 0xfff) == 0)) {
-			int queued;
-
 			if (UNLIKELY(!stress_continue(args)))
 				break;
 
-			VOID_RET(int, ioctl(fd, SIOCINQ, &queued));
+			if (stress_ioctl_get_check(fd, SIOCINQ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCINQ failed, not getting value reliably\n", args->name);
 		}
 #endif
 		stress_bogo_inc(args);
@@ -259,7 +263,7 @@ static int OPTIMIZE3 stress_rawsock_server(stress_args_t *args, const pid_t pid)
 	duration = stress_time_now() - t_start;
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB recv'd per sec",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 die:
 	(void)shim_waitpid(pid, &status, 0);
 
@@ -279,14 +283,10 @@ static int stress_rawsock_child(stress_args_t *args, void *context)
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno)) {
-			(void)shim_usleep(100000);
-			goto again;
-		}
 		if (UNLIKELY(stop_rawsock || !stress_continue(args)))
 			return EXIT_SUCCESS;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -310,7 +310,8 @@ again:
  */
 static int stress_rawsock(stress_args_t *args)
 {
-	int rc, reserved_port;
+	int rc;
+	int reserved_port;
 	int rawsock_port = DEFAULT_RAWSOCK_PORT;
 
 	if (!rawsock_lock) {
@@ -344,6 +345,14 @@ static int stress_rawsock(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_SYSCALL("recvfrom"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rawsock_info = {
 	.stressor = stress_rawsock,
 	.classifier = CLASS_NETWORK | CLASS_OS,
@@ -353,6 +362,7 @@ const stressor_info_t stress_rawsock_info = {
 	.help = help,
 	.init = stress_rawsock_init,
 	.deinit = stress_rawsock_deinit,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rawsock_info = {

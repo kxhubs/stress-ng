@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-madvise.h"
 #include "core-mmap.h"
 #include "core-out-of-memory.h"
@@ -45,7 +46,7 @@ static uint64_t stress_mlock_pages(const size_t page_size)
 	if (!fp)
 		return 0;
 	while ((fgets(buf, sizeof(buf), fp) != NULL)) {
-		if (strncmp(buf, "VmLck:", 6) == 0) {
+		if (shim_strncmp(buf, "VmLck:", 6) == 0) {
 			if (sscanf(buf + 6, "%" SCNu64, &mlocked) == 1)
 				break;
 			mlocked = 0;
@@ -188,7 +189,8 @@ static size_t stress_mlock_max_lockable(void)
 		sysconf_max = (lockmax > 0) ? (size_t)lockmax : MLOCK_MAX;
 	}
 #endif
-#if defined(RLIMIT_MEMLOCK)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_MEMLOCK)
 	{
 		struct rlimit rlim;
 
@@ -297,14 +299,17 @@ static void stress_mlock_misc(stress_args_t *args, const size_t page_size, const
 
 static int stress_mlock_child(stress_args_t *args, void *context)
 {
-	size_t i, n;
+	stress_memory_info_t info;
+	size_t i;
+	size_t n;
 	uint8_t **mappings;
 	const size_t page_size = args->page_size;
 	size_t max = stress_mlock_max_lockable(), mappings_max;
 	size_t mappings_len = max * sizeof(*mappings);
-	size_t shmall, freemem, totalmem, freeswap, totalswap;
-	double mlock_duration = 0.0, mlock_count = 0.0;
-	double munlock_duration = 0.0, munlock_count = 0.0;
+	double mlock_duration = 0.0;
+	double mlock_count = 0.0;
+	double munlock_duration = 0.0;
+	double munlock_count = 0.0;
 	double rate;
 	int rc = EXIT_SUCCESS;
 #if defined(__linux__)
@@ -313,7 +318,7 @@ static int stress_mlock_child(stress_args_t *args, void *context)
 	const size_t mappings_per_page = page_size / sizeof(*mappings);
 	const bool oom_avoid = !!(g_opt_flags & OPT_FLAGS_OOM_AVOID);
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+	stress_memory_info_get(&info);
 
 	(void)context;
 
@@ -330,8 +335,8 @@ static int stress_mlock_child(stress_args_t *args, void *context)
 	 *  pages mappable, so allocate page mappings pointers that
 	 *  won't exceed this upper limit.
 	 */
-	if (mappings_len > totalmem / mappings_per_page)
-		mappings_len = totalmem / mappings_per_page;
+	if (mappings_len > info.totalmem / mappings_per_page)
+		mappings_len = info.totalmem / mappings_per_page;
 	mappings_len &= ~(page_size - 1);
 	if (mappings_len < page_size)
 		mappings_len = page_size;
@@ -353,7 +358,7 @@ static int stress_mlock_child(stress_args_t *args, void *context)
 		(void)shim_sched_yield();
 	}
 	if (mappings == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap mappings table%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap mappings table failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, stress_memory_free_get(),
 			errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -526,11 +531,30 @@ static int stress_mlock(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_mlock_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("mlock"),
+#if defined(HAVE_MLOCK)
+	STRESS_EX_SYSCALL("mlock2"),
+#endif
+#if defined(HAVE_MLOCKALL)
+	STRESS_EX_SYSCALL("mlockall"),
+#endif
+	STRESS_EX_SYSCALL("munlock"),
+#if defined(HAVE_MUNLOCKALL)
+	STRESS_EX_SYSCALL("munlockall"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mlock_info = {
 	.stressor = stress_mlock,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mlock_info = {

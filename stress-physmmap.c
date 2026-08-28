@@ -65,20 +65,22 @@ static stress_physmmap_t *stress_physmmap_get_ranges(stress_args_t *args)
 {
 	FILE *fp;
 	char buf[4096];
-	stress_physmmap_t *head = NULL, *tail = NULL;
+	stress_physmmap_t *head = NULL;
+	stress_physmmap_t *tail = NULL;
 	const size_t max_size = (~(size_t)0) - args->page_size;
 
 	fp = fopen("/proc/iomem", "r");
 	if (!fp) {
-		pr_inf_skip("%s: cannot open /proc/iomem, errno=%d (%s)\n",
+		pr_inf_skip("%s: open '/proc/iomem' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return NULL;
 	}
 
 	(void)shim_memset(buf, 0, sizeof(buf));
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
-		if (strstr(buf, "System RAM")) {
-			uintptr_t addr_begin, addr_end;
+		if (shim_strstr(buf, "System RAM")) {
+			uintptr_t addr_begin;
+			uintptr_t addr_end;
 			stress_physmmap_t *new_physmmap;
 			size_t region_size;
 
@@ -153,8 +155,8 @@ static int stress_physmmap_flags(void)
 
 static inline void stress_physmmap_read(void *data, const size_t size)
 {
-	register volatile uint64_t *ptr = (uint64_t *)data;
-	register uint64_t *ptr_end = (uint64_t *)((uintptr_t)data + size);
+	register const volatile uint64_t *ptr = (const volatile uint64_t *)data;
+	register const uint64_t *ptr_end = (const uint64_t *)((uintptr_t)data + size);
 
 PRAGMA_UNROLL_N(2)
 	while (ptr < ptr_end) {
@@ -178,9 +180,12 @@ static int stress_physmmap(stress_args_t *args)
 {
 	int fd_mem;
 	const size_t page_size = args->page_size;
-	stress_physmmap_t *physmmap_head, *physmmap;
-	uint64_t mmaps_succeed = 0, mmaps_failed = 0;
-	double t1, t2;
+	stress_physmmap_t *physmmap_head;
+	stress_physmmap_t *physmmap;
+	uint64_t mmaps_succeed = 0;
+	uint64_t mmaps_failed = 0;
+	double t1;
+	double t2;
 	size_t total_pages = 0;
 	size_t max_pages_mapped = 0;
 	bool mappable = false;
@@ -190,7 +195,7 @@ static int stress_physmmap(stress_args_t *args)
 
 	fd_mem = open("/dev/mem", O_RDONLY | O_SYNC);
 	if (fd_mem < 0) {
-		pr_inf_skip("%s: could not open /dev/mem, errno=%d (%s)\n",
+		pr_inf_skip("%s: open '/dev/mem' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -285,7 +290,7 @@ static int stress_physmmap(stress_args_t *args)
 	} while (mappable && stress_continue(args));
 done:
 	if (!mappable)
-		pr_inf("%s: unable to mmap any pages from /dev/mem\n", args->name);
+		pr_inf("%s: unable to mmap any pages from '/dev/mem'\n", args->name);
 	if (stress_instance_zero(args) && (t2 > 0.0)) {
 		register size_t mappable_pages = 0;
 
@@ -315,13 +320,25 @@ done:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_physmmap_info = {
 	.stressor = stress_physmmap,
 	.supported = stress_physmmap_supported,
 	.classifier = CLASS_VM,
 	.verify = VERIFY_NONE,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_physmmap_info = {

@@ -47,14 +47,14 @@ static const stress_opt_t opts[] = {
     defined(HAVE_UTIMBUF)
 static char *stress_utime_str(char *str, const size_t len, const time_t val)
 {
-	struct tm *tm = localtime(&val);
+	struct tm tm;
 
-	if (!tm) {
+	if (shim_localtime_r(&val, &tm)) {
+		(void)strftime(str, len, "%d/%m/%Y %H:%M:%S", &tm);
+	} else {
 		/* Just return time in secs since EPOCH */
 		(void)snprintf(str, len, "%" PRIdMAX, (intmax_t)val);
-		return str;
 	}
-	(void)strftime(str, len, "%d/%m/%Y %H:%M:%S", tm);
 	return str;
 }
 
@@ -69,20 +69,23 @@ static int OPTIMIZE3 stress_utime(stress_args_t *args)
     defined(UTIME_NOW)
 	char path[PATH_MAX];
 #endif
-	int bad_fd = stress_fs_bad_fd_get();
-	int dir_fd = -1;
-	int rc = EXIT_SUCCESS;
 	char filename[PATH_MAX];
 	char hugename[PATH_MAX + 16];
-	int ret, fd;
+	int bad_fd = stress_fs_bad_fd_get();
+	int dir_fd = -1;
+	int metrics_count = 0;
+	int rc = EXIT_SUCCESS;
+	int ret;
+	int fd;
 	bool utime_fsync = false;
 #if defined(HAVE_UTIME_H) &&	\
     defined(HAVE_UTIME) &&	\
     defined(HAVE_UTIMBUF)
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #endif
-	double duration = 0.0, count = 0.0, rate;
-	int metrics_count = 0;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	(void)stress_setting_get("utime-fsync", &utime_fsync);
 
@@ -103,8 +106,8 @@ static int OPTIMIZE3 stress_utime(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR)) < 0) {
 		ret = stress_exit_status(errno);
-		pr_err("%s: open failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		if (dir_fd >= 0) /* cppcheck-suppress knownConditionTrueFalse */
 			(void)close(dir_fd);
@@ -195,29 +198,29 @@ static int OPTIMIZE3 stress_utime(stress_args_t *args)
 
 #if defined(HAVE_UTIMES) &&	\
     defined(LONG_MAX) &&	\
-    (LONG_MAX > 4354819200)
+    (LONG_MAX > 4354819200UL)
 		/* Exercise with time outside FAT time range */
-		timevals[0].tv_sec = (time_t)4354819200; /* Monday, 1 January 2108 00:00:00 */
+		timevals[0].tv_sec = (time_t)4354819200UL; /* Monday, 1 January 2108 00:00:00 */
 		timevals[0].tv_usec = 0;
-		timevals[1].tv_sec = (time_t)4354819200;
+		timevals[1].tv_sec = (time_t)4354819200UL;
 		timevals[1].tv_usec = 0;
 		VOID_RET(int, utimes(filename, timevals));
 #endif
 
 #if defined(HAVE_UTIMES)
 		/* Exercise with time outside of UNIX EPOCH  */
-		timevals[0].tv_sec = (time_t)2147558400; /* Wednesday 20 January 2038 */
+		timevals[0].tv_sec = (time_t)2147558400UL; /* Wednesday 20 January 2038 */
 		timevals[0].tv_usec = 0;
-		timevals[1].tv_sec = (time_t)2147558400;
+		timevals[1].tv_sec = (time_t)2147558400UL;
 		timevals[1].tv_usec = 0;
 		VOID_RET(int, utimes(filename, timevals));
 #endif
 
 #if defined(HAVE_UTIMES)
 		/* Exercise with time before of UNIX EPOCH  */
-		timevals[0].tv_sec = (time_t)0x7fffffff;
+		timevals[0].tv_sec = (time_t)0x7fffffffUL;
 		timevals[0].tv_usec = 0;
-		timevals[1].tv_sec = (time_t)0x7fffffff;
+		timevals[1].tv_sec = (time_t)0x7fffffffUL;
 		timevals[1].tv_usec = 0;
 		VOID_RET(int, utimes(filename, timevals));
 #endif
@@ -286,26 +289,26 @@ static int OPTIMIZE3 stress_utime(stress_args_t *args)
 		ts[1].tv_nsec = 0;
 		VOID_RET(int, futimens(fd, ts));
 
-#if defined(LONG_MAX) && (LONG_MAX > 4354819200)
+#if defined(LONG_MAX) && (LONG_MAX > 4354819200UL)
 		/* Exercise with time outside FAT time range */
-		ts[0].tv_sec = (time_t)4354819200; /* Monday, 1 January 2108 00:00:00 */
+		ts[0].tv_sec = (time_t)4354819200UL; /* Monday, 1 January 2108 00:00:00 */
 		ts[0].tv_nsec = 0;
-		ts[1].tv_sec = (time_t)4354819200;
+		ts[1].tv_sec = (time_t)4354819200UL;
 		ts[1].tv_nsec = 0;
 		VOID_RET(int, futimens(fd, ts));
 #endif
 
 		/* Exercise with time outside of UNIX EPOCH  */
-		ts[0].tv_sec = (time_t)2147558400; /* Wednesday 20 January 2038 */
+		ts[0].tv_sec = (time_t)2147558400UL; /* Wednesday 20 January 2038 */
 		ts[0].tv_nsec = 0;
-		ts[1].tv_sec = (time_t)2147558400;
+		ts[1].tv_sec = (time_t)2147558400UL;
 		ts[1].tv_nsec = 0;
 		VOID_RET(int, futimens(fd, ts));
 
 		/* Exercise with time before of UNIX EPOCH  */
-		ts[0].tv_sec = (time_t)0x7fffffff;
+		ts[0].tv_sec = (time_t)0x7fffffffUL;
 		ts[0].tv_nsec = 0;
-		ts[1].tv_sec = (time_t)0x7fffffff;
+		ts[1].tv_sec = (time_t)0x7fffffffUL;
 		ts[1].tv_nsec = 0;
 		VOID_RET(int, futimens(fd, ts));
 #else
@@ -547,12 +550,34 @@ STRESS_PRAGMA_POP
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fsync"),
+#if defined(HAVE_FUTIMENS)
+	STRESS_EX_SYSCALL("futimens"),
+#endif
+	STRESS_EX_SYSCALL("gettimeofday"),
+#if defined(HAVE_UTIME)
+	STRESS_EX_SYSCALL("utime"),
+#endif
+#if defined(HAVE_UTIMES)
+	STRESS_EX_SYSCALL("utimes"),
+#endif
+#if defined(HAVE_UTIMENSAT)
+	STRESS_EX_SYSCALL("utimensat"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_utime_info = {
 	.stressor = stress_utime,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };
 
 #else

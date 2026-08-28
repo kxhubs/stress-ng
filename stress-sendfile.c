@@ -25,9 +25,9 @@
 UNEXPECTED
 #endif
 
-#define MIN_SENDFILE_SIZE	(1 * KB)
-#define MAX_SENDFILE_SIZE	(1 * GB)
-#define DEFAULT_SENDFILE_SIZE	(4 * MB)
+#define MIN_SENDFILE_SIZE	(1 * STRESS_KB)
+#define MAX_SENDFILE_SIZE	(1 * STRESS_GB)
+#define DEFAULT_SENDFILE_SIZE	(4 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"sendfile N",	   "start N workers exercising sendfile" },
@@ -52,10 +52,17 @@ static const stress_opt_t opts[] = {
 static int stress_sendfile(stress_args_t *args)
 {
 	char filename[PATH_MAX];
-	int i = 0, fdin, fdout, ret, bad_fd, rc = EXIT_SUCCESS;
+	int i = 0;
+	int fdin;
+	int fdout;
+	int ret;
+	int bad_fd;
+	int rc = EXIT_SUCCESS;
 	size_t sz;
 	int64_t sendfile_size = DEFAULT_SENDFILE_SIZE;
-	double duration = 0.0, bytes = 0.0, rate;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 	int metrics_count = 0;
 
 	if (!stress_setting_get("sendfile-size", &sendfile_size)) {
@@ -75,7 +82,7 @@ static int stress_sendfile(stress_args_t *args)
 
 	if ((fdin = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: open %s failed, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto dir_out;
 	}
@@ -100,7 +107,7 @@ static int stress_sendfile(stress_args_t *args)
 	(void)close(fdin);
 	if ((fdin = open(filename, O_RDONLY)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_err("%s: open %s failed, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		goto dir_out;
@@ -108,7 +115,7 @@ static int stress_sendfile(stress_args_t *args)
 	(void)shim_unlink(filename);
 
 	if ((fdout = open("/dev/null", O_WRONLY)) < 0) {
-		pr_err("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_err("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		rc = EXIT_FAILURE;
 		goto close_in;
@@ -196,7 +203,7 @@ sendfile_ok:
 
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec sent to /dev/null",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 close_out:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -211,12 +218,21 @@ dir_out:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("sendfile"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sendfile_info = {
 	.stressor = stress_sendfile,
 	.classifier = CLASS_PIPE_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sendfile_info = {

@@ -103,12 +103,10 @@ static int stress_futex(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_err("%s: fork failed, errno=%d: (%s)\n",
@@ -193,11 +191,28 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-ll-read"),
+	STRESS_EX_FEATURE("memory-bound"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("futex"),
+	STRESS_EX_SYSCALL("futex_wait"),
+#if defined(FUTEX_32) &&		\
+    defined(CLOCK_MONOTONIC)
+	STRESS_EX_SYSCALL("futex_waitv"),
+#endif
+	STRESS_EX_SYSCALL("futex_wake"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_futex_info = {
 	.stressor = stress_futex,
 	.classifier = CLASS_SCHEDULER | CLASS_OS | CLASS_IPC,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_futex_info = {

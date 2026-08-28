@@ -47,7 +47,7 @@ void OPTIMIZE3 stress_mmap_set(
 	register uint64_t *ptr = (uint64_t *)shim_assume_aligned(buf, 8);
 	register const uint64_t *end = (uint64_t *)shim_assume_aligned((buf + sz), 8);
 #if defined(USE_ASM_X86_REP_STOSQ)
-        register const uint32_t loops = (uint32_t)(page_size / sizeof(uint64_t));
+        register const uint32_t loops = (uint32_t)(page_size >> 3);
 #endif
 
 	while (ptr < end) {
@@ -74,7 +74,7 @@ void OPTIMIZE3 stress_mmap_set(
                 : "ecx","rdi","rax");
 		ptr += loops;
 #else
-		page_end = (const uint64_t *)STRESS_MINIMUM(end, page_end);
+		page_end = STRESS_MINIMUM(end, page_end);
 
 		while (ptr < page_end) {
 			ptr[0x00] = val;
@@ -190,7 +190,7 @@ int OPTIMIZE3 stress_mmap_check_light(
 	const size_t sz,
 	const size_t page_size)
 {
-	register uint64_t *ptr = (uint64_t *)shim_assume_aligned(buf, 8);
+	register const uint64_t *ptr = (uint64_t *)shim_assume_aligned(buf, 8);
 	register uint64_t val = *ptr;
 	register const uint64_t *end = (uint64_t *)shim_assume_aligned((buf + sz), 8);
 	register const size_t ptr_inc = page_size / sizeof(*ptr);
@@ -247,7 +247,7 @@ void *stress_mmap_populate(
  *	simplified anonymous shared mmap, use SYSV shm for
  *	systems that don't support this feature
  */
-void *stress_mmap_anon_shared(size_t length, int prot)
+void *stress_mmap_anon_shared(const size_t length, const int prot)
 {
 #if defined(HAVE_SYS_SHM_H) &&	\
     defined(__fiwix__)
@@ -297,7 +297,8 @@ static size_t stress_mapping_hugetlb_size(void *addr)
 	char buf[4096];
 	size_t hugetlb_size = 0;
 	bool addr_match = false;
-	uintptr_t addr_begin = 0, addr_end = 0;
+	uintptr_t addr_begin = 0;
+	uintptr_t addr_end = 0;
 
 	(void)snprintf(path, sizeof(path), "/proc/%" PRIdMAX "/smaps", (intmax_t)pid);
 	fp = fopen(path, "r");
@@ -308,8 +309,8 @@ static size_t stress_mapping_hugetlb_size(void *addr)
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		if (addr_match) {
 			/* VmFlags has ht if is HUGETLB mapped region */
-			if (!strncmp(buf, "VmFlags:", 7) &&
-			    strstr(buf + 8, " ht")) {
+			if (!shim_strncmp(buf, "VmFlags:", 7) &&
+			    shim_strstr(buf + 8, " ht")) {
 				hugetlb_size = (size_t)(addr_end - addr_begin);
 				break;
 			}
@@ -341,9 +342,10 @@ static size_t stress_mapping_hugetlb_size(void *addr)
  *	this is not a munmap shim, it's a forceful munmap to cope
  *	with unexpected low memory or hugetlb umapping errors
  */
-int stress_munmap_force(void *addr, size_t length)
+int stress_munmap_force(void *addr, const size_t length)
 {
-	int ret, i;
+	int ret;
+	int i;
 #if defined(MAP_HUGETLB) && defined(MAP_HUGE_2MB)
 	const uintptr_t size2MB = (1ULL << 21);
 #endif
@@ -407,7 +409,7 @@ int stress_munmap_force(void *addr, size_t length)
  *	unmap for stress_mmap_anon_shared, use SYSV shm for
  *	systems that don't support this feature
  */
-int stress_munmap_anon_shared(void *addr, size_t length)
+int stress_munmap_anon_shared(void *addr, const size_t length)
 {
 #if defined(HAVE_SYS_SHM_H) &&	\
     defined(__fiwix__)
@@ -431,7 +433,10 @@ int stress_munmap_anon_shared(void *addr, size_t length)
  *	perform pread if available, otherwise seek + read,
  *	only required for stress_mmap_stats()
  */
-static inline ssize_t stress_mmap_pread(int fd, void *buf, size_t count, off_t offset)
+static inline ssize_t stress_mmap_pread(
+	const int fd,
+	void *buf, size_t count,
+	const off_t offset)
 {
 #if defined(HAVE_PREADV) && 0
 	return pread(fd, buf, count, offset);
@@ -454,7 +459,8 @@ int stress_mmap_stats(void *addr, const size_t length, stress_mmap_stats_t *stat
 #if defined(__linux__)
 	int fd;
 	const size_t page_size = stress_memory_page_size_get();
-	uintptr_t virt_addr, prev_phys_addr = PHYS_ADDR_UNKNOWN;
+	uintptr_t virt_addr;
+	uintptr_t prev_phys_addr = PHYS_ADDR_UNKNOWN;
 	const uintptr_t virt_begin = (uintptr_t)addr;
 	const uintptr_t virt_end = virt_begin + length;
 	off_t offset = (off_t)(sizeof(uint64_t) * (virt_begin / page_size));
@@ -538,7 +544,7 @@ void stress_mmap_stats_sum(
 void stress_mmap_stats_report(
 	stress_args_t *args,
 	const stress_mmap_stats_t *stats,
-	int flags)
+	const int flags)
 {
 	if (stats->pages_mapped > 0) {
 		double pc;
@@ -664,7 +670,8 @@ void OPTIMIZE3 stress_mmap_populate_reverse(
  */
 void OPTIMIZE3 stress_mmap_discontiguous(void *addr, const size_t len)
 {
-#if defined(MADV_DONTNEED)
+#if defined(HAVE_MADVISE) &&	\
+    defined(MADV_DONTNEED)
 	size_t i;
 	static const size_t page_sizes[] = {
 		1 * 1024 * 1024 * 1024,

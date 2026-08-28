@@ -166,16 +166,19 @@ static const int sigs[] = {
  */
 static void limit_procs(const int procs)
 {
-#if defined(RLIMIT_CPU) || defined(RLIMIT_NPROC)
+#if defined(HAVE_SETRLIMIT) &&				\
+    (defined(RLIMIT_CPU) || defined(RLIMIT_NPROC))
 	struct rlimit lim;
 #endif
 
-#if defined(RLIMIT_CPU)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_CPU)
 	lim.rlim_cur = 1;
 	lim.rlim_max = 1;
 	(void)setrlimit(RLIMIT_CPU, &lim);
 #endif
-#if defined(RLIMIT_NPROC)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_NPROC)
 	lim.rlim_cur = (rlim_t)procs;
 	lim.rlim_max = (rlim_t)procs;
 	(void)setrlimit(RLIMIT_NPROC, &lim);
@@ -430,7 +433,6 @@ static void bad_clock_settime(stress_bad_addr_t *ba, volatile uint64_t *counter)
 
 #if defined(HAVE_CLONE) && 	\
     defined(__linux__)
-
 static int clone_func(void *ptr)
 {
 	(void)ptr;
@@ -442,7 +444,8 @@ static int clone_func(void *ptr)
 static void bad_clone1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	typedef int (*fn)(void *);
-	int pid, status;
+	int pid;
+	int status;
 
 	(*counter)++;
 	pid = clone((fn)ba->addr, (void *)ba->addr, STRESS_CLONE_FLAGS, (void *)ba->addr,
@@ -455,7 +458,8 @@ static void bad_clone1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 
 static void bad_clone2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
-	int pid, status;
+	int pid;
+	int status;
 
 	(*counter)++;
 	pid = clone(clone_func, (void *)ba->addr, STRESS_CLONE_FLAGS, NULL, NULL, NULL);
@@ -467,7 +471,8 @@ static void bad_clone3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
 		char stack[8192];
-		int pid, status;
+		int pid;
+		int status;
 
 		(*counter)++;
 		pid = clone(clone_func, (void *)stack, STRESS_CLONE_FLAGS, ba->addr, NULL, NULL);
@@ -480,7 +485,8 @@ static void bad_clone4(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
 		char stack[8192];
-		int pid, status;
+		int pid;
+		int status;
 
 		(*counter)++;
 		pid = clone(clone_func, (void *)stack, STRESS_CLONE_FLAGS, NULL, ba->addr, NULL);
@@ -493,7 +499,8 @@ static void bad_clone5(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
 		char stack[8192];
-		int pid, status;
+		int pid;
+		int status;
 
 		(*counter)++;
 		pid = clone(clone_func, (void *)stack, STRESS_CLONE_FLAGS, NULL, NULL, ba->addr);
@@ -514,7 +521,8 @@ static void bad_connect(stress_bad_addr_t *ba, volatile uint64_t *counter)
 #if defined(HAVE_COPY_FILE_RANGE)
 static void bad_copy_file_range(shim_off64_t *off_in, shim_off64_t *off_out, volatile uint64_t *counter)
 {
-	int fdin, fdout;
+	int fdin;
+	int fdout;
 
 	fdin = open("/dev/zero", O_RDONLY);
 	if (fdin < 0)
@@ -814,7 +822,8 @@ static void bad_getresgid1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresgid2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		gid_t egid, sgid;
+		gid_t egid;
+		gid_t sgid;
 
 		(*counter)++;
 		VOID_RET(int, getresgid((gid_t *)ba->addr, &egid, &sgid));
@@ -824,7 +833,8 @@ static void bad_getresgid2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresgid3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		gid_t rgid, sgid;
+		gid_t rgid;
+		gid_t sgid;
 
 		(*counter)++;
 		VOID_RET(int, getresgid(&rgid, (gid_t *)ba->addr, &sgid));
@@ -834,7 +844,8 @@ static void bad_getresgid3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresgid4(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		gid_t rgid, egid;
+		gid_t rgid;
+		gid_t egid;
 
 		(*counter)++;
 		VOID_RET(int, getresgid(&rgid, &egid, (gid_t *)ba->addr));
@@ -855,7 +866,8 @@ static void bad_getresuid1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresuid2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		uid_t euid, suid;
+		uid_t euid;
+		uid_t suid;
 
 		(*counter)++;
 		VOID_RET(int, getresuid((uid_t *)ba->addr, &euid, &suid));
@@ -865,7 +877,8 @@ static void bad_getresuid2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresuid3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		uid_t ruid, suid;
+		uid_t ruid;
+		uid_t suid;
 
 		(*counter)++;
 		VOID_RET(int, getresuid(&ruid, (uid_t *)ba->addr, &suid));
@@ -875,7 +888,8 @@ static void bad_getresuid3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_getresuid4(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
-		uid_t ruid, euid;
+		uid_t ruid;
+		uid_t euid;
 
 		(*counter)++;
 		VOID_RET(int, getresuid(&ruid, &euid, (uid_t *)ba->addr));
@@ -883,6 +897,7 @@ static void bad_getresuid4(stress_bad_addr_t *ba, volatile uint64_t *counter)
 }
 #endif
 
+#if defined(HAVE_GETRLIMIT)
 static void bad_getrlimit(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unwriteable) {
@@ -890,6 +905,7 @@ static void bad_getrlimit(stress_bad_addr_t *ba, volatile uint64_t *counter)
 		VOID_RET(int, getrlimit(RLIMIT_CPU, (struct rlimit *)ba->addr));
 	}
 }
+#endif
 
 #if defined(HAVE_GETRUSAGE) &&	\
     defined(RUSAGE_SELF)
@@ -1326,7 +1342,8 @@ static void bad_move_pages1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 static void bad_move_pages2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unreadable) {
-		int nodes = 0, status;
+		int nodes = 0;
+		int status;
 
 		(*counter)++;
 		VOID_RET(long int, shim_move_pages(getpid(), (unsigned long int)1, (void **)ba->addr, &nodes, &status, 0));
@@ -1366,7 +1383,7 @@ static void bad_mseal(stress_bad_addr_t *ba, volatile uint64_t *counter)
 }
 #endif
 
-#if defined(HAVE_MLOCK)
+#if defined(HAVE_MUNLOCK)
 static void bad_munlock(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	(*counter)++;
@@ -1467,6 +1484,7 @@ static void bad_pread(stress_bad_addr_t *ba, volatile uint64_t *counter)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
 static void bad_preadv(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -1484,6 +1502,7 @@ static void bad_preadv(stress_bad_addr_t *ba, volatile uint64_t *counter)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
 static void bad_preadv2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -1596,6 +1615,7 @@ static void bad_pwrite(stress_bad_addr_t *ba, volatile uint64_t *counter)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
 static void bad_pwritev(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -1613,6 +1633,7 @@ static void bad_pwritev(stress_bad_addr_t *ba, volatile uint64_t *counter)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
 static void bad_pwritev2(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -1668,6 +1689,7 @@ static void bad_readlink3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 }
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_READV)
 static void bad_readv(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -1871,6 +1893,7 @@ static void bad_setitimer3(stress_bad_addr_t *ba, volatile uint64_t *counter)
 }
 #endif
 
+#if defined(HAVE_SETRLIMIT)
 static void bad_setrlimit(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
 	if (ba->unreadable) {
@@ -1878,6 +1901,7 @@ static void bad_setrlimit(stress_bad_addr_t *ba, volatile uint64_t *counter)
 		VOID_RET(int, setrlimit(RLIMIT_CPU, (struct rlimit *)ba->addr));
 	}
 }
+#endif
 
 static void bad_stat1(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -2077,6 +2101,7 @@ static void bad_write(stress_bad_addr_t *ba, volatile uint64_t *counter)
 }
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_WRITEV)
 static void bad_writev(stress_bad_addr_t *ba, volatile uint64_t *counter)
 {
@@ -2183,7 +2208,9 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_getpeername2,
 	bad_getpeername3,
 	bad_getrandom,
+#if defined(HAVE_GETRLIMIT)
 	bad_getrlimit,
+#endif
 #if defined(HAVE_GETRESGID)
 	bad_getresgid1,
 	bad_getresgid2,
@@ -2196,7 +2223,6 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_getresuid3,
 	bad_getresuid4,
 #endif
-	bad_getrlimit,
 #if defined(HAVE_GETRUSAGE) &&	\
     defined(RUSAGE_SELF)
 	bad_getrusage,
@@ -2313,10 +2339,12 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_pread,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
 	bad_preadv,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
 	bad_preadv2,
 #endif
@@ -2328,10 +2356,12 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_pwrite,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
 	bad_pwritev,
 #endif
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
 	bad_pwritev2,
 #endif
@@ -2340,6 +2370,7 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_readlink2,
 	bad_readlink3,
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_READV)
 	bad_readv,
 #endif
@@ -2366,7 +2397,9 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 	bad_setitimer2,
 	bad_setitimer3,
 #endif
+#if defined(HAVE_SETRLIMIT)
 	bad_setrlimit,
+#endif
 	bad_stat1,
 	bad_stat2,
 	bad_stat3,
@@ -2408,6 +2441,7 @@ static const stress_bad_syscall_t bad_syscalls[] = {
 #endif
 	bad_write,
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_WRITEV)
 	bad_writev,
 #endif
@@ -2556,7 +2590,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 	state = (stress_sysbadaddr_state_t *)stress_mmap_anon_shared(
 		sizeof(*state), PROT_READ | PROT_WRITE);
 	if (state == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte anonymous state structure%s, "
+		pr_inf_skip("%s: mmap %zu byte anonymous state structure failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*state),
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2568,7 +2602,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 	ro_page = stress_mmap_populate(NULL, page_size,
 		PROT_READ, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (ro_page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte anonymous read-only page%s, "
+		pr_inf_skip("%s: mmap %zu byte anonymous read-only page failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2582,7 +2616,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (rw_page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte anonymous read-write page%s, "
+		pr_inf_skip("%s: mmap %zu byte anonymous read-write page failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, page_size << 1,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2596,7 +2630,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 		PROT_EXEC | PROT_READ,
 		MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (rx_page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte anonymous execute-only page%s, "
+		pr_inf_skip("%s: mmap %zu byte anonymous execute-only page failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2609,7 +2643,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 	no_page = stress_mmap_populate(NULL, page_size,
 		PROT_NONE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (no_page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu anonymous prot-none page%s, "
+		pr_inf_skip("%s: mmap %zu anonymous prot-none page failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2621,7 +2655,7 @@ static int stress_sysbadaddr(stress_args_t *args)
 	wo_page = stress_mmap_populate(NULL, page_size,
 		PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (wo_page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte anonymous write-only page%s, "
+		pr_inf_skip("%s: mmap %zu byte anonymous write-only page failed%s, "
 		       "errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -2671,8 +2705,251 @@ cleanup:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("chdir"),
+	STRESS_EX_SYSCALL("chmod"),
+	STRESS_EX_SYSCALL("chown"),
+#if defined(HAVE_CHROOT)
+	STRESS_EX_SYSCALL("chroot"),
+#endif
+#if defined(HAVE_CLOCK_GETRES) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("clock_getres"),
+#endif
+#if defined(HAVE_CLOCK_GETTIME) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("clock_gettime"),
+#endif
+#if defined(HAVE_CLOCK_NANOSLEEP) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("clock_nanosleep"),
+#endif
+#if defined(CLOCK_THREAD_CPUTIME_ID) &&	\
+    defined(HAVE_CLOCK_SETTIME)
+	STRESS_EX_SYSCALL("clock_settime"),
+#endif
+#if defined(HAVE_CLONE) && 	\
+    defined(__linux__)
+	STRESS_EX_SYSCALL("clone"),
+#endif
+	STRESS_EX_SYSCALL("connect"),
+#if defined(HAVE_COPY_FILE_RANGE)
+	STRESS_EX_SYSCALL("copy_file_range"),
+#endif
+	STRESS_EX_SYSCALL("execve"),
+#if defined(HAVE_FACCESSAT)
+	STRESS_EX_SYSCALL("faccessat"),
+#endif
+#if defined(HAVE_FLISTXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("flistxattr"),
+#endif
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("getcpu"),
+	STRESS_EX_SYSCALL("getcwd"),
+#if defined(HAVE_GETDOMAINNAME)
+	STRESS_EX_SYSCALL("getdomainname"),
+#endif
+#if defined(HAVE_GETGROUPS)
+	STRESS_EX_SYSCALL("getgroups"),
+#endif
+#if defined(HAVE_GETHOSTNAME)
+	STRESS_EX_SYSCALL("gethostname"),
+#endif
+#if defined(HAVE_GETITIMER)
+	STRESS_EX_SYSCALL("getitimer"),
+#endif
+	STRESS_EX_SYSCALL("getpeername"),
+	STRESS_EX_SYSCALL("get_mempolicy"),
+	STRESS_EX_SYSCALL("getrandom"),
+#if defined(HAVE_GETRESGID)
+	STRESS_EX_SYSCALL("getresgid"),
+#endif
+#if defined(HAVE_GETRESUID)
+	STRESS_EX_SYSCALL("getresuid"),
+#endif
+#if defined(HAVE_GETRLIMIT)
+	STRESS_EX_SYSCALL("getrlimit"),
+#endif
+#if defined(HAVE_GETRUSAGE) &&	\
+    defined(RUSAGE_SELF)
+	STRESS_EX_SYSCALL("getrusage"),
+#endif
+	STRESS_EX_SYSCALL("getsockname"),
+	STRESS_EX_SYSCALL("gettimeofday"),
+#if defined(HAVE_GETXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("getxattr"),
+#endif
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("lchown"),
+	STRESS_EX_SYSCALL("link"),
+#if defined(HAVE_LGETXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("lgetxattr"),
+#endif
+#if defined(HAVE_LISTXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("listxattr"),
+#endif
+#if defined(HAVE_LLISTXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("llistxattr"),
+#endif
+#if defined(HAVE_LREMOVEXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("lremovexattr"),
+#endif
+#if defined(__NR_lsm_get_self_attr)
+	STRESS_EX_SYSCALL("lsm_get_self_attr"),
+#endif
+#if defined(__NR_lsm_set_self_attr)
+	STRESS_EX_SYSCALL("lsm_set_self_attr"),
+#endif
+#if defined(__NR_lsm_list_modules)
+	STRESS_EX_SYSCALL("lsm_list_modules"),
+#endif
+	STRESS_EX_SYSCALL("lstat"),
+#if defined(HAVE_MADVISE)
+	STRESS_EX_SYSCALL("madvise"),
+#endif
+#if defined(HAVE_MEMFD_CREATE)
+	STRESS_EX_SYSCALL("memfd_create"),
+#endif
+	STRESS_EX_SYSCALL("migrate_pages"),
+	STRESS_EX_SYSCALL("mincore"),
+#if defined(HAVE_MLOCK)
+	STRESS_EX_SYSCALL("mlock"),
+#endif
+#if defined(HAVE_MLOCK2)
+	STRESS_EX_SYSCALL("mlock2"),
+#endif
+#if defined(__NR_move_pages)
+	STRESS_EX_SYSCALL("move_pages"),
+#endif
+#if defined(__NR_seal)
+	STRESS_EX_SYSCALL("seal"),
+#endif
+#if defined(HAVE_MUNLOCK)
+	STRESS_EX_SYSCALL("munlock"),
+#endif
+#if defined(HAVE_MSYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+#if defined(HAVE_NANOSLEEP)
+	STRESS_EX_SYSCALL("nanosleep"),
+#endif
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("pipe"),
+#if defined(HAVE_PREAD)
+	STRESS_EX_SYSCALL("pread"),
+#endif
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_PREADV)
+	STRESS_EX_SYSCALL("preadv"),
+#endif
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_PREADV2)
+	STRESS_EX_SYSCALL("preadv2"),
+#endif
+#if defined(HAVE_PTRACE) && 	\
+    defined(PTRACE_GETREGS)
+	STRESS_EX_SYSCALL("ptrace"),
+#endif
+#if defined(HAVE_POLL_H) &&	\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_POLL_H) &&	\
+    defined(HAVE_PPOLL)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+#if defined(HAVE_PWRITE)
+	STRESS_EX_SYSCALL("pwrite"),
+#endif
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_PWRITEV)
+	STRESS_EX_SYSCALL("pwritev"),
+#endif
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_PWRITEV2)
+	STRESS_EX_SYSCALL("pwritev2"),
+#endif
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("readlink"),
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_READV)
+	STRESS_EX_SYSCALL("readv"),
+#endif
+#if defined(HAVE_REMOVEXATTR) &&	\
+    (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H))
+	STRESS_EX_SYSCALL("removexattr"),
+#endif
+	STRESS_EX_SYSCALL("rename"),
+#if defined(HAVE_SCHED_GETAFFINITY)
+	STRESS_EX_SYSCALL("sched_getaffinity"),
+#endif
+#if defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+#if defined(HAVE_SETITIMER)
+	STRESS_EX_SYSCALL("setitimer"),
+#endif
+	STRESS_EX_SYSCALL("setrlimit"),
+	STRESS_EX_SYSCALL("stat"),
+#if defined(HAVE_STATFS)
+	STRESS_EX_SYSCALL("statfs"),
+#endif
+#if defined(HAVE_SYS_SYSINFO_H) && 	\
+    defined(HAVE_SYSINFO)
+	STRESS_EX_SYSCALL("sysinfo"),
+#endif
+	STRESS_EX_SYSCALL("time"),
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_TIMER_CREATE)
+	STRESS_EX_SYSCALL("timer_create"),
+#endif
+	STRESS_EX_SYSCALL("times"),
+	STRESS_EX_SYSCALL("truncate"),
+#if defined(HAVE_UNAME) &&	\
+    defined(HAVE_SYS_UTSNAME_H)
+	STRESS_EX_SYSCALL("uname"),
+#endif
+	STRESS_EX_SYSCALL("ustat"),
+#if defined(HAVE_UTIME_H)
+	STRESS_EX_SYSCALL("utime"),
+#endif
+#if defined(HAVE_UTIMES)
+	STRESS_EX_SYSCALL("utimes"),
+#endif
+	STRESS_EX_SYSCALL("wait"),
+	STRESS_EX_SYSCALL("waitpid"),
+	STRESS_EX_SYSCALL("waitid"),
+	STRESS_EX_SYSCALL("write"),
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
+    defined(HAVE_WRITEV)
+	STRESS_EX_SYSCALL("writev"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sysbadaddr_info = {
 	.stressor = stress_sysbadaddr,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

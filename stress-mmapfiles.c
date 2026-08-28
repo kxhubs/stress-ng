@@ -101,7 +101,8 @@ static size_t stress_mmapfiles_dir(
 			uint8_t *ptr;
 			struct stat statbuf;
 			int fd;
-			double t, delta;
+			double t;
+			double delta;
 			size_t len;
 			const size_t page_size = args->page_size;
 
@@ -189,7 +190,8 @@ static int stress_mmapfiles_child(stress_args_t *args, void *context)
 
 	do {
 		const size_t page_size = args->page_size;
-		size_t i, n;
+		size_t i;
+		size_t n;
 
 		for (n = 0, i = 0; i < SIZEOF_ARRAY(dirs); i++) {
 			mmapfile_info->enomem = false;
@@ -214,7 +216,7 @@ static int stress_mmapfiles_child(stress_args_t *args, void *context)
 				mmapfile_info->munmap_count += 1.0;
 				mmapfile_info->munmap_page_count += (double)(len + args->page_size - 1) / (double)page_size;
 			} else {
-				(void)stress_munmap_force((void *)mmapfile_info->mappings[i].addr, mmapfile_info->mappings[i].len);
+				(void)stress_munmap_force(mmapfile_info->mappings[i].addr, mmapfile_info->mappings[i].len);
 			}
 			mmapfile_info->mappings[i].addr = NULL;
 			mmapfile_info->mappings[i].len = 0;
@@ -240,7 +242,7 @@ static int stress_mmapfiles(stress_args_t *args)
 	mmapfile_info = (stress_mmapfile_info_t *)stress_mmap_anon_shared(sizeof(*mmapfile_info),
 				PROT_READ | PROT_WRITE);
 	if (mmapfile_info == MAP_FAILED) {
-		pr_inf("%s: cannot mmap %zu byte mmap file information%s, "
+		pr_inf("%s: mmap %zu byte mmap file information failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*mmapfile_info),
 			stress_memory_free_get(),
@@ -305,10 +307,17 @@ static int stress_mmapfiles(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmapfiles_info = {
 	.stressor = stress_mmapfiles,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

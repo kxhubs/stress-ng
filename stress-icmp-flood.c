@@ -75,15 +75,20 @@ static int stress_icmp_flood_supported(const char *name)
  */
 static int stress_icmp_flood(stress_args_t *args)
 {
-	int fd, rc = EXIT_FAILURE;
+	int fd;
+	int rc = EXIT_FAILURE;
 	const int set_on = 1;
 	const unsigned long int addr = inet_addr("127.0.0.1");
 	struct sockaddr_in servaddr;
-	uint64_t counter, sendto_fails = 0, sendto_ok;
-	double bytes = 0.0, t_start, duration, rate;
+	uint64_t counter;
+	uint64_t sendto_fails = 0;
+	uint64_t sendto_ok;
+	double bytes = 0.0;
+	double t_start;
+	double duration;
+	double rate;
 	const uint16_t id = htons((uint16_t)args->instance);
 	uint16_t seq = 0;
-
 	char ALIGN64 pkt[MAX_PKT_LEN];
 	struct iphdr *const ip_hdr = (struct iphdr *)shim_assume_aligned(pkt, 1);
 	struct icmphdr *const icmp_hdr = (struct icmphdr *)shim_assume_aligned((pkt + sizeof(struct iphdr)), 1);
@@ -178,7 +183,7 @@ static int stress_icmp_flood(stress_args_t *args)
 		rate, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB written per sec",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (counter > 0) ? 100.0 * (double)sendto_ok / (double)counter : 0.0;
 	stress_metrics_set(args, "% successful sendto messages",
 		rate, STRESS_METRIC_TOTAL);
@@ -193,13 +198,24 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("power-core"),
+
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_icmp_flood_info = {
 	.stressor = stress_icmp_flood,
 	.supported = stress_icmp_flood_supported,
 	.classifier = CLASS_OS | CLASS_NETWORK,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_icmp_flood_info = {

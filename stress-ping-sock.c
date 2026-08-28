@@ -58,7 +58,7 @@ static int stress_rawsock_open(const char *name, int *fd)
 		if ((errno == EPERM) || (errno == EACCES)) {
 			pr_inf_skip("%s: stressor will be skipped, permission denied\n", name);
 #if defined(__linux__)
-			pr_inf("%s: writing 0 0 to /proc/sys/net/ipv4/ping_group_range may help\n", name);
+			pr_inf("%s: writing 0 0 to '/proc/sys/net/ipv4/ping_group_range' may help\n", name);
 #endif
 			return EXIT_NOT_IMPLEMENTED;
 		}
@@ -90,12 +90,16 @@ static int stress_rawsock_supported(const char *name)
  */
 static int stress_ping_sock(stress_args_t *args)
 {
-	int fd, rc, j = 0;
+	int fd;
+	int rc;
+	int j = 0;
 	struct sockaddr_in addr;
 	struct icmphdr *icmp_hdr;
 	int rand_port;
 	char ALIGN64 buf[sizeof(*icmp_hdr) + MAX_PING_SOCK_MAX_SIZE];
-	double t, duration = 0.0, rate;
+	double t;
+	double duration = 0.0;
+	double rate;
 	size_t ping_sock_max_size = DEFAULT_PING_SOCK_MAX_SIZE;
 	double total = 0.0;
 
@@ -164,12 +168,23 @@ static int stress_ping_sock(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("hot-package"),
+
+	STRESS_EX_SYSCALL("sendto"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_ping_sock_info = {
 	.stressor = stress_ping_sock,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.supported = stress_rawsock_supported,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_ping_sock_info = {

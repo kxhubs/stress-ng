@@ -23,9 +23,9 @@
 #include "core-signal.h"
 #include "core-sort.h"
 
-#define MIN_HEAPSORT_SIZE	(1 * KB)
-#define MAX_HEAPSORT_SIZE	(4 * MB)
-#define DEFAULT_HEAPSORT_SIZE	(256 * KB)
+#define MIN_HEAPSORT_SIZE	(1 * STRESS_KB)
+#define MAX_HEAPSORT_SIZE	(4 * STRESS_MB)
+#define DEFAULT_HEAPSORT_SIZE	(256 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -73,10 +73,12 @@ static int heapsort_nonlibc(
 	 */
 	u8base = (uint8_t *)base - size;
 	while (--l) {
-		register size_t i, j;
+		register size_t i;
+		register size_t j;
 
 		for (i = l; (j = i * 2) <= nmemb; i = j) {
-			register uint8_t *p1 = u8base + (j * size), *p2;
+			register uint8_t *p1 = u8base + (j * size);
+			register uint8_t *p2;
 
 			if ((j < nmemb) && (compar(p1, p1 + size) < 0)) {
 				p1 += size;
@@ -93,7 +95,8 @@ static int heapsort_nonlibc(
 	 */
 	while (nmemb > 1) {
 		register uint8_t *ptr = u8base + (nmemb * size);
-		register size_t i, j;
+		register size_t i;
+		register size_t j;
 		uint8_t tmp[size] ALIGN64;
 
 		copy_func(tmp, ptr, size);
@@ -101,7 +104,8 @@ static int heapsort_nonlibc(
 		nmemb--;
 
 		for (i = 1; (j = i * 2) <= nmemb; i = j) {
-			register uint8_t *p1 = u8base + (j * size), *p2;
+			register uint8_t *p1 = u8base + (j * size);
+			register uint8_t *p2;
 
 			if ((j < nmemb) && (compar(p1, p1 + size) < 0)) {
 				p1 += size;
@@ -111,7 +115,8 @@ static int heapsort_nonlibc(
 			copy_func(p2, p1, size);
 		}
 		for (;;) {
-			register uint8_t *p1, *p2;
+			register uint8_t *p1;
+			register uint8_t *p2;
 
 			j = i;
 			i = j / 2;
@@ -143,7 +148,7 @@ static const char *stress_heapsort_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_heapsort_size,   "heapsort-size",   TYPE_ID_UINT64, MIN_HEAPSORT_SIZE, MAX_HEAPSORT_SIZE, NULL },
-	{ OPT_heapsort_method, "heapsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_heapsort_method },
+	{ OPT_heapsort_method, "heapsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_heapsort_method },
 	END_OPT,
 };
 
@@ -165,11 +170,17 @@ static void MLOCKED_TEXT stress_heapsort_handler(int signum)
 static int stress_heapsort(stress_args_t *args)
 {
 	uint64_t heapsort_size = DEFAULT_HEAPSORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, i, data_size, heapsort_method = 0;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t i;
+	size_t data_size;
+	size_t heapsort_method = 0;
 	double rate;
-	NOCLOBBER int rc = EXIT_SUCCESS;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
 	heapsort_func_t heapsort_func;
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
@@ -334,10 +345,26 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("bsd"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_heapsort_info = {
 	.stressor = stress_heapsort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

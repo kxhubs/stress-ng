@@ -31,9 +31,9 @@
 #include <linux/fs.h>
 #endif
 
-#define MIN_FIEMAP_SIZE		(1 * MB)
+#define MIN_FIEMAP_SIZE		(1 * STRESS_MB)
 #define MAX_FIEMAP_SIZE		(MAX_FILE_LIMIT)
-#define DEFAULT_FIEMAP_SIZE	(16 * MB)
+#define DEFAULT_FIEMAP_SIZE	(16 * STRESS_MB)
 
 #define MAX_FIEMAP_PROCS	(4)		/* Number of FIEMAP stressors */
 #define COUNT_MAX		(128)
@@ -104,7 +104,7 @@ static int stress_fiemap_writer(
 		offset = stress_mwc64modn(len);
 		if (UNLIKELY(shim_fallocate(fd, FALLOC_FL_PUNCH_HOLE |
 					    FALLOC_FL_KEEP_SIZE, (off_t)offset, 8192) < 0)) {
-			if (errno == ENOSPC)
+			if ((errno == ENOSPC) || (errno == EINTR))
 				continue;
 			if (errno == EOPNOTSUPP)
 				punch_hole = false;
@@ -133,7 +133,8 @@ static void stress_fiemap_ioctl(
 #endif
 
 	do {
-		struct fiemap *fiemap, *tmp;
+		struct fiemap *fiemap;
+		struct fiemap *tmp;
 		size_t extents_size;
 
 		fiemap = (struct fiemap *)calloc(1, sizeof(*fiemap));
@@ -213,12 +214,15 @@ static inline pid_t stress_fiemap_spawn(
 	stress_pid_t **s_pids_head,
 	stress_pid_t *s_pid)
 {
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0) {
+		s_pid->pid = pid;
 		return -1;
-	} else if (s_pid->pid == 0) {
-		stress_proc_state_set(args->name, STRESS_STATE_RUN);
+	} else if (pid == 0) {
 		s_pid->pid = getpid();
+		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 		stress_sync_start_wait_s_pid(s_pid);
 		stress_make_it_fail_set();
@@ -229,9 +233,10 @@ static inline pid_t stress_fiemap_spawn(
 		stress_fiemap_ioctl(args, fd);
 		_exit(EXIT_SUCCESS);
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 /*
@@ -241,10 +246,13 @@ static inline pid_t stress_fiemap_spawn(
 static int stress_fiemap(stress_args_t *args)
 {
 	stress_pid_t *s_pids, *s_pids_head = NULL;
-	int ret, fd, rc = EXIT_FAILURE;
+	int ret;
+	int fd;
+	int rc = EXIT_FAILURE;
 	char filename[PATH_MAX];
 	size_t n;
-	uint64_t fiemap_bytes, fiemap_bytes_total = DEFAULT_FIEMAP_SIZE;
+	uint64_t fiemap_bytes;
+	uint64_t fiemap_bytes_total = DEFAULT_FIEMAP_SIZE;
 	struct fiemap fiemap;
 	const char *fs_type;
 #if defined(O_SYNC)
@@ -303,7 +311,7 @@ static int stress_fiemap(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, flags, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto dir_clean;
 	}
@@ -360,12 +368,23 @@ clean:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fiemap_info = {
 	.stressor = stress_fiemap,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fiemap_info = {

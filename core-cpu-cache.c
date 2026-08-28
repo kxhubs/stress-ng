@@ -47,7 +47,7 @@ static const char stress_cpu_cache_dir[] = "cache";
  */
 static inline unsigned int stress_cpu_cache_get_cpu(const stress_cpu_cache_cpus_t *cpus)
 {
-	const unsigned int cpu = stress_cpu_get();
+	register const unsigned int cpu = stress_cpu_get();
 
 	return (cpu >= cpus->count) ? 0 : cpu;
 }
@@ -71,7 +71,7 @@ static int stress_get_string_from_file(
 	if (UNLIKELY(ret < 0))
 		return -1;
 
-	ptr = strchr(tmp, '\n');
+	ptr = shim_strchr(tmp, '\n');
 	if (ptr)
 		*ptr = '\0';
 
@@ -94,7 +94,7 @@ static stress_cpu_cache_t * stress_cpu_cache_get_by_cpu(
 	const int cache_level,
 	const stress_cpu_cache_type_t cache_type)
 {
-	uint32_t  i;
+	uint32_t i;
 
 	if (UNLIKELY(!cpu || !cache_level))
 		return NULL;
@@ -114,6 +114,7 @@ static stress_cpu_cache_t * stress_cpu_cache_get_by_cpu(
 			case CACHE_TYPE_INSTRUCTION:
 				if (cache_type == CACHE_TYPE_INSTRUCTION)
 					return p;
+				break;
 			default:
 				break;
 		}
@@ -130,9 +131,9 @@ static stress_cpu_cache_t * stress_cpu_cache_get_by_cpu(
  */
 uint16_t stress_cpu_cache_max_level_get(const stress_cpu_cache_cpus_t *cpus)
 {
-	stress_cpu_cache_cpu_t    *cpu;
-	uint32_t  i;
-	uint16_t  max = 0;
+	const stress_cpu_cache_cpu_t *cpu;
+	uint32_t i;
+	uint16_t max = 0;
 
 	if (UNLIKELY(!cpus)) {
 		pr_dbg("%s: invalid cpus parameter\n", __func__);
@@ -241,24 +242,26 @@ static int stress_cpu_cache_get_alpha(
 			uint16_t cache_level = 0;
 			const char *ptr;
 			uint64_t cache_size;
-			int cache_ways, cache_line_size, n;
+			int cache_ways;
+			int cache_line_size;
+			int n;
 
-			if (!strncmp("L1 Icache", buffer, 9)) {
+			if (!shim_strncmp("L1 Icache", buffer, 9)) {
 				cache_type = CACHE_TYPE_INSTRUCTION;
 				cache_level = 1;
-			} else if (!strncmp("L1 Dcache", buffer, 9))  {
+			} else if (!shim_strncmp("L1 Dcache", buffer, 9))  {
 				cache_type = CACHE_TYPE_DATA;
 				cache_level = 1;
-			} else if (!strncmp("L2 cache", buffer, 8)) {
+			} else if (!shim_strncmp("L2 cache", buffer, 8)) {
 				cache_type = CACHE_TYPE_DATA;
 				cache_level = 2;
-			} else if (!strncmp("L3 cache", buffer, 8)) {
+			} else if (!shim_strncmp("L3 cache", buffer, 8)) {
 				cache_type = CACHE_TYPE_DATA;
 				cache_level = 3;
 			} else {
 				continue;
 			}
-			ptr = strchr(buffer, ':');
+			ptr = shim_strchr(buffer, ':');
 			if (!ptr)
 				continue;
 			ptr++;
@@ -317,20 +320,20 @@ static int stress_cpu_cache_get_riscv(
 		{ "i-cache-size",		CACHE_TYPE_INSTRUCTION,	1, STRESS_CACHE_SIZE,		1 },
 	};
 
-	char *base;
+	const char *base;
 	const size_t count = 2;
 	size_t i;
 	bool valid = false;
 	int cpu_num;
 
 	/* Parse CPU number */
-	base = strrchr(cpu_path, '/');
+	base = shim_strrchr(cpu_path, '/');
 	if (!base)
 		return 0;
 	base++;
 	if (!*base)
 		return 0;
-	if (strlen(base) < 4)
+	if (shim_strlen(base) < 4)
 		return 0;
 	if (sscanf(base + 3, "%d", &cpu_num) != 1)
 		return 0;
@@ -553,7 +556,10 @@ static int stress_cpu_cache_get_sparc64(
  */
 static int stress_cpu_cache_get_x86(stress_cpu_cache_cpu_t *cpu)
 {
-	uint32_t eax, ebx, ecx, edx;
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
 
 	if (!stress_cpu_is_x86())
 		return 0;
@@ -578,9 +584,10 @@ static int stress_cpu_cache_get_x86(stress_cpu_cache_cpu_t *cpu)
 	if (edx & (1U << 28)) {
 		uint32_t subleaf;
 		size_t i;
+		size_t n;
 
 		/* Gather max number of cache entries */
-		for (i = 0, subleaf = 0; subleaf < 0xff; subleaf++) {
+		for (n = 0, subleaf = 0; subleaf < 0xff; subleaf++) {
 			uint32_t cache_type;
 
 			eax = 4;
@@ -594,19 +601,21 @@ static int stress_cpu_cache_get_x86(stress_cpu_cache_cpu_t *cpu)
 				 break;
 			if (cache_type > 3)
 				continue;
-			i++;
+			n++;
 		}
+		if (!n)
+			return 0;
 
 		/* Now allocate */
-		cpu->caches = (stress_cpu_cache_t *)calloc(i, sizeof(*(cpu->caches)));
+		cpu->caches = (stress_cpu_cache_t *)calloc(n, sizeof(*(cpu->caches)));
 		if (UNLIKELY(!cpu->caches)) {
 			pr_err("failed to allocate %zu bytes for cpu caches\n",
-				i * sizeof(*(cpu->caches)));
+				n * sizeof(*(cpu->caches)));
 			return 0;
 		}
 
 		/* ..and save */
-		for (i = 0, subleaf = 0; subleaf < 0xff; subleaf++) {
+		for (i = 0, subleaf = 0; (i < n) && (subleaf < 0xff); subleaf++) {
 			uint32_t cache_type;
 
 			eax = 4;
@@ -678,17 +687,17 @@ static int stress_cpu_cache_get_sh4(stress_cpu_cache_cpu_t *cpu)
 
 	(void)shim_memset(buffer, 0, sizeof(buffer));
 	while ((cpu->cache_count < 2) && fgets(buffer, sizeof(buffer), fp) != NULL) {
-		const char *ptr = strchr(buffer, ':');
+		const char *ptr = shim_strchr(buffer, ':');
 
 		if (ptr &&
-		    (strncmp("cache size", buffer + 1, 10) == 0) &&
+		    (shim_strncmp("cache size", buffer + 1, 10) == 0) &&
 		    ((buffer[0] == 'i') || (buffer[0] == 'd')))   {
 			size_t size;
 
 			if (sscanf(ptr + 1, "%zuKiB)", &size) == 1) {
 				cpu->caches[cpu->cache_count].type =
 					(buffer[0] == 'i') ? CACHE_TYPE_INSTRUCTION : CACHE_TYPE_DATA;
-				cpu->caches[cpu->cache_count].size = size * KB;
+				cpu->caches[cpu->cache_count].size = size * STRESS_KB;
 				cpu->caches[cpu->cache_count].line_size = 64;	/* Assumption! */
 				cpu->caches[cpu->cache_count].ways = cpu->caches[cpu->cache_count].size / 64;
 				cpu->caches[cpu->cache_count].level = 1;
@@ -708,7 +717,8 @@ static int stress_cpu_cache_get_m68k(stress_cpu_cache_cpu_t *cpu)
 {
 	FILE *fp;
 	char buffer[1024];
-	size_t i, count;
+	size_t i;
+	size_t count;
 	size_t cache_type[2] = { 0, 0 };
 	size_t cache_size[2] = { 0, 0 };
 	int cpu_id = -1;
@@ -722,7 +732,7 @@ static int stress_cpu_cache_get_m68k(stress_cpu_cache_cpu_t *cpu)
 
 	(void)shim_memset(buffer, 0, sizeof(buffer));
 	while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		if (strncmp("CPU:", buffer, 4) == 0) {
+		if (shim_strncmp("CPU:", buffer, 4) == 0) {
 			if (sscanf(buffer + 4, "%d", &cpu_id) == 1)
 				break;
 		}
@@ -830,8 +840,8 @@ static int stress_cpu_cache_get_or1k(stress_cpu_cache_cpu_t *cpu)
 static uint64_t stress_cpu_cache_size_to_bytes(const char *str)
 {
 	uint64_t bytes;
-	int	 ret;
-	char	 sz;
+	int ret;
+	char sz;
 
 	if (UNLIKELY(!str)) {
 		pr_dbg("%s: empty string specified\n", __func__);
@@ -840,7 +850,7 @@ static uint64_t stress_cpu_cache_size_to_bytes(const char *str)
 
 	ret = sscanf(str, "%" SCNu64 "%c", &bytes, &sz);
 	if (ret != 2) {
-		pr_dbg("%s: failed to parse suffix from \"%s\"\n",
+		pr_dbg("%s: failed to parse suffix from '%s'\n",
 			__func__, str);
 		return 0;
 	}
@@ -850,16 +860,16 @@ static uint64_t stress_cpu_cache_size_to_bytes(const char *str)
 		/* no-op */
 		break;
 	case 'K':
-		bytes *= KB;
+		bytes *= STRESS_KB;
 		break;
 	case 'M':
-		bytes *= MB;
+		bytes *= STRESS_MB;
 		break;
 	case 'G':
-		bytes *= GB;
+		bytes *= STRESS_GB;
 		break;
 	case 'T':
-		bytes *= TB;
+		bytes *= STRESS_TB;
 		break;
 	default:
 		pr_err("unable to convert '%c' size to bytes\n", sz);
@@ -981,7 +991,7 @@ out:
  */
 static int index_filter(const struct dirent *d)
 {
-	return ((strncmp(d->d_name, "index", 5) == 0) && isdigit((int)d->d_name[5]));
+	return ((shim_strncmp(d->d_name, "index", 5) == 0) && isdigit((int)d->d_name[5]));
 }
 #endif
 
@@ -1220,8 +1230,6 @@ static void stress_cpu_cache_get_details(stress_cpu_cache_cpu_t *cpu, const char
 	if (stress_cpu_cache_get_apple(cpu) > 0)
 		return;
 #endif
-
-	return;
 }
 #endif
 
@@ -1233,7 +1241,7 @@ static void stress_cpu_cache_get_details(stress_cpu_cache_cpu_t *cpu, const char
  */
 static int stress_cpu_cache_filter(const struct dirent *d)
 {
-	return ((strncmp(d->d_name, "cpu", 3) == 0) && isdigit((unsigned char)d->d_name[3]));
+	return ((shim_strncmp(d->d_name, "cpu", 3) == 0) && isdigit((unsigned char)d->d_name[3]));
 }
 
 /*
@@ -1256,7 +1264,8 @@ static int cpu_sort(const struct dirent **d1, const struct dirent **d2)
  */
 stress_cpu_cache_cpus_t *stress_cpu_cache_details_get(void)
 {
-	int i, cpu_count;
+	int i;
+	int cpu_count;
 	stress_cpu_cache_cpus_t *cpus = NULL;
 	struct dirent **namelist = NULL;
 
@@ -1352,8 +1361,12 @@ out:
 #elif defined(STRESS_ARCH_X86)
 stress_cpu_cache_cpus_t *stress_cpu_cache_details_get(void)
 {
-	uint32_t eax, ebx, ecx, edx;
-	int32_t i, cpu_count;
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+	int32_t i;
+	int32_t cpu_count;
 	stress_cpu_cache_cpus_t *cpus;
 
 	if (!stress_cpu_is_x86())
@@ -1401,7 +1414,7 @@ stress_cpu_cache_cpus_t *stress_cpu_cache_details_get(void)
  */
 void stress_cpu_cache_free(stress_cpu_cache_cpus_t *cpus)
 {
-	uint32_t  i;
+	uint32_t i;
 
 	if (!cpus)
 		return;
@@ -1431,7 +1444,7 @@ void stress_cpu_cache_llc_size_get(size_t *llc_size, size_t *cache_line_size)
     defined(STRESS_ARCH_X86)
 	uint16_t max_cache_level;
 	stress_cpu_cache_cpus_t *cpu_caches;
-	stress_cpu_cache_t *cache = NULL;
+	const stress_cpu_cache_t *cache = NULL;
 
 	*llc_size = 0;
 	*cache_line_size = 0;
@@ -1472,7 +1485,7 @@ void stress_cpu_cache_level_size_get(
     defined(__APPLE__) ||	\
     defined(STRESS_ARCH_X86)
 	stress_cpu_cache_cpus_t *cpu_caches;
-	stress_cpu_cache_t *cache = NULL;
+	const stress_cpu_cache_t *cache = NULL;
 
 	*cache_size = 0;
 	*cache_line_size = 0;

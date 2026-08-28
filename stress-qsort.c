@@ -28,9 +28,9 @@
 
 #define THRESH 63
 
-#define MIN_QSORT_SIZE		(1 * KB)
-#define MAX_QSORT_SIZE		(4 * MB)
-#define DEFAULT_QSORT_SIZE	(256 * KB)
+#define MIN_QSORT_SIZE		(1 * STRESS_KB)
+#define MAX_QSORT_SIZE		(4 * STRESS_MB)
+#define DEFAULT_QSORT_SIZE	(256 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -79,7 +79,7 @@ static inline bool OPTIMIZE3 stress_qsort_verify_forward(
 	stress_args_t *args,
 	const int32_t *data,
 	const size_t n,
-	int *rc)
+	CLOBBERED int *rc)
 {
 	if (g_opt_flags & OPT_FLAGS_VERIFY) {
 		register const int32_t *ptr = data;
@@ -110,7 +110,7 @@ static inline bool OPTIMIZE3 stress_qsort_verify_reverse(
 	stress_args_t *args,
 	const int32_t *data,
 	const size_t n,
-	int *rc)
+	CLOBBERED int *rc)
 {
 	if (g_opt_flags & OPT_FLAGS_VERIFY) {
 		register const int32_t *ptr = data;
@@ -145,10 +145,14 @@ static int OPTIMIZE3 stress_qsort(stress_args_t *args)
 {
 	uint64_t qsort_size = DEFAULT_QSORT_SIZE;
 	int32_t *data;
-	size_t n, data_size, qsort_method = 0;
+	size_t n;
+	size_t data_size;
+	size_t qsort_method = 0;
 	double rate;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	qsort_func_t qsort_func;
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
@@ -287,8 +291,20 @@ static const char *stress_qsort_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_qsort_size,   "qsort-size",   TYPE_ID_UINT64, MIN_QSORT_SIZE, MAX_QSORT_SIZE, NULL },
-	{ OPT_qsort_method, "qsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_qsort_method },
+	{ OPT_qsort_method, "qsort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_qsort_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_qsort_info = {
@@ -296,5 +312,6 @@ const stressor_info_t stress_qsort_info = {
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

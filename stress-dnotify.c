@@ -85,14 +85,16 @@ typedef struct {
  *	required dnotify event flags 'flags'.
  */
 static int dnotify_exercise(
-	stress_args_t *args,	/* Stressor args */
+	stress_args_t *args,		/* Stressor args */
 	const char *filename,		/* Filename in test */
 	const char *watchname,		/* File or directory to watch using dnotify */
 	const stress_dnotify_helper func,/* Helper func */
 	const unsigned long int flags,	/* DN_* flags to watch for */
 	void *private_data)		/* Helper func private data */
 {
-	int fd, i = 0, rc = 0;
+	int fd;
+	int i = 0;
+	int rc = 0;
 #if defined(DN_MULTISHOT)
 	const unsigned long int flags_ms = flags | DN_MULTISHOT;
 #else
@@ -100,7 +102,7 @@ static int dnotify_exercise(
 #endif
 
 	if ((fd = open(watchname, O_RDONLY)) < 0) {
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, watchname, errno, strerror(errno));
 		return -1;
 	}
@@ -160,7 +162,7 @@ cleanup:
 static int rm_file(stress_args_t *args, const char *path)
 {
 	if ((shim_force_unlink(path) < 0) && (errno != ENOENT)) {
-		pr_err("%s: cannot remove file %s, errno=%d (%s)\n",
+		pr_err("%s: remove '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -181,7 +183,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 	if ((fd = open(filename, O_CREAT | O_RDWR, FILE_FLAGS)) < 0) {
 		if ((errno == ENFILE) || (errno == ENOMEM) || (errno == ENOSPC))
 			return -1;
-		pr_err("%s: cannot create file %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
@@ -195,7 +197,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 		if (ret < 0) {
 			if (errno == ENOSPC)
 				break;
-			pr_err("%s: error writing to file %s, errno=%d (%s)\n",
+			pr_err("%s: error writing to file '%s', errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			(void)close(fd);
 			return -1;
@@ -204,7 +206,7 @@ static int mk_file(stress_args_t *args, const char *filename, const size_t len)
 	}
 
 	if (close(fd) < 0) {
-		pr_err("%s: cannot close file %s, errno=%d (%s)\n",
+		pr_err("%s: close '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
@@ -218,7 +220,7 @@ static int dnotify_attrib_helper(
 {
 	(void)signum;
 	if (chmod(path, S_IRUSR | S_IWUSR) < 0) {
-		pr_err("%s: cannot chmod file %s, errno=%d (%s)\n",
+		pr_err("%s: chmod '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -252,7 +254,7 @@ static int dnotify_access_helper(
 
 	(void)signum;
 	if ((fd = open(path, O_RDONLY)) < 0) {
-		pr_err("%s: cannot open file %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -262,7 +264,7 @@ do_access:
 	if (stress_continue(args) && (read(fd, buffer, 1) < 0)) {
 		if ((errno == EAGAIN) || (errno == EINTR))
 			goto do_access;
-		pr_err("%s: cannot read file %s, errno=%d (%s)\n",
+		pr_err("%s: read '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = -1;
 	}
@@ -290,14 +292,15 @@ static int dnotify_modify_helper(
 	const char *path,
 	const void *signum)
 {
-	int fd, rc = 0;
-	char buffer[1] = { 0 };
+	int fd;
+	int rc = 0;
+	const char buffer[1] = { 0 };
 
 	(void)signum;
 	if (mk_file(args, path, 4096) < 0)
 		return -1;
 	if ((fd = open(path, O_RDWR)) < 0) {
-		pr_err("%s: cannot open file %s, errno=%d (%s)\n",
+		pr_err("%s: file '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		rc = -1;
 		goto remove;
@@ -307,7 +310,7 @@ do_modify:
 		if ((errno == EAGAIN) || (errno == EINTR))
 			goto do_modify;
 		if (errno != ENOSPC) {
-			pr_err("%s: cannot write to file %s, errno=%d (%s)\n",
+			pr_err("%s: write '%s' failed, errno=%d (%s)\n",
 				args->name, path, errno, strerror(errno));
 			rc = -1;
 		}
@@ -338,7 +341,7 @@ static int dnotify_creat_helper(
 	(void)signum;
 
 	if ((fd = creat(path, FILE_FLAGS)) < 0) {
-		pr_err("%s: cannot create file %s, errno=%d (%s)\n",
+		pr_err("%s: create '%s' failed, errno=%d (%s)\n",
 			args->name, path, errno, strerror(errno));
 		return -1;
 	}
@@ -391,7 +394,7 @@ static int dnotify_rename_helper(
 	const char *newpath = (const char *)private_data;
 
 	if (rename(oldpath, newpath) < 0) {
-		pr_err("%s: cannot rename %s to %s, errno=%d (%s)\n",
+		pr_err("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 			args->name, oldpath, newpath, errno, strerror(errno));
 		return -1;
 	}
@@ -400,7 +403,8 @@ static int dnotify_rename_helper(
 
 static int dnotify_rename_file(stress_args_t *args, const char *path)
 {
-	char oldfile[PATH_MAX], newfile[PATH_MAX];
+	char oldfile[PATH_MAX];
+	char newfile[PATH_MAX];
 	int rc;
 
 	stress_fs_make_filename(oldfile, sizeof(oldfile), path, "dnotify_file");
@@ -432,9 +436,10 @@ static const stress_dnotify_stress_t dnotify_stressors[] = {
 static int stress_dnotify(stress_args_t *args)
 {
 	char pathname[PATH_MAX];
-	int ret, rc = EXIT_SUCCESS;
 	struct sigaction act;
 	size_t i;
+	int ret;
+	int rc = EXIT_SUCCESS;
 
 	act.sa_sigaction = dnotify_handler;
 	(void)sigemptyset(&act.sa_mask);
@@ -474,12 +479,28 @@ tidy:
 
 	return rc;
 }
+
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("chmod"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("rename"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dnotify_info = {
 	.stressor = stress_dnotify,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.supported = stress_dnotify_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_dnotify_info = {

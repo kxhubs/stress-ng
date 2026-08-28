@@ -94,7 +94,9 @@ void stress_check_range_bytes(
 	const uint64_t hi)
 {
 	if ((val < lo) || (val > hi)) {
-		char strval[32], strlo[32], strhi[32];
+		char strval[32];
+		char strlo[32];
+		char strhi[32];
 
 		(void)fprintf(stderr, "value %sB is out of range for %s,"
 			" allowed: %sB .. %sB\n",
@@ -196,12 +198,12 @@ int8_t stress_get_int8(const char *const str)
 		stress_no_return();
 	}
 	if (val > INT8_MAX) {
-		(void)fprintf(stderr, "invalid value  %s too large (> %ld)\n", str, (long)INT8_MAX);
+		(void)fprintf(stderr, "invalid value %s too large (> %ld)\n", str, (long)INT8_MAX);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 	if (val < INT8_MIN) {
-		(void)fprintf(stderr, "invalid value  %s too small (< %ld)\n", str, (long)INT8_MIN);
+		(void)fprintf(stderr, "invalid value %s too small (< %ld)\n", str, (long)INT8_MIN);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -220,7 +222,7 @@ uint16_t stress_get_uint16(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNu64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -253,7 +255,7 @@ int16_t stress_get_int16(const char *const str)
 		stress_no_return();
 	}
 	if (val < INT16_MIN) {
-		(void)fprintf(stderr, "invalid value  %s too small (< %ld)\n", str, (long)INT16_MIN);
+		(void)fprintf(stderr, "invalid value %s too small (< %ld)\n", str, (long)INT16_MIN);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -272,7 +274,7 @@ uint32_t stress_get_uint32(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNu64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -295,7 +297,7 @@ int32_t stress_get_int32(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNd64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -342,7 +344,7 @@ int64_t stress_get_int64(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNd64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -361,12 +363,12 @@ unsigned int stress_get_uint(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNu64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 	if (val > UINT_MAX) {
-		(void)fprintf(stderr, "invalid value  %s too large (> %u)\n", str, (unsigned int)UINT_MAX);
+		(void)fprintf(stderr, "invalid value %s too large (> %u)\n", str, (unsigned int)UINT_MAX);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -384,7 +386,7 @@ int stress_get_int(const char *const str)
 	stress_ensure_numeric(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNd64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -411,14 +413,14 @@ uint64_t stress_get_uint64_scale(
 	const char *const msg)
 {
 	uint64_t val;
-	size_t len = strlen(str);
+	size_t len = shim_strlen(str);
 	int ch;
 	int i;
 
 	stress_ensure_positive(str);
 	errno = 0;
 	if ((sscanf(str, "%" SCNu64, &val) != 1) || (errno != 0)) {
-		(void)fprintf(stderr, "invalid value  %s\n", str);
+		(void)fprintf(stderr, "invalid value %s\n", str);
 		goto err;
 	}
 
@@ -459,8 +461,9 @@ static const stress_scale_t size_scales[] = {
 
 uint64_t stress_get_uint64_byte_scale(const char *const str)
 {
-	int ch, i;
-	const size_t len = strlen(str);
+	int ch;
+	int i;
+	const size_t len = shim_strlen(str);
 
 	if (len < 1) {
 		(void)fprintf(stderr, "illegal empty specifier\n");
@@ -479,9 +482,9 @@ illegal:
 err:
 
 	for (i = 1; size_scales[i].ch; i++) {
-		fprintf(stderr, "%s%c", ((i == 1) ? "" : ", "), size_scales[i].ch);
+		(void)fprintf(stderr, "%s%c", ((i == 1) ? "" : ", "), size_scales[i].ch);
 	}
-	fprintf(stderr, "\n");
+	(void)fprintf(stderr, "\n");
 	longjmp(g_error_env, 1);
 	stress_no_return();
 	/* should never get here */
@@ -494,7 +497,8 @@ err:
  */
 uint64_t stress_get_uint64_byte(const char *const str)
 {
-	size_t llc_size = 0, cache_line_size = 0;
+	size_t llc_size = 0;
+	size_t cache_line_size = 0;
 
 	if (strncasecmp(str, "L", 1) != 0)
 		return stress_get_uint64_scale(str, size_scales, "length");
@@ -537,11 +541,12 @@ uint64_t stress_get_uint64_percent(
 	bool *percentage,
 	const char *const errmsg)
 {
-	const size_t len = strlen(str);
+	const size_t len = shim_strlen(str);
 
 	/* Convert to % over N instances */
 	if ((len > 1) && (str[len - 1] == '%')) {
-		double val, percent;
+		double val;
+		double percent;
 
 		/* Avoid division by zero */
 		if (max == 0) {
@@ -567,7 +572,7 @@ uint64_t stress_get_uint64_percent(
 			longjmp(g_error_env, 1);
 			stress_no_return();
 		}
-		percent = ((double)max * (double)val) / (100.0 * (double)instances);
+		percent = ((double)max * val) / (100.0 * (double)instances);
 		if (percentage)
 			*percentage = true;
 		if (percent > (double)UINT64_MAX) {
@@ -583,12 +588,12 @@ uint64_t stress_get_uint64_percent(
 }
 
 /*
- *  stress_get_int32_instance_percent()
+ *  stress_get_int32_instance_percent_generic()
  *	get instance by number or by percentage
  */
-int32_t stress_get_int32_instance_percent(const char *const str)
+static int32_t stress_get_int32_instance_percent_generic(const char *const str)
 {
-	const size_t len = strlen(str);
+	const size_t len = shim_strlen(str);
 
 	/* Convert to % over N instances */
 	if ((len > 1) && (str[len - 1] == '%')) {
@@ -619,6 +624,22 @@ int32_t stress_get_int32_instance_percent(const char *const str)
 		}
 	}
 	return stress_get_int32(str);
+}
+
+/*
+ *  stress_get_int32_instance_percent_generic()
+ *	get instance by number or by percentage
+ */
+int32_t stress_get_int32_instance_percent(const char *const str)
+{
+	const int32_t val = stress_get_int32_instance_percent_generic(str);
+
+	if (val == 0)
+                return stress_cpus_configured_get();
+        else if (val < 0)
+                return stress_cpus_online_get();
+	else
+		return val;
 }
 
 /*
@@ -668,6 +689,7 @@ uint64_t stress_get_uint64_time(const char *const str)
 		{ 'd',  24ULL * 3600 },		/* days */
 		{ 'w',  24ULL * 3600 * 7 },	/* weeks */
 		{ 'y',  31536000 },		/* years */
+		{ 0,    0 },
 	};
 
 	return stress_get_uint64_scale(str, time_scales, "time");
@@ -678,6 +700,7 @@ int stress_parse_opt(const char *stressor_name, const char *opt_arg, const stres
 	const char *opt_name = opt->opt_name;
 	const uint64_t min = opt->min;
 	const uint64_t max = opt->max;
+	uint64_t u64val;
 	stress_setting_t setting;
 	int domain_mask;
 	stress_method_func method_func;
@@ -710,55 +733,83 @@ int stress_parse_opt(const char *stressor_name, const char *opt_arg, const stres
 		setting.u.uint32 = stress_get_uint32(opt_arg);
 		stress_check_range(opt_name, (uint64_t)setting.u.uint32, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT32, &setting.u.uint32);
+	case TYPE_ID_UINT32_TIME:
+		u64val = stress_get_uint64_time(opt_arg);
+		stress_check_range(opt_name, u64val, min, max);
+		setting.u.uint32 = (uint32_t)u64val;
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT32_TIME, &setting.u.uint32);
 	case TYPE_ID_INT32:
 		setting.u.int32 = stress_get_int32(opt_arg);
+		stress_check_signed_range(opt_name, (int64_t)setting.u.int32, (int64_t)min, (int64_t)max);
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_INT32, &setting.u.int32);
+	case TYPE_ID_INT32_TIME:
+		u64val = stress_get_uint64_time(opt_arg);
+		stress_check_range(opt_name, u64val, min, max);
+		setting.u.int32 = (int32_t)u64val;
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_INT32_TIME, &setting.u.int32);
+	case TYPE_ID_INT32_CPU_PERCENT:
+		setting.u.int32 = stress_get_int32_instance_percent(optarg);
 		stress_check_signed_range(opt_name, (int64_t)setting.u.int32, (int64_t)min, (int64_t)max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_INT32, &setting.u.int32);
 	case TYPE_ID_UINT64:
 		setting.u.uint64 = stress_get_uint64(opt_arg);
 		stress_check_range(opt_name, setting.u.uint64, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64, &setting.u.uint64);
+	case TYPE_ID_UINT64_TIME:
+		setting.u.uint64 = stress_get_uint64_time(opt_arg);
+		stress_check_range(opt_name, setting.u.uint64, min, max);
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64_TIME, &setting.u.uint64);
+	case TYPE_ID_UINT64_BYTES:
+		/* uint64 in bytes units, generic */
+		setting.u.uint64 = stress_get_uint64_byte(opt_arg);
+		stress_check_range_bytes(opt_name, setting.u.uint64, min, max);
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64_BYTES, &setting.u.uint64);
 	case TYPE_ID_UINT64_BYTES_FS:
-		/* uint64 in bytes units */
+		/* uint64 in file system bytes units */
 		setting.u.uint64 = stress_get_uint64_byte_filesystem(opt_arg, 1, &percentage);
 		if (percentage)
 			return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64_BYTES_FS_PERCENT, &setting.u.uint64);
-		stress_check_range_bytes(opt_name, (uint64_t)setting.u.uint64, min, max);
+		stress_check_range_bytes(opt_name, setting.u.uint64, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64_BYTES_FS, &setting.u.uint64);
 	case TYPE_ID_UINT64_BYTES_VM:
-		/* uint64 in bytes units */
+		/* uint64 in virtual memory bytes units */
 		setting.u.uint64 = stress_get_uint64_byte_memory(opt_arg, 1);
-		stress_check_range_bytes(opt_name, (uint64_t)setting.u.uint64, min, max);
+		stress_check_range_bytes(opt_name, setting.u.uint64, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_UINT64_BYTES_VM, &setting.u.uint64);
 	case TYPE_ID_INT64:
 		setting.u.int64 = stress_get_int64(opt_arg);
-		stress_check_signed_range(opt_name, (int64_t)setting.u.int64, (int64_t)min, (int64_t)max);
+		stress_check_signed_range(opt_name, setting.u.int64, (int64_t)min, (int64_t)max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_INT64, &setting.u.int64);
 	case TYPE_ID_SIZE_T:
 		setting.u.size = (size_t)stress_get_uint64(opt_arg);
 		stress_check_range(opt_name, (uint64_t)setting.u.size, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T, &setting.u.size);
+	case TYPE_ID_SIZE_T_BYTES:
+		/* size_t in butess units, generic */
+		setting.u.size = (size_t)stress_get_uint64_byte(opt_arg);
+		stress_check_range(opt_name, (uint64_t)setting.u.size, min, max);
+		return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T_BYTES, &setting.u.size);
 	case TYPE_ID_SIZE_T_BYTES_FS:
-		/* size_t in bytes units */
+		/* size_t in file system bytes units */
 		setting.u.size = (size_t)stress_get_uint64_byte_filesystem(opt_arg, 1, &percentage);
 		if (percentage)
 			return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T_BYTES_FS_PERCENT, &setting.u.size);
 		stress_check_range(opt_name, (uint64_t)setting.u.size, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T_BYTES_FS, &setting.u.size);
 	case TYPE_ID_SIZE_T_BYTES_VM:
-		/* size_t in bytes units */
+		/* size_t in virtual memory bytes units */
 		setting.u.size = (size_t)stress_get_uint64_byte_memory(opt_arg, 1);
 		stress_check_range(opt_name, (uint64_t)setting.u.size, min, max);
 		return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T_BYTES_VM, &setting.u.size);
 	case TYPE_ID_SIZE_T_METHOD:
 		method_func = (stress_method_func)opt->data;
 		if (!method_func) {
-			fprintf(stderr, "%s: no method function provided for option\n", opt_name);
+			(void)fprintf(stderr, "%s: no method function provided for option\n", opt_name);
 			longjmp(g_error_env, 1);
 			stress_no_return();
 		}
 		for (i = 0; (str = method_func(i)) != NULL ; i++) {
-			if (strcmp(str, opt_arg) == 0)
+			if (shim_strcmp(str, opt_arg) == 0)
 				return stress_setting_set(stressor_name, opt_name, TYPE_ID_SIZE_T_METHOD, &i);
 		}
 		if (i == 0) {
@@ -810,7 +861,7 @@ int stress_parse_opt(const char *stressor_name, const char *opt_arg, const stres
 	case TYPE_ID_CALLBACK:
  		callback_func = (stress_callback_func)opt->data;
 		if (!callback_func) {
-			fprintf(stderr, "%s: no callback function provided for option\n", opt_name);
+			(void)fprintf(stderr, "%s: no callback function provided for option\n", opt_name);
 			longjmp(g_error_env, 1);
 			stress_no_return();
 		}

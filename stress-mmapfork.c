@@ -22,7 +22,7 @@
 #include "core-killpid.h"
 #include "core-mmap.h"
 
-#define MIN_MMAPFORK_BYTES	(4 * KB)
+#define MIN_MMAPFORK_BYTES	(4 * STRESS_KB)
 #define MAX_MMAPFORK_BYTES	(MAX_MEM_LIMIT)
 
 #define MIN_MMAPFORK_PROCS	(1)
@@ -73,7 +73,7 @@ static void NORETURN MLOCKED_TEXT stress_segvhandler(int signum)
 
 static void notrunc_strlcat(char *dst, const char *src, size_t *n)
 {
-	const size_t ln = strlen(src);
+	const size_t ln = shim_strlen(src);
 
 	if (*n <= ln)
 		return;
@@ -154,7 +154,8 @@ static int stress_mmapfork(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		size_t i, len;
+		size_t i;
+		size_t len;
 
 		stress_sync_init_pids(s_pids, mmapfork_procs);
 
@@ -310,13 +311,27 @@ reap:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("lock-contention"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+
+	STRESS_EX_SYSCALL("exit"),
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("waitpid"),
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_mmapfork_info = {
 	.stressor = stress_mmapfork,
 	.classifier = CLASS_SCHEDULER | CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mmapfork_info = {

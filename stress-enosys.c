@@ -33,7 +33,8 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_SYSCALL_H) &&	\
-    defined(HAVE_SYSCALL)
+    defined(HAVE_SYSCALL) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 #define HASH_SYSCALL_SIZE	(1987)
 
@@ -282,7 +283,7 @@ static const int syscall_ignore[] = {
 
 static inline bool OPTIMIZE3 syscall_find(long int number)
 {
-	register stress_hash_syscall_t *h;
+	register const stress_hash_syscall_t *h;
 	register int i;
 	register const long int number16 = number & 0xffff;
 	const unsigned long int idx = (unsigned long int)number;
@@ -306,7 +307,8 @@ static inline void OPTIMIZE3 syscall_add(const long int number)
 {
 	const unsigned long int idx = (unsigned long int)number;
 	const unsigned long int hash = idx % HASH_SYSCALL_SIZE;
-	stress_hash_syscall_t *newh, *h = hash_syscall_table[hash];
+	stress_hash_syscall_t *newh;
+	const stress_hash_syscall_t *h = hash_syscall_table[hash];
 
 	while (h) {
 		if (h->number == number)
@@ -3929,16 +3931,19 @@ static const long int skip_syscalls[] = {
  */
 static void limit_procs(const unsigned long int procs)
 {
-#if defined(RLIMIT_CPU) || defined(RLIMIT_NPROC)
+#if defined(HAVE_SETRLIMIT) &&				\
+    (defined(RLIMIT_CPU) || defined(RLIMIT_NPROC))
 	struct rlimit lim;
 #endif
 
-#if defined(RLIMIT_CPU)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_CPU)
 	lim.rlim_cur = 1;
 	lim.rlim_max = 1;
 	(void)setrlimit(RLIMIT_CPU, &lim);
 #endif
-#if defined(RLIMIT_NPROC)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_NPROC)
 	lim.rlim_cur = (unsigned long int)procs;
 	lim.rlim_max = (unsigned long int)procs;
 	(void)setrlimit(RLIMIT_NPROC, &lim);
@@ -4149,10 +4154,14 @@ static inline int stress_enosys_parent(
 static int stress_enosys(stress_args_t *args)
 {
 	pid_t pid;
-	int rd_fds[2], wr_fds[2], rc = EXIT_SUCCESS;
+	int rd_fds[2];
+	int wr_fds[2];
+	int rc = EXIT_SUCCESS;
 	size_t i;
 	uint64_t syscalls = 0;
-	double t_start, duration, rate;
+	double t_start;
+	double duration;
+	double rate;
 
 #if defined(STRESS_EXERCISE_X86_SYSCALL)
 	stress_x86syscall_available = stress_cpu_x86_has_syscall();
@@ -4181,11 +4190,8 @@ static int stress_enosys(stress_args_t *args)
 			(void)close(rd_fds[1]);
 			return EXIT_NO_RESOURCE;
 		}
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (stress_continue(args)) {
 				pr_err("%s: fork failed, errno=%d: (%s)\n",
 					args->name, errno, strerror(errno));
@@ -4267,16 +4273,27 @@ deinit_free:
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-migrations"),
+
+	STRESS_EX_SYSCALL("syscall"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_enosys_info = {
 	.stressor = stress_enosys,
 	.classifier = CLASS_OS,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };
 #else
 const stressor_info_t stress_enosys_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_OS,
 	.help = help,
-	.unimplemented_reason = "built without sys/syscall.h or syscall support"
+	.unimplemented_reason = "built without siglongjmp(), sys/syscall.h or syscall support"
 };
 #endif

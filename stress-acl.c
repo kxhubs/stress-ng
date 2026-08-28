@@ -17,6 +17,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-mmap.h"
 
 #if defined(HAVE_SYS_ACL_H)
@@ -108,8 +109,10 @@ static inline void stress_acl_delete_all(const char *filename, const acl_type_t 
  */
 static inline int stress_acl_cmp(const acl_t acl1, const acl_t acl2)
 {
-	char *acl_txt1, *acl_txt2;
-	ssize_t len1, len2;
+	char *acl_txt1;
+	char *acl_txt2;
+	ssize_t len1;
+	ssize_t len2;
 	int ret = -1;
 
 	acl_txt1 = acl_to_text(acl1, &len1);
@@ -121,7 +124,7 @@ static inline int stress_acl_cmp(const acl_t acl1, const acl_t acl2)
 		return 0;
 	}
 	if (len1 == len2)
-		ret = strcmp(acl_txt1, acl_txt2);
+		ret = shim_strcmp(acl_txt1, acl_txt2);
 
 	acl_free((void *)acl_txt2);
 	acl_free((void *)acl_txt1);
@@ -210,7 +213,9 @@ static int stress_acl_setup(
 	size_t *acl_count,
 	bool *acls_tested)
 {
-	size_t usr, grp, oth;
+	size_t usr;
+	size_t grp;
+	size_t oth;
 
 	for (usr = 0; usr < SIZEOF_ARRAY(stress_acl_entries); usr++) {
 		for (grp = 0; grp < SIZEOF_ARRAY(stress_acl_entries); grp++) {
@@ -353,21 +358,20 @@ static int stress_acl_exercise(
 				metrics[1].count += 1.0;
 
 				if (stress_acl_cmp(acls[i], acl)) {
-					char setacl[32], getacl[32];
+					char setacl[32];
+					char getacl[32];
 
 					acls_tested[i] = true;
 					stress_acl_perms(acls[i], setacl, sizeof(setacl));
 					stress_acl_perms(acl, getacl, sizeof(getacl));
 
-					pr_fail("%s: mismatch between set acl %s and get acl %s\n",
+					pr_fail("%s: mismatch between set acl '%s' and get acl '%s'\n",
 						args->name, setacl, getacl);
 					acl_free(acl);
 					return EXIT_FAILURE;
 				}
 				acl_free(acl);
 			}
-
-
 			stress_bogo_inc(args);
 		} else {
 			char getacl[32];
@@ -383,8 +387,8 @@ static int stress_acl_exercise(
 				return EXIT_SUCCESS;
 			default:
 				stress_acl_perms(acls[i], getacl, sizeof(getacl));
-				pr_fail("%s: failed to set acl on '%s' %s, errno=%d (%s)\n",
-					args->name, filename, getacl, errno, strerror(errno));
+				pr_fail("%s: failed to set acl '%s' on '%s', errno=%d (%s)\n",
+					args->name, getacl, filename, errno, strerror(errno));
 				return EXIT_FAILURE;
 			}
 		}
@@ -398,12 +402,15 @@ static int stress_acl_exercise(
  */
 static int stress_acl(stress_args_t *args)
 {
-	int fd, rc;
+	int fd;
+	int rc;
 	const uid_t uid = getuid();
 	const gid_t gid = getgid();
 	acl_t *acls;
 	bool *acls_tested;
-	size_t i, acl_count = 0, acl_tested_count = 0;
+	size_t i;
+	size_t acl_count = 0;
+	size_t acl_tested_count = 0;
 	bool acl_rand = false;
 	const size_t max_acls = SIZEOF_ARRAY(stress_acl_entries) *
 				SIZEOF_ARRAY(stress_acl_entries) *
@@ -413,7 +420,7 @@ static int stress_acl(stress_args_t *args)
 	const size_t acls_tested_size = max_acls * sizeof(*acls_tested);
 	stress_metrics_t metrics[2];
 	char filename[PATH_MAX], pathname[PATH_MAX];
-	static char * const description[] = {
+	static const char * const description[] = {
 		"nanoseconds to set an ACL",
 		"nanoseconds to get an ACL",
 	};
@@ -448,19 +455,17 @@ static int stress_acl(stress_args_t *args)
 		goto tidy_unmap_acls_tested;
 
 	stress_fs_temp_dir_args(args, pathname, sizeof(pathname));
-	if (mkdir(pathname, S_IRUSR | S_IRWXU) < 0) {
-		if (errno != EEXIST) {
-			rc = stress_exit_status(errno);
-			pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
-				args->name, pathname, errno, strerror(errno));
-			goto tidy_acl_free;
-		}
+	if ((mkdir(pathname, S_IRUSR | S_IRWXU) < 0) && (errno != EEXIST)) {
+		rc = stress_exit_status(errno);
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
+			args->name, pathname, errno, strerror(errno));
+		goto tidy_acl_free;
 	}
 
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 	if ((fd = creat(filename, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: create %s failed, errno=%d (%s)\n",
+		pr_fail("%s: create '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy;
 	}
@@ -527,12 +532,22 @@ tidy_unmap_acls:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("io-thermal"),
+
+	STRESS_EX_LIBRARY("acl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_acl_info = {
 	.stressor = stress_acl,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };
 #else
 const stressor_info_t stress_acl_info = {

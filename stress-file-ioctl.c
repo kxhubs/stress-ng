@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 
 #include <sys/ioctl.h>
 
@@ -43,7 +44,7 @@
 #endif
 #endif
 
-typedef void (*stress_file_ioctl_fs_func_t)(const int fd);
+typedef void (*stress_file_ioctl_fs_func_t)(stress_args_t *args, const int fd);
 
 typedef struct {
 	const char *name;
@@ -135,15 +136,15 @@ struct shim_space_resv {
 
 #endif
 
-static void stress_file_ioctl_btrfs(const int fd)
+static void stress_file_ioctl_btrfs(stress_args_t *args, const int fd)
 {
+	(void)args;
 	(void)fd;
 
 #if defined(FS_IOC_GETVERSION)
 	{
-		int version;
-
-		VOID_RET(int, ioctl(fd, FS_IOC_GETVERSION, &version));
+		if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 	}
 #endif
 #if defined(FS_IOC_GETFSLABEL)
@@ -158,30 +159,28 @@ static void stress_file_ioctl_btrfs(const int fd)
 #endif
 #if defined(BTRFS_IOC_SUBVOL_GETFLAGS)
 	{
-		uint64_t flags;
-
-		/* EINVAL */
-		VOID_RET(int, ioctl(fd, BTRFS_IOC_SUBVOL_GETFLAGS, &flags));
+		if (stress_ioctl_get_check(fd, BTRFS_IOC_SUBVOL_GETFLAGS, sizeof(uint64_t)) < 0)
+			pr_fail("%s: ioctl BTRFS_IOC_SUBVOL_GETFLAGS failed, not getting value reliably\n", args->name);
 	}
 #endif
 }
 
-static void stress_file_ioctl_ext(const int fd)
+static void stress_file_ioctl_ext(stress_args_t *args, const int fd)
 {
+	(void)args;
 	(void)fd;
 
 #if defined(EXT4_IOC_GETVERSION)
 	{
-		long version;
+		if (stress_ioctl_get_check(fd, EXT4_IOC_GETVERSION, sizeof(long)) < 0)
+			pr_fail("%s: ioctl EXT4_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 
-		VOID_RET(int, ioctl(fd, EXT4_IOC_GETVERSION, &version));
 	}
 #endif
 #if defined(EXT4_IOC_GETRSVSZ)
 	{
-		long rsvsz;
-
-		VOID_RET(int, ioctl(fd, EXT4_IOC_GETRSVSZ, &rsvsz));
+		if (stress_ioctl_get_check(fd, EXT4_IOC_GETRSVSZ, sizeof(long)) < 0)
+			pr_fail("%s: ioctl EXT4_IOC_GETRSVSZ failed, not getting value reliably\n", args->name);
 	}
 #endif
 #if defined(FS_IOC_GETFSLABEL)
@@ -193,9 +192,8 @@ static void stress_file_ioctl_ext(const int fd)
 #endif
 #if defined(EXT4_IOC_GETSTATE)
 	{
-		uint32_t state;
-
-		VOID_RET(int, ioctl(fd, EXT4_IOC_GETSTATE, &state));
+		if (stress_ioctl_get_check(fd, EXT4_IOC_GETSTATE, sizeof(uint32_t)) < 0)
+			pr_fail("%s: ioctl EXT4_IOC_GETSTATE failed, not getting value reliably\n", args->name);
 	}
 #endif
 #if defined(EXT4_IOC_PRECACHE_EXTENTS)
@@ -213,7 +211,6 @@ static void stress_file_ioctl_ext(const int fd)
 		struct shim_fsuuid fsuuid;
 
 		(void)memset(&fsuuid, 0, sizeof(fsuuid));
-		write(1, "here\n", 5);
 		ret = ioctl(fd, EXT4_IOC_GETFSUUID, &fsuuid);
 		if ((ret == 0) && (fsuuid.fsu_len <= sizeof(fsuuid.fsu_uuid))) {
 			VOID_RET(int, ioctl(fd, EXT4_IOC_GETFSUUID, &fsuuid));
@@ -223,15 +220,15 @@ static void stress_file_ioctl_ext(const int fd)
 #endif
 }
 
-static void stress_file_ioctl_nilfs(const int fd)
+static void stress_file_ioctl_nilfs(stress_args_t *args, const int fd)
 {
+	(void)args;
 	(void)fd;
 
 #if defined(FS_IOC_GETVERSION)
 	{
-		int version;
-
-		VOID_RET(int, ioctl(fd, FS_IOC_GETVERSION, &version));
+		if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 	}
 #endif
 #if defined(FS_IOC_GETFSLABEL)
@@ -243,29 +240,29 @@ static void stress_file_ioctl_nilfs(const int fd)
 #endif
 }
 
-static void stress_file_ioctl_reiserfs(const int fd)
+static void stress_file_ioctl_reiserfs(stress_args_t *args, const int fd)
 {
+	(void)args;
 	(void)fd;
 
 #if defined(FS_IOC_GETVERSION)
 	{
-		int version;
-
-		VOID_RET(int, ioctl(fd, FS_IOC_GETVERSION, &version));
+		if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 	}
 #endif
 }
 
-static void stress_file_ioctl_xfs(const int fd)
+static void stress_file_ioctl_xfs(stress_args_t *args, const int fd)
 
 {
+	(void)args;
 	(void)fd;
 
 #if defined(FS_IOC_GETVERSION)
 	{
-		int version;
-
-		VOID_RET(int, ioctl(fd, FS_IOC_GETVERSION, &version));
+		if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+			pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 	}
 #endif
 #if defined(FS_IOC_GETFSLABEL)
@@ -294,7 +291,9 @@ static const stress_file_ioctl_fs_t stress_file_ioctl_fs[] = {
 static int stress_file_ioctl(stress_args_t *args)
 {
 	char filename[PATH_MAX];
-	int ret, fd, rc = EXIT_SUCCESS;
+	int ret;
+	int fd;
+	int rc = EXIT_SUCCESS;
 	const int bad_fd = stress_fs_bad_fd_get();
 #if defined(FICLONE) || defined(FICLONERANGE)
 	int dfd;
@@ -314,7 +313,8 @@ static int stress_file_ioctl(stress_args_t *args)
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		ret = stress_exit_status(errno);
-		pr_err("%s: cannot create %s\n", args->name, filename);
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return ret;
 	}
@@ -322,7 +322,7 @@ static int stress_file_ioctl(stress_args_t *args)
 	fs_type = stress_fs_info_get(filename, &blocks);
 	if (fs_type) {
 		for (i = 0; i < SIZEOF_ARRAY(stress_file_ioctl_fs); i++) {
-			if (strcmp(fs_type, stress_file_ioctl_fs[i].name) == 0) {
+			if (shim_strcmp(fs_type, stress_file_ioctl_fs[i].name) == 0) {
 				fs_func = stress_file_ioctl_fs[i].fs_func;
 				break;
 			}
@@ -338,7 +338,8 @@ static int stress_file_ioctl(stress_args_t *args)
 		ret = stress_exit_status(errno);
 		(void)close(fd);
 		(void)stress_fs_temp_dir_rm_args(args);
-		pr_err("%s: cannot create %s\n", args->name, filename);
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		return ret;
 	}
 	(void)shim_unlink(filename);
@@ -430,9 +431,8 @@ static int stress_file_ioctl(stress_args_t *args)
 
 #if defined(FIOQSIZE)
 		{
-			shim_loff_t sz;
-
-			VOID_RET(int, ioctl(fd, FIOQSIZE, &sz));
+			if (stress_ioctl_get_check(fd, FIOQSIZE, sizeof(shim_loff_t)) < 0)
+				pr_fail("%s: ioctl FIOQSIZE failed, not getting value reliably\n", args->name);
 			exercised++;
 		}
 #else
@@ -566,7 +566,8 @@ static int stress_file_ioctl(stress_args_t *args)
 		{
 			int isz = 0;
 
-			VOID_RET(int, ioctl(fd, FIONREAD, &isz));
+			if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+				pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 			exercised++;
 
 			/*
@@ -581,9 +582,8 @@ static int stress_file_ioctl(stress_args_t *args)
 
 #if defined(FS_IOC_GETVERSION)
 		{
-			int ver;
-
-			VOID_RET(int, ioctl(fd, FS_IOC_GETVERSION, &ver));
+			if (stress_ioctl_get_check(fd, FS_IOC_GETVERSION, sizeof(int)) < 0)
+				pr_fail("%s: ioctl FS_IOC_GETVERSION failed, not getting value reliably\n", args->name);
 			exercised++;
 		}
 #else
@@ -764,7 +764,7 @@ static int stress_file_ioctl(stress_args_t *args)
 		}
 
 		if (fs_func)
-			fs_func(fd);
+			fs_func(args, fd);
 
 		stress_bogo_inc(args);
 	} while (stress_continue(args));
@@ -780,9 +780,19 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_file_ioctl_info = {
 	.stressor = stress_file_ioctl,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

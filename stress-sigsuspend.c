@@ -39,9 +39,12 @@ static void *counter_lock;
 static int stress_sigsuspend(stress_args_t *args)
 {
 	pid_t pid[MAX_SIGSUSPEND_PIDS];
-	size_t n, i;
-	sigset_t mask, oldmask;
-	int rc = EXIT_SUCCESS, parent_cpu;
+	size_t n;
+	size_t i;
+	sigset_t mask;
+	sigset_t oldmask;
+	int rc = EXIT_SUCCESS;
+	int parent_cpu;
 
 	if (stress_signal_handler(args->name, SIGUSR1, stress_signal_ignore_handler, NULL) < 0)
 		return EXIT_FAILURE;
@@ -50,7 +53,7 @@ static int stress_sigsuspend(stress_args_t *args)
 
 	counter_lock = stress_lock_create("counter");
 	if (!counter_lock) {
-		pr_inf_skip("%s: failed to create counter lock. skipping stressor\n", args->name);
+		pr_inf_skip("%s: create counter lock failed. skipping stressor\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -62,12 +65,9 @@ static int stress_sigsuspend(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	for (n = 0; n < MAX_SIGSUSPEND_PIDS; n++) {
-again:
 		parent_cpu = stress_cpu_get();
-		pid[n] = fork();
+		pid[n] = stress_retry_fork(args, 0);
 		if (pid[n] < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto reap;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -131,9 +131,21 @@ reap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("stack"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigsuspend_info = {
 	.stressor = stress_sigsuspend,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -87,7 +87,9 @@ static int stress_pipeherd(stress_args_t *args)
 	stress_pipeherd_data_t data;
 	uint32_t check = stress_mwc32();
 	stress_pid_t s_pids[MAX_PIPEHERD_PROCS];
-	int i, rc, pipeherd_procs = DEFAULT_PIPEHERD_PROCS;
+	int i;
+	int rc;
+	int pipeherd_procs = DEFAULT_PIPEHERD_PROCS;
 	ssize_t sz;
 	bool pipeherd_yield = false;
 #if defined(HAVE_GETRUSAGE) &&	\
@@ -95,7 +97,8 @@ static int stress_pipeherd(stress_args_t *args)
     defined(RUSAGE_SELF) &&	\
     defined(HAVE_RUSAGE_RU_NVCSW)
 	struct rusage usage;
-	double t1, t2;
+	double t1;
+	double t2;
 #endif
 
 	if (!stress_setting_get("pipeherd-procs", &pipeherd_procs)) {
@@ -238,10 +241,22 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("load-average"),
+
+	STRESS_EX_SYSCALL("pipe"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_pipeherd_info = {
 	.stressor = stress_pipeherd,
 	.classifier = CLASS_PIPE_IO | CLASS_MEMORY | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

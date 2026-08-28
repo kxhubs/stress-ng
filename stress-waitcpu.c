@@ -84,7 +84,10 @@ static inline void stress_waitcpu_arm_yield(void)
 #if defined(HAVE_ASM_X86_PAUSE)
 static bool stress_waitcpu_x86_pause_supported(void)
 {
-	uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0;
+	uint32_t eax = 0;
+	uint32_t ebx = 0;
+	uint32_t ecx = 0;
+	uint32_t edx = 0;
 
 	if (!stress_cpu_is_x86())
 		return false;
@@ -150,7 +153,7 @@ static void stress_waitcpu_x86_umwait0(void)
 	stress_asm_x86_umonitor(&delay);	/* Use dummy variable */
 	tsc = stress_asm_x86_rdtsc();
 	ret = stress_asm_x86_umwait(0, tsc + delay);
-	delay += (ret == 0) ? delay >> 6 : -(delay >> 6);
+	delay += (ret == 0) ? delay >> 6 : (uint64_t)-(int64_t)(delay >> 6);
 }
 
 static void stress_waitcpu_x86_umwait1(void)
@@ -162,7 +165,7 @@ static void stress_waitcpu_x86_umwait1(void)
 	stress_asm_x86_umonitor(&delay);	/* Use dummy variable */
 	tsc = stress_asm_x86_rdtsc();
 	ret = stress_asm_x86_umwait(1, tsc + delay);
-	delay += (ret == 0) ? delay >> 6 : -(delay >> 6);
+	delay += (ret == 0) ? delay >> 6 : (uint64_t)-(int64_t)(delay >> 6);
 }
 #endif
 
@@ -373,7 +376,7 @@ static int stress_waitcpu(stress_args_t *args)
 			       stress_waitcpu_method[i].duration;
 
 #if defined(STRESS_ARCH_X86)
-		if (!strcmp("nop", stress_waitcpu_method[i].name))
+		if (!shim_strcmp("nop", stress_waitcpu_method[i].name))
 			nop_rate = rate;
 #endif
 
@@ -399,7 +402,7 @@ static int stress_waitcpu(stress_args_t *args)
 			bool virtualized = false;
 
 			while (fgets(buf, sizeof(buf), fp) != NULL) {
-				if (strstr(buf, "hypervisor")) {
+				if (shim_strstr(buf, "hypervisor")) {
 					virtualized = true;
 					break;
 				}
@@ -408,7 +411,7 @@ static int stress_waitcpu(stress_args_t *args)
 
 			if (!virtualized) {
 				for (i = 0; i < SIZEOF_ARRAY(stress_waitcpu_method); i++) {
-					if (!strcmp("nop", stress_waitcpu_method[i].name))
+					if (!shim_strcmp("nop", stress_waitcpu_method[i].name))
 						continue;
 					/*
 					 *   compare with ~50% slop
@@ -429,9 +432,18 @@ static int stress_waitcpu(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_waitcpu_info = {
 	.stressor = stress_waitcpu,
 	.classifier = CLASS_CPU,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

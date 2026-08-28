@@ -73,7 +73,7 @@ static int stress_seal(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to allocate %zu byte buffer%s, "
+		pr_inf_skip("%s: allocate %zu byte buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -104,12 +104,12 @@ static int stress_seal(stress_args_t *args)
 				(void)munmap((void *)buf, page_size);
 				return EXIT_NO_RESOURCE;
 			}
-			pr_fail("%s: memfd_create %s failed, errno=%d (%s)\n",
+			pr_fail("%s: memfd_create '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			(void)munmap((void *)buf, page_size);
 			return EXIT_FAILURE;
 		}
-
+		errno = 0;
 		if (UNLIKELY(ftruncate(fd, sz) < 0)) {
 			pr_fail("%s: ftruncate failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
@@ -133,6 +133,7 @@ static int stress_seal(stress_args_t *args)
 			(void)close(fd);
 			goto err;
 		}
+		errno = 0;
 		ret = ftruncate(fd, 0);
 		if (UNLIKELY((ret == 0) || ((ret < 0) && (errno != EPERM)))) {
 			pr_fail("%s: ftruncate did not fail with EPERM as expected, errno=%d (%s)\n",
@@ -150,6 +151,7 @@ static int stress_seal(stress_args_t *args)
 			(void)close(fd);
 			goto err;
 		}
+		errno = 0;
 		ret = ftruncate(fd, sz + 1);
 		if (UNLIKELY((ret == 0) || ((ret < 0) && (errno != EPERM)))) {
 			pr_fail("%s: ftruncate did not fail with EPERM as expected, errno=%d (%s)\n",
@@ -174,6 +176,7 @@ static int stress_seal(stress_args_t *args)
 			goto err;
 		}
 		(void)shim_memset(ptr, 0xea, page_size);
+		errno = 0;
 		ret = fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE);
 		if (UNLIKELY((ret == 0) || ((ret < 0) && (errno != EBUSY)))) {
 			pr_fail("%s: fcntl F_ADD_SEALS F_SEAL_WRITE did not fail with EBUSY as expected, errno=%d (%s)\n",
@@ -196,6 +199,7 @@ static int stress_seal(stress_args_t *args)
 			(void)close(fd);
 			goto err;
 		}
+		errno = 0;
 		wret = write(fd, buf, page_size);
 		if (UNLIKELY((wret == 0) || ((wret < 0) && (errno != EPERM)))) {
 			pr_fail("%s: write on sealed file did not fail with EPERM as expected, errno=%d (%s)\n",
@@ -204,10 +208,48 @@ static int stress_seal(stress_args_t *args)
 			goto err;
 		}
 
+#if defined(F_SEAL_EXEC)
 		/*
-		 *  And try (and ignore error) from a F_SEAL_FUTURE_WRITE
+		 *  Now write seal the file, no more writes allowed
 		 */
-		VOID_RET(int, fcntl(fd, F_ADD_SEALS, F_SEAL_FUTURE_WRITE));
+		if (UNLIKELY(fcntl(fd, F_ADD_SEALS, F_SEAL_EXEC) < 0)) {
+			if ((errno == EBUSY) || (errno == EINVAL))
+				goto next;
+			pr_fail("%s: fcntl F_ADD_SEALS F_SEAL_EXEC failed, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+			(void)close(fd);
+			goto err;
+		}
+		errno = 0;
+		ret = fchmod(fd, S_IXUSR | S_IWUSR | S_IRUSR);
+		if (UNLIKELY((ret == 0) || ((ret < 0) && (errno != EPERM)))) {
+			pr_fail("%s: write on sealed file did not fail with EPERM as expected, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+			(void)close(fd);
+			goto err;
+		}
+#endif
+
+#if defined(F_SEAL_FUTURE_WRITE)
+		/*
+		 *  Try to F_SEAL_FUTURE_WRITE a file and check if mmap
+		 *  on it will fail
+		 */
+		if (fcntl(fd, F_ADD_SEALS, F_SEAL_FUTURE_WRITE) == 0) {
+			/*
+			 *  mmap file, sealing it should not succeed
+			 */
+			ptr = (uint8_t *)mmap(NULL, (size_t)sz, PROT_WRITE, MAP_SHARED,
+				fd, 0);
+			if (UNLIKELY(ptr != MAP_FAILED)) {
+				(void)stress_munmap_force((void *)ptr, (size_t)sz);
+				pr_fail("%s: mmap of %jd bytes failed%s on sealed file unexpectedly succeeded\n",
+					args->name, (intmax_t)sz, stress_memory_free_get());
+				(void)close(fd);
+				goto err;
+			}
+		}
+#endif
 next:
 		(void)close(fd);
 
@@ -216,17 +258,34 @@ next:
 
 	rc = EXIT_SUCCESS;
 err:
-	(void)munmap((void *)buf, page_size);
+	if (buf != MAP_FAILED)
+		(void)munmap((void *)buf, page_size);
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fchmod"),
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("memfd_create"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_seal_info = {
 	.stressor = stress_seal,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_seal_info = {

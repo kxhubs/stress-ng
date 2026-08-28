@@ -23,6 +23,7 @@
 #include "core-capabilities.h"
 #include "core-madvise.h"
 #include "core-mincore.h"
+#include "core-numa.h"
 #include "core-out-of-memory.h"
 #include "core-pragma.h"
 #include "core-signal.h"
@@ -55,9 +56,9 @@ UNEXPECTED
 #define SHM_HUGE_1GB	(30 << SHM_HUGE_SHIFT)
 #endif
 
-#define MIN_SHM_SYSV_BYTES	(1 * MB)
-#define MAX_SHM_SYSV_BYTES	(256 * MB)
-#define DEFAULT_SHM_SYSV_BYTES	(8 * MB)
+#define MIN_SHM_SYSV_BYTES	(1 * STRESS_MB)
+#define MAX_SHM_SYSV_BYTES	(256 * STRESS_MB)
+#define DEFAULT_SHM_SYSV_BYTES	(8 * STRESS_MB)
 
 #define MIN_SHM_SYSV_SEGMENTS	(1)
 #define MAX_SHM_SYSV_SEGMENTS	(128)
@@ -79,8 +80,7 @@ static const stress_help_t help[] = {
     defined(HAVE_SHM_SYSV)
 
 #define KEY_GET_RETRIES		(40)
-#define BITS_PER_BYTE		(8)
-#define NUMA_LONG_BITS		(sizeof(unsigned long int) * BITS_PER_BYTE)
+
 #if !defined(MPOL_F_ADDR)
 #define MPOL_F_ADDR		(1 << 1)
 #endif
@@ -165,7 +165,8 @@ static int OPTIMIZE3 stress_shm_sysv_check(
 	const size_t sz,
 	const size_t page_size)
 {
-	uint8_t *ptr, val;
+	uint8_t *ptr;
+	uint8_t val;
 	const uint8_t *end = buf + sz;
 
 PRAGMA_UNROLL_N(4)
@@ -634,9 +635,12 @@ static int stress_shm_sysv_child(
 	uint32_t instances = args->instances;
 	const size_t buffer_size = (page_size / sizeof(uint64_t)) + 1;
 	uint64_t *buffer;
-	double shmget_duration = 0.0, shmget_count = 0.0;
-	double shmat_duration = 0.0, shmat_count = 0.0;
-	double shmdt_duration = 0.0, shmdt_count = 0.0;
+	double shmget_duration = 0.0;
+	double shmget_count = 0.0;
+	double shmat_duration = 0.0;
+	double shmat_count = 0.0;
+	double shmdt_duration = 0.0;
+	double shmdt_count = 0.0;
 	uint32_t seg_space = args->instances * (int)shm_sysv_segments;
 	uint32_t max_keys = (seg_space > 0) ? (uint32_t)MAX_SHM_KEYS / seg_space : 1;
 	const uint32_t keys_per_instance = MAX_SHM_KEYS / args->instances;
@@ -650,7 +654,7 @@ static int stress_shm_sysv_child(
 
 	buffer = (uint64_t *)calloc(buffer_size, sizeof(*buffer));
 	if (!buffer) {
-		pr_inf_skip("%s: failed to allocate %zu byte buffer%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu byte buffer failed%s, skipping stressor\n",
 			args->name, buffer_size, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -674,24 +678,26 @@ static int stress_shm_sysv_child(
 		key_t key;
 
 		for (i = 0; i < shm_sysv_segments; i++) {
-			int shm_id = -1, count = 0;
+			stress_memory_info_t info;
+			int shm_id = -1;
+			int count = 0;
 			void *addr;
-			size_t shmall, freemem, totalmem, freeswap, totalswap;
 			double t;
 
 			/* Try hard not to overcommit at this current time */
-			stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-			shmall /= instances;
-			freemem /= instances;
-			if ((shmall > page_size) && sz > shmall)
-				sz = shmall;
-			if ((freemem > page_size) && sz > freemem)
-				sz = freemem;
+			stress_memory_info_get(&info);
+			info.shmall /= instances;
+			info.freemem /= instances;
+			if ((info.shmall > page_size) && sz > info.shmall)
+				sz = info.shmall;
+			if ((info.freemem > page_size) && sz > info.freemem)
+				sz = info.freemem;
 			if (UNLIKELY(!stress_continue_flag()))
 				goto reap;
 
 			for (count = 0; count < KEY_GET_RETRIES; count++) {
-				int rnd, rnd_flag;
+				int rnd;
+				int rnd_flag;
 retry:
 				rnd = stress_mwc32modn(SIZEOF_ARRAY(shm_flags));
 				rnd_flag = shm_flags[rnd] & mask;
@@ -873,8 +879,9 @@ retry:
 #if defined(__NR_get_mempolicy) &&	\
     defined(__NR_set_mempolicy)
 			{
-				int ret, mode;
-				unsigned long int node_mask[NUMA_LONG_BITS];
+				int ret;
+				int mode;
+				unsigned long int node_mask[STRESS_NUMA_LONG_BITS];
 
 				ret = shim_get_mempolicy(&mode, node_mask, 1,
 					addrs[i], MPOL_F_ADDR);
@@ -988,16 +995,18 @@ reap:
 static int stress_shm_sysv(stress_args_t *args)
 {
 	const size_t page_size = args->page_size;
-	size_t orig_sz, sz;
+	ssize_t i;
+	size_t orig_sz;
+	size_t sz;
+	size_t shm_sysv_bytes;
+	size_t shm_sysv_bytes_total = DEFAULT_SHM_SYSV_BYTES;
+	size_t shm_sysv_segments = DEFAULT_SHM_SYSV_SEGMENTS;
+	pid_t pid;
+	uint32_t restarts = 0;
 	int pipefds[2];
 	int rc = EXIT_SUCCESS;
-	ssize_t i;
-	pid_t pid;
 	bool retry = true;
 	bool shm_sysv_mlock = false;
-	uint32_t restarts = 0;
-	size_t shm_sysv_bytes, shm_sysv_bytes_total = DEFAULT_SHM_SYSV_BYTES;
-	size_t shm_sysv_segments = DEFAULT_SHM_SYSV_SEGMENTS;
 
 	if (!stress_setting_get("shm-sysv-mlock", &shm_sysv_mlock)) {
 		if (g_opt_flags & OPT_FLAGS_AGGRESSIVE)
@@ -1158,12 +1167,32 @@ fork_again:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+#if defined(__NR_get_mempolicy)
+	STRESS_EX_SYSCALL("get_mempolicy"),
+#endif
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("msync"),
+#if defined(__NR_get_mempolicy)
+	STRESS_EX_SYSCALL("set_mempolicy"),
+#endif
+	STRESS_EX_SYSCALL("shmat"),
+	STRESS_EX_SYSCALL("shmctl"),
+	STRESS_EX_SYSCALL("shmdt"),
+	STRESS_EX_SYSCALL("shmget"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_shm_sysv_info = {
 	.stressor = stress_shm_sysv,
 	.classifier = CLASS_VM | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_shm_sysv_info = {

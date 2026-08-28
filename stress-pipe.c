@@ -20,16 +20,20 @@
 #include "stress-ng.h"
 #include "core-affinity.h"
 #include "core-builtin.h"
+#include "core-filesystem.h"
 #include "core-mmap.h"
 #include "core-signal.h"
 
 #include <sys/ioctl.h>
 
-#define MIN_PIPE_SIZE		(4096)
-#define MAX_PIPE_SIZE		(1024 * 1024)
-
 #define MIN_PIPE_DATA_SIZE	(8)
-#define MAX_PIPE_DATA_SIZE	(4096)
+#define MIN_PIPE_PROCS		(1)
+#define MAX_PIPE_PROCS		(64)
+
+typedef struct stress_pipe_write {
+	double duration;
+	uint64_t bytes;
+} stress_pipe_write_t;
 
 static const stress_help_t help[] = {
 	{ "p N", "pipe N",		"start N workers exercising pipe I/O" },
@@ -208,7 +212,8 @@ static int stress_pipe_read_generic_verify(
 	return rc;
 }
 
-#if defined(HAVE_VMSPLICE)
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
 /*
  *  stress_pipe_read_splice()
  *	pipe read using vmsplice
@@ -285,7 +290,7 @@ static int stress_pipe_read_splice_verify(
 #if defined(FIONREAD)
 	register int i = 0;
 #endif
-	uint32_t *buf32;
+	const uint32_t *buf32;
 	struct iovec iov;
 	size_t offset = 0;
 	const size_t nbufs = buf_size / pipe_data_size;
@@ -349,7 +354,7 @@ static int stress_pipe_read_splice_verify(
 static int stress_pipe_write_generic(
 	stress_args_t *args,
 	const int fd,
-	char *buf,
+	const char *buf,
 	const size_t pipe_data_size,
 	uint64_t *pbytes64)
 {
@@ -423,7 +428,8 @@ static int stress_pipe_write_generic_verify(
 	return rc;
 }
 
-#if defined(HAVE_VMSPLICE)
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
 /*
  *  stress_pipe_write()
  *	vmsplice pipe write, no verify
@@ -537,27 +543,78 @@ static int stress_pipe_write_splice_verify(
  */
 static int stress_pipe(stress_args_t *args)
 {
-	pid_t pid;
-	int pipefds[2], parent_cpu, rc = EXIT_SUCCESS;
+	pid_t wr_pids[MAX_PIPE_PROCS];
+	pid_t rd_pids[MAX_PIPE_PROCS];
+	stress_pipe_write_t *pipe_writes;
+	int pipefds[2];
+	int parent_cpu;
+	int rc = EXIT_SUCCESS;
+	int status;
 	const size_t page_size = args->page_size;
 	size_t pipe_data_size = 4096;
-	size_t pipe_wr_size, pipe_rd_size, buf_wr_size, buf_rd_size;
-	char *buf_rd, *buf_wr;
+	size_t pipe_wr_size;
+	size_t pipe_rd_size;
+	size_t buf_wr_size;
+	size_t buf_rd_size;
+	size_t pipe_readers = MIN_PIPE_PROCS;
+	size_t pipe_writers = MIN_PIPE_PROCS;
+	const size_t pipe_writes_size = MAX_PIPE_PROCS * sizeof(*pipe_writes);
+	size_t i;
+	char *buf_rd;
+	char *buf_wr;
 	const uint32_t val = stress_mwc32();
-	double duration = 0.0, rate;
-	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
+	double total_duration;
+	double total_bytes;
+	double rate;
+	bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	bool pipe_vmsplice = false;
+
+	(void)memset(wr_pids, 0, sizeof(wr_pids));
+	(void)memset(rd_pids, 0, sizeof(rd_pids));
 
 	(void)stress_setting_get("pipe-vmsplice", &pipe_vmsplice);
 	if (!stress_setting_get("pipe-data-size", &pipe_data_size)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
-			pipe_data_size = MAX_PIPE_DATA_SIZE;
+			pipe_data_size = stress_memory_page_size_get();
 		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
 			pipe_data_size = MIN_PIPE_DATA_SIZE;
 	}
+	if (!stress_setting_get("pipe-readers", &pipe_readers)) {
+		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
+			pipe_readers = MAX_PIPE_PROCS;
+		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
+			pipe_readers = MIN_PIPE_PROCS;
+	}
+	if (!stress_setting_get("pipe-writers", &pipe_writers)) {
+		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
+			pipe_writers = MAX_PIPE_PROCS;
+		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
+			pipe_writers = MIN_PIPE_PROCS;
+	}
 
-	if (stress_signal_stop_stressing(args->name, SIGPIPE) < 0)
-		return EXIT_FAILURE;
+	if (verify && ((pipe_readers > 1) || (pipe_writers > 1))) {
+		verify = false;
+		if (stress_instance_zero(args))
+			pr_inf("%s: more than 1 reader and/or 1 writer, verify disabled\n", args->name);
+	}
+
+	pipe_writes = stress_mmap_populate(NULL, pipe_writes_size, PROT_READ | PROT_WRITE,
+				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (pipe_writes == MAP_FAILED) {
+		pr_inf_skip("%s: failed to mmap %zu bytes, skipping stressor\n",
+			args->name, pipe_writes_size);
+		rc = EXIT_FAILURE;
+		goto finish;
+	}
+	for (i = 0; i < MAX_PIPE_PROCS; i++) {
+		pipe_writes[i].duration = 0.0;
+		pipe_writes[i].bytes = 0ULL;
+	}
+
+	if (stress_signal_stop_stressing(args->name, SIGPIPE) < 0) {
+		rc = EXIT_FAILURE;
+		goto unmap_pipe_writes;
+	}
 
 	(void)shim_memset(pipefds, 0, sizeof(pipefds));
 #if defined(HAVE_PIPE2) &&	\
@@ -569,14 +626,16 @@ static int stress_pipe(stress_args_t *args)
 		if (pipe(pipefds) < 0) {
 			pr_fail("%s: pipe failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
-			return EXIT_FAILURE;
+			rc = EXIT_FAILURE;
+			goto unmap_pipe_writes;
 		}
 	}
 #else
 	if (pipe(pipefds) < 0) {
 		pr_fail("%s: pipe failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
-		return EXIT_FAILURE;
+		rc = EXIT_FAILURE;
+		goto unmap_pipe_writes;
 	}
 	if (pipe_vmsplice) {
 		pipe_vmsplice = false;
@@ -591,9 +650,9 @@ static int stress_pipe(stress_args_t *args)
 
 		if (!stress_setting_get("pipe-size", &pipe_size)) {
 			if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
-				pipe_size = MAX_PIPE_SIZE;
+				pipe_size = stress_fs_max_pipe_size_get();
 			if (g_opt_flags & OPT_FLAGS_MINIMIZE)
-				pipe_size = MIN_PIPE_SIZE;
+				pipe_size = stress_memory_page_size_get();
 		}
 		if (pipe_size > 0) {
 			pipe_change_size(args, pipefds[0], pipe_size);
@@ -607,8 +666,8 @@ static int stress_pipe(stress_args_t *args)
 	pipe_wr_size = pipe_get_size(pipefds[1]);
 
 	if (stress_instance_zero(args)) {
-		pr_dbg("%s: pipe read size %zuK, pipe write size %zuK\n",
-			args->name, pipe_rd_size >> 10, pipe_wr_size >> 10);
+		pr_dbg("%s: readers %zu, writers %zu, pipe read/write size %zuK\n",
+			args->name, pipe_readers, pipe_writers, pipe_data_size >> 10);
 	}
 
 	/* round to nearest whole page */
@@ -617,13 +676,14 @@ static int stress_pipe(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf_rd == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte read buffer%s, "
+		pr_inf_skip("%s: mmap %zu byte read buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, buf_rd_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)close(pipefds[0]);
 		(void)close(pipefds[1]);
-		return EXIT_NO_RESOURCE;
+		rc = EXIT_NO_RESOURCE;
+		goto unmap_pipe_writes;
 	}
 	stress_memory_anon_name_set(buf_rd, buf_rd_size, "read-buffer");
 
@@ -633,14 +693,15 @@ static int stress_pipe(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf_wr == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte write buffer%s, "
+		pr_inf_skip("%s: mmap %zu byte write buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, buf_wr_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)munmap((void *)buf_rd, buf_rd_size);
 		(void)close(pipefds[0]);
 		(void)close(pipefds[1]);
-		return EXIT_NO_RESOURCE;
+		rc = EXIT_NO_RESOURCE;
+		goto unmap_pipe_writes;
 	}
 	stress_memory_anon_name_set(buf_wr, buf_wr_size, "write-buffer");
 	stress_rndbuf(buf_wr, buf_wr_size);
@@ -648,101 +709,209 @@ static int stress_pipe(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
 	parent_cpu = stress_cpu_get();
-	pid = fork();
-	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
-		(void)close(pipefds[0]);
-		(void)close(pipefds[1]);
-		(void)munmap((void *)buf_wr, buf_wr_size);
-		(void)munmap((void *)buf_rd, buf_rd_size);
-		if (UNLIKELY(!stress_continue(args)))
-			goto finish;
-		pr_fail("%s: fork failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
-		return EXIT_FAILURE;
-	} else if (pid == 0) {
-		int ret;
 
-		stress_proc_state_set(args->name, STRESS_STATE_RUN);
-		stress_make_it_fail_set();
-		stress_parent_died_alarm();
-		(void)stress_sched_settings_apply(true);
-		(void)stress_affinity_change_cpu(args, parent_cpu);
+	for (i = 0; i < pipe_readers; i++) {
+		rd_pids[i] = stress_retry_fork(args, 0);
+		if (rd_pids[i] < 0) {
+			(void)close(pipefds[0]);
+			(void)close(pipefds[1]);
+			(void)munmap((void *)buf_wr, buf_wr_size);
+			(void)munmap((void *)buf_rd, buf_rd_size);
+			if (UNLIKELY(!stress_continue(args)))
+				goto unmap_pipe_writes;
+			pr_fail("%s: fork failed, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+			rc = EXIT_FAILURE;
+			goto unmap_pipe_writes;
+		} else if (rd_pids[i] == 0) {
+			int ret;
 
-		(void)close(pipefds[1]);
-#if defined(HAVE_VMSPLICE)
-		if (pipe_vmsplice) {
-			ret = verify ?
-				stress_pipe_read_splice_verify(args, pipefds[0], buf_rd, pipe_data_size, buf_rd_size, val) :
-				stress_pipe_read_splice(args, pipefds[0], buf_rd, pipe_data_size, buf_rd_size);
+			stress_proc_state_set(args->name, STRESS_STATE_RUN);
+			stress_make_it_fail_set();
+			stress_parent_died_alarm();
+			(void)stress_sched_settings_apply(true);
+			(void)stress_affinity_change_cpu(args, parent_cpu);
 
-		} else {
+			(void)close(pipefds[1]);
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
+			if (pipe_vmsplice) {
+				ret = verify ?
+					stress_pipe_read_splice_verify(args, pipefds[0], buf_rd, pipe_data_size, buf_rd_size, val) :
+					stress_pipe_read_splice(args, pipefds[0], buf_rd, pipe_data_size, buf_rd_size);
+
+			} else {
 #endif
-			ret = verify ?
-				stress_pipe_read_generic_verify(args, pipefds[0], buf_rd, pipe_data_size, val) :
-				stress_pipe_read_generic(args, pipefds[0], buf_rd, pipe_data_size);
-#if defined(HAVE_VMSPLICE)
+				ret = verify ?
+					stress_pipe_read_generic_verify(args, pipefds[0], buf_rd, pipe_data_size, val) :
+					stress_pipe_read_generic(args, pipefds[0], buf_rd, pipe_data_size);
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
+			}
+#endif
+			(void)close(pipefds[0]);
+			(void)munmap((void *)buf_wr, buf_wr_size);
+			(void)munmap((void *)buf_rd, buf_rd_size);
+			_exit((ret < 0) ? EXIT_FAILURE : EXIT_SUCCESS);
 		}
-#endif
-		(void)close(pipefds[0]);
-		(void)munmap((void *)buf_wr, buf_wr_size);
-		(void)munmap((void *)buf_rd, buf_rd_size);
-		_exit((ret < 0) ? EXIT_FAILURE : EXIT_SUCCESS);
-	} else {
-		int status, ret;
-		double t;
-		uint64_t bytes;
+	}
 
-		/* Parent */
-		(void)close(pipefds[0]);
-		t = stress_time_now();
-#if defined(HAVE_VMSPLICE)
-		if (pipe_vmsplice) {
-			ret = verify ?
-				stress_pipe_write_splice_verify(args, pipefds[1], buf_wr, pipe_data_size, buf_wr_size, &bytes, val) :
-				stress_pipe_write_splice(args, pipefds[1], buf_wr, pipe_data_size, buf_wr_size, &bytes);
-		} else {
+	for (i = 0; i < pipe_writers; i++) {
+		wr_pids[i] = stress_retry_fork(args, 0);
+		if (wr_pids[i] < 0) {
+			(void)close(pipefds[0]);
+			(void)close(pipefds[1]);
+			(void)munmap((void *)buf_wr, buf_wr_size);
+			(void)munmap((void *)buf_rd, buf_rd_size);
+			if (UNLIKELY(!stress_continue(args)))
+				goto unmap_pipe_writes;
+			pr_fail("%s: fork failed, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+			rc = EXIT_FAILURE;
+			goto unmap_pipe_writes;
+		} else if (wr_pids[i] == 0) {
+			double t;
+			int ret;
+			uint64_t bytes = 0ULL;
+
+			(void)close(pipefds[0]);
+			t = stress_time_now();
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
+			if (pipe_vmsplice) {
+				ret = verify ?
+					stress_pipe_write_splice_verify(args, pipefds[1], buf_wr, pipe_data_size, buf_wr_size, &bytes, val) :
+					stress_pipe_write_splice(args, pipefds[1], buf_wr, pipe_data_size, buf_wr_size, &bytes);
+			} else {
 #endif
-			ret = verify ?
-				stress_pipe_write_generic_verify(args, pipefds[1], buf_wr, pipe_data_size, &bytes, val) :
-				stress_pipe_write_generic(args, pipefds[1], buf_wr, pipe_data_size, &bytes);
-#if defined(HAVE_VMSPLICE)
+				ret = verify ?
+					stress_pipe_write_generic_verify(args, pipefds[1], buf_wr, pipe_data_size, &bytes, val) :
+					stress_pipe_write_generic(args, pipefds[1], buf_wr, pipe_data_size, &bytes);
+#if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC)
+			}
+#endif
+			(void)close(pipefds[0]);
+			(void)munmap((void *)buf_wr, buf_wr_size);
+			(void)munmap((void *)buf_rd, buf_rd_size);
+
+			pipe_writes[i].duration = stress_time_now() - t;
+			pipe_writes[i].bytes = bytes;
+
+			_exit((ret < 0) ? EXIT_FAILURE : EXIT_SUCCESS);
 		}
-#endif
-		duration = stress_time_now() - t;
-		rate = (duration > 0.0) ? ((double)bytes / duration) / (double)MB : 0.0;
-		stress_metrics_set(args, "MB per sec pipe write rate",
-			rate, STRESS_METRIC_HARMONIC_MEAN);
 
-		(void)close(pipefds[1]);
-		(void)shim_kill(pid, SIGPIPE);
-		if (shim_waitpid(pid, &status, 0) == 0) {
+	}
+
+	do {
+		(void)sleep(1);
+	} while (stress_continue(args));
+
+	for (i = 0; i < pipe_readers; i++) {
+		if (rd_pids[i] > 1)
+			(void)shim_kill(rd_pids[i], SIGPIPE);
+	}
+	for (i = 0; i < pipe_writers; i++) {
+		if (wr_pids[i] > 1)
+			(void)shim_kill(wr_pids[i], SIGPIPE);
+	}
+	for (i = 0; i < pipe_readers; i++) {
+		if (rd_pids[i] > 1) {
+			(void)shim_waitpid(rd_pids[i], &status, 0);
 			if (WIFEXITED(status))
 				if (WEXITSTATUS(status) != EXIT_SUCCESS)
 					rc = WEXITSTATUS(status);
 		}
-		(void)munmap((void *)buf_wr, buf_wr_size);
-		(void)munmap((void *)buf_rd, buf_rd_size);
-		if (ret < 0)
-			rc = EXIT_FAILURE;
 	}
+	for (i = 0; i < pipe_readers; i++) {
+		if (wr_pids[i] > 1) {
+			(void)shim_waitpid(wr_pids[i], &status, 0);
+			if (WIFEXITED(status))
+				if (WEXITSTATUS(status) != EXIT_SUCCESS)
+					rc = WEXITSTATUS(status);
+		}
+	}
+
+	total_duration = 0.0;
+	total_bytes = 0.0;
+
+	for (i = 0; i < pipe_writers; i++) {
+		total_duration += pipe_writes[i].duration;
+		total_bytes += (double)pipe_writes[i].bytes;
+	}
+
+	rate = (total_duration > 0.0) ? (total_bytes / total_duration) / (double)STRESS_MB : 0.0;
+	stress_metrics_set(args, "MB per sec pipe write rate", rate, STRESS_METRIC_HARMONIC_MEAN);
+
+	(void)munmap((void *)buf_wr, buf_wr_size);
+	(void)munmap((void *)buf_rd, buf_rd_size);
+
+unmap_pipe_writes:
+	(void)munmap((void *)pipe_writes, pipe_writes_size);
+
 finish:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 	return rc;
 }
 
-static const stress_opt_t opts[] = {
 #if defined(F_SETPIPE_SZ)
-	{ OPT_pipe_size,      "pipe-size",      TYPE_ID_SIZE_T_BYTES_VM, MIN_PIPE_SIZE, MAX_PIPE_SIZE, NULL },
+/*
+ *   stress_pipe_size
+ *   	parse --pipe-size, check for variable min/max sizes
+ */
+static void stress_pipe_size(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
+{
+	const size_t min_pipe_size = stress_memory_page_size_get();
+	const size_t max_pipe_size = stress_fs_max_pipe_size_get();
+	const size_t pipe_size = (size_t)stress_get_uint64_byte_memory(opt_arg, 1);
+
+	stress_check_range(opt_name, (uint64_t)pipe_size, min_pipe_size, max_pipe_size);
+        *type_id = TYPE_ID_SIZE_T_BYTES_VM;
+	*(size_t *)value = pipe_size;
+}
 #endif
-	/* FIXME: was min = 8, max = stress_memory_page_size_get() */
-	{ OPT_pipe_data_size, "pipe-data-size", TYPE_ID_SIZE_T_BYTES_VM, MIN_PIPE_DATA_SIZE, MAX_PIPE_DATA_SIZE, NULL },
+
+/*
+ *   stress_pipe_data_size
+ *   	parse --pipe-data-size, check for variable min/max sizes
+ */
+static void stress_pipe_data_size(const char *opt_name, const char *opt_arg, stress_type_id_t *type_id, void *value)
+{
+	const size_t min_pipe_size = MIN_PIPE_DATA_SIZE;
+	const size_t max_pipe_size = stress_memory_page_size_get();
+	const size_t pipe_size = (size_t)stress_get_uint64_byte_memory(opt_arg, 1);
+
+	stress_check_range(opt_name, (uint64_t)pipe_size, min_pipe_size, max_pipe_size);
+        *type_id = TYPE_ID_SIZE_T_BYTES_VM;
+	*(size_t *)value = pipe_size;
+}
+
+static const stress_opt_t opts[] = {
+	{ OPT_pipe_data_size, "pipe-data-size", TYPE_ID_CALLBACK, 0, 0, stress_pipe_data_size },
+	{ OPT_pipe_readers,   "pipe-readers",   TYPE_ID_SIZE_T, MIN_PIPE_PROCS, MAX_PIPE_PROCS, NULL },
+#if defined(F_SETPIPE_SZ)
+	{ OPT_pipe_size,      "pipe-size",      TYPE_ID_CALLBACK, 0, 0, stress_pipe_size },
+#endif
 	{ OPT_pipe_vmsplice,  "pipe-vmsplice",  TYPE_ID_BOOL, 0, 1, NULL },
+	{ OPT_pipe_writers,   "pipe-writers",   TYPE_ID_SIZE_T, MIN_PIPE_PROCS, MAX_PIPE_PROCS, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("d-cache-ll-write"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("tlb-flush"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("pipe"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_pipe_info = {
@@ -750,5 +919,6 @@ const stressor_info_t stress_pipe_info = {
 	.classifier = CLASS_PIPE_IO | CLASS_MEMORY | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

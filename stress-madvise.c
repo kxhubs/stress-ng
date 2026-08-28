@@ -25,9 +25,9 @@
 #include "core-out-of-memory.h"
 #include "core-pthread.h"
 
-#define MIN_MADVISE_BYTES	(4 * KB)
-#define MAX_MADVISE_BYTES	(64 * MB)
-#define DEFAULT_MADVISE_BYTES	(4 * MB)
+#define MIN_MADVISE_BYTES	(4 * STRESS_KB)
+#define MAX_MADVISE_BYTES	(64 * STRESS_MB)
+#define DEFAULT_MADVISE_BYTES	(4 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"madvise N",	 	"start N workers exercising madvise on memory" },
@@ -43,7 +43,8 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
-#if defined(HAVE_MADVISE)
+#if defined(HAVE_MADVISE) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 #define NUM_MEM_RETRIES_MAX	(256)
 #define NUM_HWPOISON_MAX	(2)
@@ -338,6 +339,7 @@ static void *stress_madvise_pages(void *arg)
 	return &g_nowt;
 }
 
+#if defined(HAVE_IOVEC)
 static void stress_process_madvise(const pid_t pid, void *buf, const size_t madvise_bytes)
 {
 	int pidfd;
@@ -373,6 +375,7 @@ static void stress_process_madvise(const pid_t pid, void *buf, const size_t madv
 	VOID_RET(ssize_t, shim_process_madvise(-1, &vec, 1, MADV_PAGEOUT, 0));
 #endif
 }
+#endif
 
 /*
  *  stress_madvise()
@@ -383,17 +386,17 @@ static int stress_madvise(stress_args_t *args)
 	const size_t page_size = args->page_size;
 	const pid_t pid = getpid();
 	int fd = -1;
-	NOCLOBBER size_t advice = 0;
-	NOCLOBBER int ret;
-	NOCLOBBER int num_mem_retries;
+	CLOBBERED size_t advice = 0;
+	CLOBBERED int ret;
+	CLOBBERED int num_mem_retries;
 	char filename[PATH_MAX];
 	char *page;
 	size_t n;
 	madvise_ctxt_t ctxt;
 #if defined(MADV_FREE)
-	NOCLOBBER uint64_t madv_frees_raced;
-	NOCLOBBER uint64_t madv_frees;
-	NOCLOBBER uint8_t madv_tries;
+	CLOBBERED uint64_t madv_frees_raced;
+	CLOBBERED uint64_t madv_frees;
+	CLOBBERED uint8_t madv_tries;
 #endif
 
 	(void)shim_memset(&ctxt, 0, sizeof(ctxt));
@@ -412,7 +415,7 @@ static int stress_madvise(stress_args_t *args)
 	page = (char *)stress_mmap_populate(NULL, page_size, PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (page == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte page%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu byte page failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, page_size, stress_memory_free_get(),
 			errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -451,7 +454,7 @@ static int stress_madvise(stress_args_t *args)
 
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		ret = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)shim_unlink(filename);
 		(void)stress_fs_temp_dir_rm_args(args);
@@ -475,8 +478,8 @@ static int stress_madvise(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		NOCLOBBER uint8_t *buf;
-		NOCLOBBER bool file_mapped;
+		uint8_t * CLOBBERED buf;
+		CLOBBERED bool file_mapped;
 
 		if (UNLIKELY(num_mem_retries >= NUM_MEM_RETRIES_MAX)) {
 			pr_err("%s: gave up trying to mmap, no available memory\n",
@@ -514,7 +517,9 @@ static int stress_madvise(stress_args_t *args)
 		(void)shim_memset(buf, 0xff, ctxt.madvise_bytes);
 		(void)stress_madvise_randomize(buf, ctxt.madvise_bytes);
 		(void)stress_mincore_touch_pages(buf, ctxt.madvise_bytes);
+#if defined(HAVE_IOVEC)
 		stress_process_madvise(pid, buf, ctxt.madvise_bytes);
+#endif
 
 		ctxt.args = args;
 		ctxt.buf = buf;
@@ -606,7 +611,7 @@ madv_free_out:
 		 * Some systems allow zero sized page zero madvise
 		 * to see if that madvice is implemented, so try this
 		 */
-		(void)madvise(0, 0, stress_advice_check(madvise_options[advice]));
+		(void)madvise(NULL, 0, stress_advice_check(madvise_options[advice]));
 		advice++;
 		advice = (advice >= madvise_options_elements) ? 0: advice;
 
@@ -631,17 +636,42 @@ madv_free_out:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+#if defined(MADV_PAGEOUT)
+	STRESS_EX_FEATURE("swap"),
+#endif
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mincore"),
+#if defined(_POSIX_MEMLOCK_RANGE) &&	\
+    defined(HAVE_MLOCK) &&		\
+    (defined(MADV_REMOVE) || defined(MADV_DONTNEED))
+	STRESS_EX_SYSCALL("mlock"),
+	STRESS_EX_SYSCALL("munlock"),
+#endif
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_madvise_info = {
 	.stressor = stress_madvise,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_madvise_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.unimplemented_reason = "built without siglongjmp() or madvise()"
 };
 #endif

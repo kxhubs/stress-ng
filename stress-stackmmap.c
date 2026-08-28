@@ -40,7 +40,7 @@ static const stress_help_t help[] = {
 #if defined(HAVE_SWAPCONTEXT) && 	\
     defined(HAVE_UCONTEXT_H)
 
-#define MMAPSTACK_SIZE		(256 * KB)
+#define MMAPSTACK_SIZE		(256 * STRESS_KB)
 
 /*
  *  stress_stack_check sanity check list
@@ -125,11 +125,12 @@ static void stress_stackmmap_push_start(void)
  */
 static int stress_stackmmap(stress_args_t *args)
 {
-	int fd, ret;
-	volatile int rc = EXIT_FAILURE;		/* could be clobbered */
 	char filename[PATH_MAX];
-	NOCLOBBER uint8_t *stack_sig;
 	struct sigaction new_action;
+	int fd;
+	int ret;
+	volatile int rc = EXIT_FAILURE;		/* could be clobbered */
+	uint8_t * CLOBBERED stack_sig;
 
 	page_size = args->page_size;
 	page_mask = ~(page_size - 1);
@@ -143,7 +144,7 @@ static int stress_stackmmap(stress_args_t *args)
 
 	fd = open(filename, O_SYNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_fail("%s: open %s mmap'd stack file failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' mmap'd stack file failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_dir;
 	}
@@ -157,7 +158,7 @@ static int stress_stackmmap(stress_args_t *args)
 	stack_sig = (uint8_t *)stress_mmap_populate(NULL, STRESS_SIGSTKSZ,
 		PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (stack_sig == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte signal stressor%s, "
+		pr_inf_skip("%s: mmap %zu byte signal stressor failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, (size_t)STRESS_SIGSTKSZ,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -171,7 +172,7 @@ static int stress_stackmmap(stress_args_t *args)
 		PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (stack_mmap == MAP_FAILED) {
 		if (errno == ENXIO) {
-			pr_inf_skip("%s: mmap failed of %zu bytes on file %s%s, errno=%d (%s),"
+			pr_inf_skip("%s: mmap %zu bytes on file '%s' failed%s, errno=%d (%s),"
 				"skipping stressor\n",
 				args->name, (size_t)MMAPSTACK_SIZE, filename,
 				stress_memory_free_get(), errno, strerror(errno));
@@ -179,7 +180,7 @@ static int stress_stackmmap(stress_args_t *args)
 			(void)close(fd);
 			goto tidy_stack_sig;
 		}
-		pr_fail("%s: mmap failed of %zu bytes failed%s, errno=%d (%s)\n",
+		pr_fail("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, (size_t)MMAPSTACK_SIZE,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)close(fd);
@@ -227,13 +228,11 @@ static int stress_stackmmap(stress_args_t *args)
 		pid_t pid;
 
 		(void)stress_mwc32();
-again:
+
 		if (UNLIKELY(!stress_continue_flag()))
 			break;
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_err("%s: fork failed, errno=%d (%s)\n",
@@ -311,11 +310,24 @@ tidy_dir:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-major"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("msync"),
+	STRESS_EX_SYSCALL("sigaction"),
+	STRESS_EX_SYSCALL("sigaltstack"),
+	STRESS_EX_SYSCALL("waitpid"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_stackmmap_info = {
 	.stressor = stress_stackmmap,
 	.classifier = CLASS_VM | CLASS_MEMORY,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_stackmmap_info = {

@@ -154,7 +154,9 @@ static void *stress_loadavg_func(void *arg)
 static int stress_loadavg(stress_args_t *args)
 {
 	stress_loadavg_info_t *pthreads;
-	uint64_t i, j, pthread_max;
+	uint64_t i;
+	uint64_t j;
+	uint64_t pthread_max;
 	const uint64_t threads_max = stress_loadavg_threads_max();
 	const uint32_t instances = (args->instances > 1 ?
 				   args->instances : 1);
@@ -166,7 +168,6 @@ static int stress_loadavg(stress_args_t *args)
 #endif
 	stress_pthread_args_t pargs = { args, NULL, 0 };
 	sigset_t set;
-
 
 	if (!stress_setting_get("loadavg-max", &loadavg_max)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -202,7 +203,7 @@ static int stress_loadavg(stress_args_t *args)
 
 	pthreads = (stress_loadavg_info_t *)calloc((size_t)pthread_max, sizeof(*pthreads));
 	if (!pthreads) {
-		pr_inf_skip("%s: out of memory allocating pthreads array%s, skipping stressor\n",
+		pr_inf_skip("%s: allocating pthreads array failed%s, skipping stressor\n",
 			args->name, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -293,11 +294,30 @@ static int stress_loadavg(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("memory-stalls"),
+
+#if defined(LOADAVG_IO)
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("write"),
+#endif
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_loadavg_info = {
 	.stressor = stress_loadavg,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_loadavg_info = {

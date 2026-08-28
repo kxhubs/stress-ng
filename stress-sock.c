@@ -22,6 +22,7 @@
 #include "core-attribute.h"
 #include "core-builtin.h"
 #include "core-killpid.h"
+#include "core-ioctl.h"
 #include "core-madvise.h"
 #include "core-mmap.h"
 #include "core-net.h"
@@ -163,8 +164,11 @@ static const stress_sock_options_t sock_options_protocols[] = {
 static char **stress_get_congestion_controls(const int sock_domain, size_t *n_ctrls)
 {
 	static char ALIGN64 buf[4096];
-	char *ptr, *ctrl;
-	char **ctrls, **tmp;
+	char *ptr;
+	char *ctrl;
+	char *saveptr = NULL;
+	char **ctrls;
+	char **tmp;
 	size_t n;
 	ssize_t buf_len;
 
@@ -185,8 +189,8 @@ static char **stress_get_congestion_controls(const int sock_domain, size_t *n_ct
 	if (!ctrls)
 		return NULL;
 
-	for (n = 0, ptr = buf; (ctrl = strtok(ptr, " ")) != NULL; ptr = NULL) {
-		char *newline = strchr(ctrl, '\n');
+	for (n = 0, ptr = buf; (ctrl = shim_strtok_r(ptr, " ", &saveptr)) != NULL; ptr = NULL) {
+		char *newline = shim_strchr(ctrl, '\n');
 
 		if (newline)
 			*newline = '\0';
@@ -213,36 +217,46 @@ static char **stress_get_congestion_controls(const int sock_domain, size_t *n_ct
  *	exercise various ioctl commands
  */
 static void stress_sock_ioctl(
+	stress_args_t *args,
 	const int fd,
 	const int sock_domain,
 	const bool rt)
 {
+	(void)args;
 	(void)fd;
 	(void)sock_domain;
 	(void)rt;
 
 #if defined(FIOGETOWN)
 	if (!rt) {
-		int ret, own;
+		int ret;
+		int own;
 
 		ret = ioctl(fd, FIOGETOWN, &own);
+		if (ret == 0) {
+			if (stress_ioctl_get_check(fd, FIOGETOWN, sizeof(int)) < 0)
+				pr_fail("%s: ioctl FIOGETOWN failed, not getting value reliably\n", args->name);
 #if defined(FIOSETOWN)
-		if (ret == 0)
 			VOID_RET(int, ioctl(fd, FIOSETOWN, &own));
 #endif
+		}
 		(void)ret;
 	}
 #endif
 
 #if defined(SIOCGPGRP)
 	if (!rt) {
-		int ret, own;
+		int ret;
+		int own;
 
 		ret = ioctl(fd, SIOCGPGRP, &own);
+		if (ret == 0) {
+			if (stress_ioctl_get_check(fd, SIOCGPGRP, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCGPGRP failed, not getting value reliably\n", args->name);
 #if defined(SIOCSPGRP)
-		if (ret == 0)
 			VOID_RET(int, ioctl(fd, SIOCSPGRP, &own));
 #endif
+		}
 		(void)ret;
 	}
 #endif
@@ -313,14 +327,17 @@ static void stress_sock_ioctl(
 static void stress_sock_invalid_recv(const int fd, const int bad_fd, const int opt)
 {
 	char ALIGN64 buf[16];
-#if defined(HAVE_RECVMSG) ||	\
-    defined(HAVE_RECVMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    (defined(HAVE_RECVMSG) ||	\
+     defined(HAVE_RECVMMSG))
 	struct iovec ALIGN64 vec[1];
 #endif
-#if defined(HAVE_RECVMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMSG)
 	struct msghdr msg;
 #endif
-#if defined(HAVE_RECVMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMMSG)
 	struct mmsghdr ALIGN64 msgvec[MSGVEC_SIZE];
 	struct timespec ts;
 #endif
@@ -333,7 +350,8 @@ static void stress_sock_invalid_recv(const int fd, const int bad_fd, const int o
 		/* exercise invalid fd */
 		VOID_RET(ssize_t, recv(bad_fd, buf, sizeof(buf), 0));
 		break;
-#if defined(HAVE_RECVMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMSG)
 	case SOCKET_OPT_RECVMSG:
 		vec[0].iov_base = buf;
 		vec[0].iov_len = sizeof(buf);
@@ -348,7 +366,8 @@ static void stress_sock_invalid_recv(const int fd, const int bad_fd, const int o
 		VOID_RET(ssize_t, recvmsg(bad_fd, &msg, 0));
 		break;
 #endif
-#if defined(HAVE_RECVMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMMSG)
 	case SOCKET_OPT_RECVMMSG:
 		(void)shim_memset(msgvec, 0, sizeof(msgvec));
 		vec[0].iov_base = buf;
@@ -497,14 +516,17 @@ static int OPTIMIZE3 stress_sock_client(
 	const bool rt,
 	const bool sock_zerocopy)
 {
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 	size_t n_ctrls;
 	char **ctrls;
-	int recvflag = 0, rc = EXIT_FAILURE;
+	int recvflag = 0;
+	int rc = EXIT_FAILURE;
 	int bad_fd = stress_fs_bad_fd_get();
-	uint64_t inq_bytes = 0, inq_samples = 0;
+	uint64_t inq_bytes = 0;
+	uint64_t inq_samples = 0;
 	uint32_t count = 0;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 
@@ -554,7 +576,7 @@ retry:
 				} else {
 					if (stress_instance_zero(args)) {
 						warned = true;
-						pr_inf("%s: cannot enable zerocopy on data being received\n", args->name);
+						pr_inf("%s: enable zerocopy on data being received failed\n", args->name);
 					}
 				}
 			}
@@ -562,14 +584,13 @@ retry:
 #else
 		(void)sock_zerocopy;
 #endif
-
 		if (UNLIKELY(stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 							sock_domain, sock_port, sock_if,
 							&addr, &addr_len, NET_ADDR_ANY) < 0)) {
 			(void)close(fd);
 			goto free_controls;
 		}
-		if (UNLIKELY(connect(fd, addr, addr_len) < 0)) {
+		if (UNLIKELY(connect(fd, (struct sockaddr *)&addr, addr_len) < 0)) {
 			const int errno_tmp = errno;
 
 			(void)close(fd);
@@ -594,7 +615,7 @@ retry:
 			char name[256];
 			socklen_t len;
 
-			len = (socklen_t)strlen(ctrls[idx]);
+			len = (socklen_t)shim_strlen(ctrls[idx]);
 			(void)setsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, control, len);
 			len = (socklen_t)sizeof(name);
 			(void)getsockopt(fd, IPPROTO_TCP, TCP_CONGESTION, name, &len);
@@ -602,7 +623,8 @@ retry:
 #endif
 #if defined(IP_MTU)
 		{
-			int ret, mtu;
+			int ret;
+			int mtu;
 			socklen_t optlen;
 
 			optlen = sizeof(mtu);
@@ -647,7 +669,8 @@ retry:
 
 #if defined(TCP_NODELAY)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, &optlen);
@@ -659,7 +682,8 @@ retry:
 #endif
 #if defined(TCP_CORK)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_CORK, &val, &optlen);
@@ -671,7 +695,8 @@ retry:
 #endif
 #if defined(TCP_DEFER_ACCEPT)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &val, &optlen);
@@ -683,7 +708,8 @@ retry:
 #endif
 #if defined(TCP_KEEPCNT)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, &optlen);
@@ -695,7 +721,8 @@ retry:
 #endif
 #if defined(TCP_KEEPIDLE)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, &optlen);
@@ -707,7 +734,8 @@ retry:
 #endif
 #if defined(TCP_KEEPINTVL)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, &optlen);
@@ -719,7 +747,8 @@ retry:
 #endif
 #if defined(TCP_LINGER2)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_LINGER2, &val, &optlen);
@@ -731,7 +760,8 @@ retry:
 #endif
 #if defined(TCP_MAXSEG)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_MAXSEG, &val, &optlen);
@@ -743,7 +773,8 @@ retry:
 #endif
 #if defined(TCP_SYNCNT)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_SYNCNT, &val, &optlen);
@@ -755,7 +786,8 @@ retry:
 #endif
 #if defined(TCP_USER_TIMEOUT)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &val, &optlen);
@@ -767,7 +799,8 @@ retry:
 #endif
 #if defined(TCP_WINDOW_CLAMP)
 			{
-				int val = 0, ret;
+				int val = 0;
+				int ret;
 				socklen_t optlen = sizeof(val);
 
 				ret = getsockopt(fd, IPPROTO_TCP, TCP_WINDOW_CLAMP, &val, &optlen);
@@ -781,15 +814,19 @@ retry:
 
 		do {
 			ssize_t n = 0;
-#if defined(HAVE_RECVMSG) ||	\
-    defined(HAVE_RECVMMSG)
-			size_t i, j;
+#if defined(HAVE_IOVEC) &&	\
+    (defined(HAVE_RECVMSG) ||	\
+     defined(HAVE_RECVMMSG))
+			size_t i;
+			size_t j;
 			struct iovec ALIGN64 vec[MMAP_IO_SIZE / 16];
 #endif
-#if defined(HAVE_RECVMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMSG)
 			struct msghdr ALIGN64 msg;
 #endif
-#if defined(HAVE_RECVMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMMSG)
 			struct mmsghdr ALIGN64 msgvec[MSGVEC_SIZE];
 			const int max_opt = 3;
 #else
@@ -808,9 +845,12 @@ retry:
 			 *  performance.
 			 */
 			if (UNLIKELY((count & 0x3ff) == 0)) {
+#if defined(SIOCINQ)
 				int val;
+#endif
 
-				VOID_RET(int, ioctl(fd, FIONREAD, &val));
+				if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+					pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 #if defined(SIOCINQ)
 				if (LIKELY(ioctl(fd, SIOCINQ, &val) == 0)) {
 					inq_bytes += val;
@@ -818,8 +858,8 @@ retry:
 				}
 #endif
 #if defined(SIOCATMARK)
-				/* and exercise SIOCATMARK */
-				VOID_RET(int, ioctl(fd, SIOCATMARK, &val));
+				if (stress_ioctl_get_check(fd, SIOCATMARK, sizeof(int)) < 0)
+					pr_fail("%s: ioctl SIOCATMARK failed, not getting value reliably\n", args->name);
 #endif
 			}
 #endif
@@ -835,7 +875,8 @@ retry:
 			case SOCKET_OPT_RECV:
 				n = recv(fd, buf, MMAP_IO_SIZE, recvflag);
 				break;
-#if defined(HAVE_RECVMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMSG)
 			case SOCKET_OPT_RECVMSG:
 				for (j = 0, i = 16; i < MMAP_IO_SIZE; i += 16, j++) {
 					/* intentionally read into same buffer */
@@ -848,7 +889,8 @@ retry:
 				n = recvmsg(fd, &msg, recvflag);
 				break;
 #endif
-#if defined(HAVE_RECVMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_RECVMMSG)
 			case SOCKET_OPT_RECVMMSG:
 				(void)shim_memset(msgvec, 0, sizeof(msgvec));
 				for (j = 0, i = 16; i < MMAP_IO_SIZE; i += 16, j++) {
@@ -884,7 +926,7 @@ retry:
 			count++;
 		} while (stress_continue(args));
 
-		stress_sock_ioctl(fd, sock_domain, rt);
+		stress_sock_ioctl(args, fd, sock_domain, rt);
 #if defined(AF_INET) && 	\
     defined(IPPROTO_IP)	&&	\
     defined(IP_MTU)
@@ -904,16 +946,7 @@ retry:
 			metric, STRESS_METRIC_GEOMETRIC_MEAN);
 	} while (stress_continue(args));
 
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SYS_UN_H) &&	\
-    defined(HAVE_SOCKADDR_UN)
-	if (sock_domain == AF_UNIX) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
-
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#endif
-
+	stress_net_af_unix_unlink(sock_domain, &addr);
 	rc = EXIT_SUCCESS;
 free_controls:
 	free(ctrls);
@@ -946,23 +979,27 @@ static int OPTIMIZE3 stress_sock_server(
 	const bool rt,
 	const bool sock_zerocopy)
 {
+	struct sockaddr_storage addr;
+	void *ptr = MAP_FAILED;
+	socklen_t addr_len = 0;
+	uint64_t msgs = 0;
+	uint64_t outq_bytes = 0;
+	uint64_t outq_samples = 0;
+	const size_t page_size = args->page_size;
+	size_t sock_msgs = DEFAULT_SOCKET_MSGS;
+	int rc = EXIT_SUCCESS;
+	int sendflag = 0;
 	int fd;
 	int so_reuseaddr = 1;
-	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
-	uint64_t msgs = 0;
-	int rc = EXIT_SUCCESS;
-	const size_t page_size = args->page_size;
-	void *ptr = MAP_FAILED;
 	const pid_t self = getpid();
-	int sendflag = 0;
-	double t, duration, metric;
-	uint64_t outq_bytes = 0, outq_samples = 0;
-	size_t sock_msgs = DEFAULT_SOCKET_MSGS;
+	double t;
+	double duration;
+	double metric;
 #if defined(SIOCOUTQ)
 	uint32_t count = 0;
 #endif
 
+	(void)shim_memset(&addr, 1, sizeof(addr));
 	if (!stress_setting_get("sock-msgs", &sock_msgs)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
 			sock_msgs = MAX_SOCKET_MSGS;
@@ -975,6 +1012,7 @@ static int OPTIMIZE3 stress_sock_server(
 		goto die;
 	}
 
+retry:
 	if ((fd = socket(sock_domain, sock_type, sock_protocol)) < 0) {
 		rc = stress_exit_status(errno);
 		pr_fail("%s: socket failed, errno=%d (%s)\n",
@@ -994,7 +1032,7 @@ static int OPTIMIZE3 stress_sock_server(
 				sendflag |= MSG_ZEROCOPY;
 			} else {
 				if (stress_instance_zero(args)) {
-					pr_inf("%s: cannot enable zerocopy on data being sent\n", args->name);
+					pr_inf("%s: enable zerocopy on data being sent failed\n", args->name);
 					warned = true;
 				}
 			}
@@ -1040,8 +1078,16 @@ static int OPTIMIZE3 stress_sock_server(
 		VOID_RET(int, ioctl(fd, SIOCGIFADDR, &ifaddr));
 	}
 #endif
-
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
+		if (LIKELY(errno == EADDRINUSE)) {
+			if (stress_continue(args)) {
+				(void)close(fd);
+				stress_random_small_sleep();
+				goto retry;
+			}
+			rc = EXIT_NO_RESOURCE;
+			goto die_close;
+		}
 		rc = stress_exit_status(errno);
 		pr_fail("%s: bind failed on port %d, errno=%d (%s)\n",
 			args->name, sock_port, errno, strerror(errno));
@@ -1080,22 +1126,28 @@ static int OPTIMIZE3 stress_sock_server(
 		sfd = accept(fd, (struct sockaddr *)NULL, NULL);
 #endif
 		if (LIKELY(sfd >= 0)) {
-			size_t i, k;
-#if defined(HAVE_SENDMSG) ||	\
-    defined(HAVE_SENDMMSG)
+			size_t i;
+			size_t k;
+#if defined(HAVE_IOVEC) &&	\
+    (defined(HAVE_SENDMSG) ||	\
+     defined(HAVE_SENDMMSG))
 			size_t j;
 #endif
 			struct sockaddr saddr;
 			socklen_t len;
-			int sndbuf, opt;
-#if defined(HAVE_SENDMSG) ||	\
-    defined(HAVE_SENDMMSG)
+			int sndbuf;
+			int opt;
+#if defined(HAVE_IOVEC) &&	\
+    (defined(HAVE_SENDMSG) ||	\
+     defined(HAVE_SENDMMSG))
 			struct iovec ALIGN64 vec[MMAP_IO_SIZE / 16];
 #endif
-#if defined(HAVE_SENDMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMSG)
 			struct msghdr ALIGN64 msg;
 #endif
-#if defined(HAVE_SENDMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMMSG)
 			struct mmsghdr ALIGN64 msgvec[MSGVEC_SIZE];
 #endif
 
@@ -1203,7 +1255,8 @@ retry_send:
 						}
 					}
 					break;
-#if defined(HAVE_SENDMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMSG)
 				case SOCKET_OPT_SENDMSG:
 					for (j = 0, i = 16; i < MMAP_IO_SIZE; i += 16, j++) {
 						/* intentionally write from same buffer */
@@ -1228,7 +1281,8 @@ retry_sendmsg:
 					}
 					break;
 #endif
-#if defined(HAVE_SENDMMSG)
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMMSG)
 				case SOCKET_OPT_SENDMMSG:
 					(void)shim_memset(msgvec, 0, sizeof(msgvec));
 					for (j = 0, i = 16; i < MMAP_IO_SIZE; i += 16, j++) {
@@ -1279,7 +1333,7 @@ retry_sendmmsg:
 			}
 			count++;
 #endif
-			stress_sock_ioctl(fd, sock_domain, rt);
+			stress_sock_ioctl(args, fd, sock_domain, rt);
 			stress_fs_fdinfo_read(self, sfd);
 
 			(void)close(sfd);
@@ -1308,15 +1362,8 @@ die_close:
 die:
 	if (ptr != MAP_FAILED)
 		(void)munmap(ptr, page_size);
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SYS_UN_H) &&	\
-    defined(HAVE_SOCKADDR_UN)
-	if (addr && (sock_domain == AF_UNIX)) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
 
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#endif
+	stress_net_af_unix_unlink(sock_domain, &addr);
 	if (pid)
 		(void)stress_kill_pid_wait(pid, NULL);
 	return rc;
@@ -1336,7 +1383,7 @@ static bool stress_sock_kernel_rt(void)
 	if (uname(&buf) < 0)
 		return true;	/* Not sure, assume rt */
 
-	if (strstr(buf.version, "PREEMPT_RT"))
+	if (shim_strstr(buf.version, "PREEMPT_RT"))
 		return true;	/* Definitely rt */
 
 	/* probably not RT */
@@ -1352,18 +1399,21 @@ static bool stress_sock_kernel_rt(void)
  */
 static int stress_sock(stress_args_t *args)
 {
-	pid_t pid, mypid = getpid();
+	char *mmap_buffer;
+	char *sock_if = NULL;
+	pid_t pid;
+	const pid_t mypid = getpid();
 	size_t idx;
 	int sock_opts;
 	int sock_domain = AF_INET;
 	int sock_type;
 	int sock_port = DEFAULT_SOCKET_PORT;
 	int sock_protocol = 0;
+	int rc = EXIT_SUCCESS;
+	int reserved_port;
+	int parent_cpu;
 	bool sock_zerocopy = false;
-	int rc = EXIT_SUCCESS, reserved_port, parent_cpu;
 	const bool rt = stress_sock_kernel_rt();
-	char *mmap_buffer;
-	char *sock_if = NULL;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -1423,7 +1473,7 @@ static int stress_sock(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (mmap_buffer == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d byte I/O buffer%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap %d byte I/O buffer failed%s, errno=%d (%s), "
 			"skipping stressor\n",
 			args->name, MMAP_BUF_SIZE,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -1434,12 +1484,10 @@ static int stress_sock(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			(void)munmap((void *)mmap_buffer, MMAP_BUF_SIZE);
@@ -1495,12 +1543,36 @@ static const stress_opt_t opts[] = {
 	{ OPT_sock_if,	     "sock-if",       TYPE_ID_STR, 0, 0, NULL },
 	{ OPT_sock_msgs,     "sock-msgs",     TYPE_ID_SIZE_T, MIN_SOCKET_MSGS, MAX_SOCKET_MSGS, NULL },
 	{ OPT_sock_nodelay,  "sock-nodelay",  TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_sock_opts,     "sock-opts",     TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_sock_opts },
-	{ OPT_sock_type,     "sock-type",     TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_sock_types },
+	{ OPT_sock_opts,     "sock-opts",     TYPE_ID_SIZE_T_METHOD, 0, 0, stress_sock_opts },
+	{ OPT_sock_type,     "sock-type",     TYPE_ID_SIZE_T_METHOD, 0, 0, stress_sock_types },
 	{ OPT_sock_port,     "sock-port",     TYPE_ID_INT_PORT, MIN_PORT, MAX_PORT, NULL },
-	{ OPT_sock_protocol, "sock-protocol", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_sock_protocols },
+	{ OPT_sock_protocol, "sock-protocol", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_sock_protocols },
 	{ OPT_sock_zerocopy, "sock-zerocopy", TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("memory-stalls"),
+
+#if defined(HAVE_ACCEPT4)
+	STRESS_EX_SYSCALL("accept4"),
+#endif
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("getpeername"),
+	STRESS_EX_SYSCALL("getsockname"),
+	STRESS_EX_SYSCALL("getsockopt"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("shutdown"),
+	STRESS_EX_SYSCALL("socket"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_sock_info = {
@@ -1508,5 +1580,6 @@ const stressor_info_t stress_sock_info = {
 	.classifier = CLASS_NETWORK | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

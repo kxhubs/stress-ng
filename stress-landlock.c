@@ -227,11 +227,10 @@ static int stress_landlock_supported(const char *name)
 	ruleset_fd = shim_landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
 	if (ruleset_fd < 0) {
 		if (errno == ENOSYS) {
-			pr_inf_skip("%s: stressor will be skipped, landlock_create_ruleset system call"
-				" is not supported\n", name);
+			pr_inf_skip("%s: landlock_create_ruleset system call"
+				" is not supported, skipping stressor\n", name);
 		} else {
-			pr_inf_skip("%s: stressor will be skipped, perhaps "
-				"lsm=landlock is not enabled\n", name);
+			pr_inf_skip("%s: perhaps lsm=landlock is not enabled, skipping stressor\n", name);
 		}
 		return -1;
 	}
@@ -257,8 +256,10 @@ static void stress_landlock_many(
 	const int depth)
 {
 	struct dirent **namelist = NULL;
-	int i, n;
-	int ruleset_fd, ret;
+	int i;
+	int n;
+	int ruleset_fd;
+	int ret;
 
 	struct landlock_ruleset_attr ruleset_attr;
 
@@ -276,7 +277,7 @@ static void stress_landlock_many(
 	for (i = 0; i < n; i++) {
 		char newpath[PATH_MAX], resolved[PATH_MAX];
 
-		if (strcmp(path, "/"))
+		if (shim_strcmp(path, "/"))
 			(void)stress_fs_make_filename(newpath, sizeof(newpath), path, namelist[i]->d_name);
 		else
 			(void)stress_fs_make_filename(newpath, sizeof(newpath), "", namelist[i]->d_name);
@@ -284,7 +285,7 @@ static void stress_landlock_many(
 		if (UNLIKELY(realpath(newpath, resolved) == NULL))
 			continue;
 
-		if (strcmp(newpath, resolved) == 0) {
+		if (shim_strcmp(newpath, resolved) == 0) {
 			struct landlock_path_beneath_attr path_beneath;
 
 			switch (shim_dirent_type(path, namelist[i])) {
@@ -357,7 +358,10 @@ static uint64_t stress_landlock_get_access_mask(void)
 
 static int stress_landlock_flag(stress_args_t *args, stress_landlock_ctxt_t *ctxt)
 {
-	int ruleset_fd, fd, ret, rc = EXIT_SUCCESS;
+	int ruleset_fd;
+	int fd;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	struct landlock_ruleset_attr ruleset_attr;
 	struct landlock_path_beneath_attr path_beneath;
 
@@ -432,11 +436,8 @@ static void stress_landlock_test(
 	int status;
 	pid_t pid;
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		return;
 	} else if (pid == 0) {
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
@@ -494,6 +495,7 @@ static int stress_landlock(stress_args_t *args)
 	};
 	stress_landlock_ctxt_t ctxt;
 	int failures = 0;
+	int rc = EXIT_SUCCESS;
 	pid_t pid_many;
 
 	ctxt.path = stress_fs_temp_path_get();
@@ -506,11 +508,17 @@ static int stress_landlock(stress_args_t *args)
 			args->name);
 		return EXIT_NO_RESOURCE;
 	}
-again:
-	pid_many = fork();
+
+	pid_many = stress_retry_fork(args, 0);
 	if (pid_many < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
+		if (UNLIKELY(!stress_continue(args))) {
+			rc = EXIT_SUCCESS;
+			goto err;
+		}
+		pr_fail("%s: fork failed, errno=%d (%s)\n",
+			args->name, errno, strerror(errno));
+		rc = EXIT_FAILURE;
+		goto err;
 	} else if (pid_many == 0) {
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 		stress_make_it_fail_set();
@@ -561,15 +569,27 @@ err:
 
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
-	return EXIT_SUCCESS;
+	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("landlock_add_rule"),
+	STRESS_EX_SYSCALL("landlock_create_ruleset"),
+	STRESS_EX_SYSCALL("landlock_restrict_self"),
+
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_landlock_info = {
 	.stressor = stress_landlock,
 	.classifier = CLASS_OS,
 	.supported = stress_landlock_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_landlock_info = {

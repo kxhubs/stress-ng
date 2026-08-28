@@ -246,11 +246,6 @@ static void stress_mc_lcg_seed(void)
 static uint64_t stress_mc_pcg32_state = 0x4d595df4d0f33173ULL;
 static uint64_t const stress_mc_pcg32_increment = 1442695040888963407ULL;
 
-static inline ALWAYS_INLINE OPTIMIZE3 uint32_t stress_mc_rotr32(uint32_t x, unsigned r)
-{
-	return x >> r | x << (-r & 31);
-}
-
 static double OPTIMIZE3 stress_mc_pcg32_rand(void)
 {
 	register uint64_t x = stress_mc_pcg32_state;
@@ -261,7 +256,7 @@ static double OPTIMIZE3 stress_mc_pcg32_rand(void)
 
 	stress_mc_pcg32_state = x * multiplier + stress_mc_pcg32_increment;
 	x ^= x >> 18;
-	return scale_u32 * (double)stress_mc_rotr32((uint32_t)(x >> 27), count);
+	return scale_u32 * (double)shim_ror32n((uint32_t)(x >> 27), count);
 }
 
 static void stress_mc_pcg32_seed(void)
@@ -391,7 +386,7 @@ static double OPTIMIZE3 stress_monte_carlo_sin(
 		if (UNLIKELY(!stress_continue_flag()))
 			break;
 	}
-	return M_PI * (double)sum / (double)(samples - i);
+	return M_PI * sum / (double)(samples - i);
 }
 
 /*
@@ -418,7 +413,7 @@ static double OPTIMIZE3 stress_monte_carlo_exp(
 		if (UNLIKELY(!stress_continue_flag()))
 			break;
 	}
-	return (double)sum / (double)(samples - i);
+	return sum / (double)(samples - i);
 }
 
 /*
@@ -445,7 +440,7 @@ static double OPTIMIZE3 stress_monte_carlo_sqrt(
 		if (UNLIKELY(!stress_continue_flag()))
 			break;
 	}
-	return (double)sum / (double)(samples - i);
+	return sum / (double)(samples - i);
 }
 
 /*
@@ -476,7 +471,7 @@ static double OPTIMIZE3 stress_monte_carlo_squircle(
 		if (UNLIKELY(!stress_continue_flag()))
 			break;
 	}
-	return (double)(4.0) * (double)area_count / (double)(samples - i);
+	return 4.0 * (double)area_count / (double)(samples - i);
 }
 
 
@@ -502,8 +497,8 @@ static const char *stress_monte_carlo_rand(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_monte_carlo_method,  "monte-carlo-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_monte_carlo_method },
-	{ OPT_monte_carlo_rand,    "monte-carlo-rand",    TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_monte_carlo_rand },
+	{ OPT_monte_carlo_method,  "monte-carlo-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_monte_carlo_method },
+	{ OPT_monte_carlo_rand,    "monte-carlo-rand",    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_monte_carlo_rand },
 	{ OPT_monte_carlo_samples, "monte-carlo-samples", TYPE_ID_UINT64, MIN_MONTE_CARLO_SAMPLES, MAX_MONTE_CARLO_SAMPLES, NULL },
 	END_OPT,
 };
@@ -575,11 +570,13 @@ static void stress_monte_carlo_by_method(
 static int stress_monte_carlo(stress_args_t *args)
 {
 	uint64_t monte_carlo_samples;
-	size_t monte_carlo_method, monte_carlo_rand = 0;
 	stress_metrics_t metrics[METHODS_MAX][RANDS_MAX];
 	stress_monte_carlo_result_t results[METHODS_MAX][RANDS_MAX];
 	bool rands_supported[RANDS_MAX];
-	size_t i, j;
+	size_t monte_carlo_method;
+	size_t monte_carlo_rand = 0;
+	size_t i;
+	size_t j;
 
 	for (i = 0; i < RANDS_MAX; i++) {
 		rands_supported[i] = rand_info[i].supported();
@@ -649,6 +646,16 @@ static int stress_monte_carlo(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_monte_carlo_info = {
 	.stressor = stress_monte_carlo,
 	.opts = opts,
@@ -656,5 +663,6 @@ const stressor_info_t stress_monte_carlo_info = {
 	.verify = VERIFY_NONE,
 	.help = help,
 	.max_metrics_items = SIZEOF_ARRAY(rand_info) *
-			     SIZEOF_ARRAY(stress_monte_carlo_methods)
+			     SIZEOF_ARRAY(stress_monte_carlo_methods),
+	.exercises = exercises,
 };

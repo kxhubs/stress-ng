@@ -39,7 +39,7 @@ typedef struct {
 	int	err;		/* copy of errno */
 } session_error_t;
 
-static char * CONST stress_session_error(const int err)
+static const char * CONST stress_session_error(const int err)
 {
 	switch (err) {
 	case STRESS_SESSION_SUCCESS:
@@ -82,7 +82,8 @@ static ssize_t stress_session_return_status(const int fd, const int err, const i
  */
 static int stress_session_set_and_get(stress_args_t *args, const int fd)
 {
-	pid_t sid, gsid;
+	pid_t sid;
+	pid_t gsid;
 
 	sid = setsid();
 	if (UNLIKELY(sid == (pid_t)-1)) {
@@ -246,9 +247,20 @@ static int stress_session(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+	STRESS_EX_SYSCALL("getpid"),
+	STRESS_EX_SYSCALL("getsid"),
+	STRESS_EX_SYSCALL("vhangup"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_session_info = {
 	.stressor = stress_session,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = session_help
+	.help = session_help,
+	.exercises = exercises,
 };

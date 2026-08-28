@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 #include "core-net.h"
 
 #include <sys/ioctl.h>
@@ -64,17 +65,27 @@ static const stress_opt_t opts[] = {
  */
 static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 {
-	int fd, rc = EXIT_SUCCESS, j = 0;
+	int fd;
+	int rc = EXIT_SUCCESS;
+	int j = 0;
 	int udp_flood_domain = AF_INET;
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	size_t udp_flood_max_size = DEFAULT_UDP_FLOOD_MAX_SIZE;
 	size_t sz = 1;
 	char *udp_flood_if = NULL;
-	double bytes = 0.0, duration, t, rate;
-	uint64_t sendto_failed = 0, total_count;
-	int port_change = 0, seq_port = -1, rand_port = -1, reserved_port;
+	double bytes = 0.0;
+	double duration;
+	double t;
+	double rate;
+	uint64_t sendto_failed = 0;
+	uint64_t total_count;
+	int port_change = 0;
+	int seq_port = -1;
+	int rand_port = -1;
+	int reserved_port;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	(void)stress_setting_get("udp-flood-domain", &udp_flood_domain);
 	(void)stress_setting_get("udp-flood-if", &udp_flood_if);
 	if (!stress_setting_get("udp-flood-max-size", &udp_flood_max_size)) {
@@ -109,8 +120,8 @@ static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 	}
 	if (stress_net_sockaddr_if_set(args->name, args->instance,
 				       args->pid, udp_flood_domain,
-				       1024, udp_flood_if, &addr,
-				       &addr_len, NET_ADDR_ANY) < 0) {
+				       1024, udp_flood_if,
+				       &addr, &addr_len, NET_ADDR_ANY) < 0) {
 		(void)close(fd);
 		return EXIT_FAILURE;
 	}
@@ -147,10 +158,9 @@ static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 				continue;
 			rand_port = reserved_port;
 		}
-
-		stress_net_sockaddr_port_set(udp_flood_domain, seq_port, addr);
+		stress_net_sockaddr_port_set(udp_flood_domain, seq_port, (struct sockaddr *)&addr);
 		(void)shim_memset(buf, stress_ascii64[j++ & 63], sz);
-		n = sendto(fd, buf, sz, 0, addr, addr_len);
+		n = sendto(fd, buf, sz, 0, (struct sockaddr *)&addr, addr_len);
 		if (LIKELY(n > 0)) {
 			stress_bogo_inc(args);
 			bytes += (double)n;
@@ -160,15 +170,14 @@ static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 
 #if defined(SIOCOUTQ)
 		if (UNLIKELY((seq_port & 0x1f) == 0)) {
-			int pending;
-
-			VOID_RET(int, ioctl(fd, SIOCOUTQ, &pending));
+			if (stress_ioctl_get_check(fd, SIOCOUTQ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCOUTQ failed, not getting value reliably\n", args->name);
 		}
 #else
 		UNEXPECTED
 #endif
-		stress_net_sockaddr_port_set(udp_flood_domain, rand_port, addr);
-		n = sendto(fd, buf, sz, 0, addr, addr_len);
+		stress_net_sockaddr_port_set(udp_flood_domain, rand_port, (struct sockaddr *)&addr);
+		n = sendto(fd, buf, sz, 0, (struct sockaddr *)&addr, addr_len);
 		if (LIKELY(n > 0)) {
 			stress_bogo_inc(args);
 			bytes += (double)n;
@@ -191,7 +200,7 @@ static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 
 	duration = stress_time_now() - t;
 
-	rate = (duration > 0.0) ? (bytes / duration) / (double)MB : 0.0;
+	rate = (duration > 0.0) ? (bytes / duration) / (double)STRESS_MB : 0.0;
 	stress_metrics_set(args, "MB per sec sendto rate", rate, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (duration > 0.0) ? ((double)stress_bogo_get(args) / duration) : 0.0;
 	stress_metrics_set(args, "sendto calls per sec", rate, STRESS_METRIC_HARMONIC_MEAN);
@@ -213,12 +222,25 @@ static int OPTIMIZE3 stress_udp_flood(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("lock-contention"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_udp_flood_info = {
 	.stressor = stress_udp_flood,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_udp_flood_info = {

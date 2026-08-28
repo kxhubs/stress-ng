@@ -29,7 +29,9 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,		NULL }
 };
 
-#if defined(HAVE_SIGLONGJMP)
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
+    defined(HAVE_SIGLONGJMP)
 
 static volatile bool do_jmp = true;
 static sigjmp_buf jmp_env;
@@ -41,9 +43,9 @@ typedef struct {
 
 #define MAX_RLIMIT_CPU		(1)
 #define MAX_RLIMIT_FSIZE	(1)
-#define MAX_RLIMIT_AS		(32 * MB)
-#define MAX_RLIMIT_DATA		(16 * MB)
-#define MAX_RLIMIT_STACK	(1 * MB)
+#define MAX_RLIMIT_AS		(32 * STRESS_MB)
+#define MAX_RLIMIT_DATA		(16 * STRESS_MB)
+#define MAX_RLIMIT_STACK	(1 * STRESS_MB)
 #define MAX_RLIMIT_NOFILE	(32)
 
 typedef struct {
@@ -150,7 +152,7 @@ static int stress_rlimit_child(stress_args_t *args, void *ctxt)
 	stack = (uint8_t *)mmap(NULL, STRESS_MINSIGSTKSZ, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (stack == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu byte signal stack%s, errno=%d (%s)\n",
+		pr_inf("%s: mmap %zu byte signal stack failed%s, errno=%d (%s)\n",
 			args->name, (size_t)STRESS_MINSIGSTKSZ,
 			stress_memory_free_get(), errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -278,7 +280,9 @@ static int stress_rlimit_child(stress_args_t *args, void *ctxt)
  */
 static int stress_rlimit(stress_args_t *args)
 {
-	struct sigaction old_action_xcpu, old_action_xfsz, old_action_segv;
+	struct sigaction old_action_xcpu;
+	struct sigaction old_action_xfsz;
+	struct sigaction old_action_segv;
 	size_t i;
 	char filename[PATH_MAX];
 	stress_rlimit_context_t context;
@@ -299,7 +303,7 @@ static int stress_rlimit(stress_args_t *args)
 	if (ret < 0)
 		return stress_exit_status(-ret);
 	if ((context.fd = creat(filename, S_IRUSR | S_IWUSR)) < 0) {
-		pr_fail("%s: creat %s failed, errno=%d (%s)\n",
+		pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return EXIT_FAILURE;
@@ -322,11 +326,22 @@ static int stress_rlimit(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("getrlimit"),
+	STRESS_EX_SYSCALL("setrlimit"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rlimit_info = {
 	.stressor = stress_rlimit,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -336,7 +351,7 @@ const stressor_info_t stress_rlimit_info = {
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without getrlimit(), setrlimit() or siglongjmp() support"
 };
 
 #endif

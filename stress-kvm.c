@@ -77,7 +77,7 @@ static int stress_kvm_open(const char *name, const bool report)
 		switch (errno) {
 		case ENOENT:
 			if (report)
-				pr_inf_skip("%s: /dev/kvm not available, skipping stressor\n",
+				pr_inf_skip("%s: '/dev/kvm' not available, skipping stressor\n",
 					name);
 			break;
 		case EPERM:
@@ -89,7 +89,7 @@ static int stress_kvm_open(const char *name, const bool report)
 			break;
 		default:
 			if (report)
-				pr_fail("%s: open /dev/kvm failed, errno=%d (%s), skipping stressor\n",
+				pr_fail("%s: open '/dev/kvm' failed, errno=%d (%s), skipping stressor\n",
 					name, errno, strerror(errno));
 			break;
 		}
@@ -167,7 +167,12 @@ static int stress_kvm(stress_args_t *args)
 		struct kvm_regs regs;
 		struct kvm_userspace_memory_region kvm_mem;
 		struct kvm_run *run;
-		int kvm_fd, vm_fd, vcpu_fd, version, ret, i;
+		int kvm_fd;
+		int vm_fd;
+		int vcpu_fd;
+		int version;
+		int ret;
+		int i;
 		void *vm_mem;
 #if defined(STRESS_KVM_ARM) ||	\
     defined(STRESS_KVM_RISCV)
@@ -493,12 +498,25 @@ tidy_kvm_fd:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("lock-contention"),
+	STRESS_EX_FEATURE("virt"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_kvm_info = {
 	.stressor = stress_kvm,
 	.classifier = CLASS_DEV | CLASS_OS,
 	.supported = stress_kvm_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_kvm_info = {

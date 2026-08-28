@@ -25,6 +25,8 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_FALLOCATE) &&	\
+    defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
     defined(RLIMIT_FSIZE) &&	\
     defined(SIGXFSZ)
 
@@ -89,7 +91,8 @@ static int stress_fsize_boundary(
 {
 	struct rlimit new_rlim;
 	off_t off;
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 
 	if ((rlim_t)offset >= old_rlim->rlim_max)
 		return rc;
@@ -144,7 +147,7 @@ static int stress_fsize_boundary(
 			errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
-	if (!sigxfsz && !stress_fsize_reported(off, FSIZE_TYPE_SIGXFSZ)) {
+	if ((errno != EINTR) && !sigxfsz && !stress_fsize_reported(off, FSIZE_TYPE_SIGXFSZ)) {
 		pr_inf("%s: did not get expected SIGXFSZ signal at offset %" PRIdMAX " (0x%" PRIxMAX ")\n",
 			args->name, (intmax_t)off, (uintmax_t)off);
 		return EXIT_FAILURE;
@@ -175,11 +178,15 @@ static off_t stress_fsize_max_off_t(void)
 static int stress_fsize(stress_args_t *args)
 {
 	char filename[PATH_MAX];
-	int fd, ret, rc = EXIT_SUCCESS;
+	int fd;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	struct rlimit old_rlim;
 	rlim_t max;
 	off_t max_offset;
-	double t, duration, rate;
+	double t;
+	double duration;
+	double rate;
 
 	/* this should work */
 	if (getrlimit(RLIMIT_FSIZE, &old_rlim) < 0) {
@@ -204,7 +211,7 @@ static int stress_fsize(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		ret = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return ret;
@@ -335,11 +342,22 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("setrlimit"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fsize_info = {
 	.stressor = stress_fsize,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fsize_info = {
@@ -347,6 +365,6 @@ const stressor_info_t stress_fsize_info = {
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without fallocate(), RLIMIT_FSIZE or SIGXFSZ"
+	.unimplemented_reason = "built without getrlimit((), setrlimit(), fallocate(), RLIMIT_FSIZE or SIGXFSZ"
 };
 #endif

@@ -245,7 +245,11 @@ size_t stress_stack_minsigstksz(void)
 #if defined(HAVE_COMPILER_GCC_OR_MUSL) &&	\
     !defined(HAVE_COMPILER_CLANG) &&		\
     defined(HAVE_WEAK_ATTRIBUTE)
+
+#if !defined(__NetBSD__) &&	\
+    !defined(__CYGWIN__)
 extern void __stack_chk_fail(void);
+#endif
 
 NORETURN WEAK void __stack_chk_fail(void)
 {
@@ -279,7 +283,8 @@ void stress_stack_backtrace(void)
 {
 #if defined(HAVE_EXECINFO_H) &&	\
     defined(HAVE_BACKTRACE)
-	int i, n_ptrs;
+	int i;
+	int n_ptrs;
 	void *buffer[BACKTRACE_BUF_SIZE];
 	char **strings;
 
@@ -291,12 +296,12 @@ void stress_stack_backtrace(void)
 	if (!strings)
 		return;
 
-	printf("backtrace:\n");
-	fflush(stdout);
+	(void)printf("backtrace:\n");
+	(void)fflush(stdout);
 
 	for (i = 0; i < n_ptrs; i++) {
-		printf("  %s\n", strings[i]);
-		fflush(stdout);
+		(void)printf("  %s\n", strings[i]);
+		(void)fflush(stdout);
 	}
 	free(strings);
 #endif

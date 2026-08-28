@@ -165,8 +165,8 @@ static const char *stress_exec_fork_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_exec_max,		"exec-max",         TYPE_ID_INT32, MIN_EXECS, MAX_EXECS, NULL },
-	{ OPT_exec_method,	"exec-method",	    TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_exec_method },
-	{ OPT_exec_fork_method,	"exec-fork-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_exec_fork_method },
+	{ OPT_exec_method,	"exec-method",	    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_exec_method },
+	{ OPT_exec_fork_method,	"exec-fork-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_exec_fork_method },
 	{ OPT_exec_no_pthread,	"exec-no-pthread",  TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
 };
@@ -185,7 +185,7 @@ static inline void stress_exec_free_list_add(stress_pid_hash_t *sph)
  *  stress_exec_free_pid_list()
  *	unmap any allocated stacks
  */
-static void stress_exec_free_pid_list(stress_pid_hash_t *sph)
+static void stress_exec_free_pid_list(const stress_pid_hash_t *sph)
 {
 #if defined(HAVE_CLONE)
 	while (sph) {
@@ -208,7 +208,7 @@ static void stress_exec_free_pid_list(stress_pid_hash_t *sph)
  */
 static stress_pid_hash_t *stress_exec_alloc_pid(const bool alloc_stack)
 {
-	NOCLOBBER stress_pid_hash_t *sph;
+	stress_pid_hash_t * CLOBBERED sph;
 
 	/* Any on the free list, reuse these */
 	if (free_list) {
@@ -338,9 +338,6 @@ static int stress_call_exec_method(const stress_exec_context_t *context)
 	int ret;
 
 	switch (context->exec_method) {
-	case EXEC_METHOD_EXECVE:
-		ret = execve(context->exec_prog, context->argv, context->env);
-		break;
 #if defined(HAVE_EXECVEAT) &&	\
     defined(O_PATH)
 	case EXEC_METHOD_EXECVEAT:
@@ -356,6 +353,7 @@ static int stress_call_exec_method(const stress_exec_context_t *context)
 		ret = fexecve(context->fdexec, context->argv, context->env);
 		break;
 #endif
+	case EXEC_METHOD_EXECVE:
 	default:
 		ret = execve(context->exec_prog, context->argv, context->env);
 		break;
@@ -454,11 +452,14 @@ static inline int stress_do_exec(stress_exec_context_t *context)
 #endif
 }
 
-
 static int stress_exec_child(void *arg)
 {
 	stress_exec_context_t *argp = (stress_exec_context_t *)arg;
-	int rc, ret, fd_out, fd_in, fd = -1;
+	int rc;
+	int ret;
+	int fd_out;
+	int fd_in;
+	int fd = -1;
 	stress_exec_context_t context;
 	int method = argp->exec_method;
 	const bool big_env = ((argp->rnd8 >= 128 + 64) && (argp->rnd8 < 128 + 80));
@@ -491,12 +492,12 @@ static int stress_exec_child(void *arg)
 	(void)stress_sched_settings_apply(true);
 
 	if ((fd_out = open("/dev/null", O_WRONLY)) < 0) {
-		pr_fail("%s: child open on /dev/null failed\n",
+		pr_fail("%s: child open '/dev/null' failed\n",
 						argp->args->name);
 		_exit(EXIT_NO_RESOURCE);
 	}
 	if ((fd_in = open("/dev/zero", O_RDONLY)) < 0) {
-		pr_fail("%s: child open on /dev/zero failed\n",
+		pr_fail("%s: child open '/dev/zero' failed\n",
 						argp->args->name);
 		(void)close(fd_out);
 		_exit(EXIT_NO_RESOURCE);
@@ -720,20 +721,24 @@ static int stress_exec(stress_args_t *args)
 	char exec_path[PATH_MAX];
 	char garbage_prog[PATH_MAX];
 	char *ld_library_path = NULL;
-	int ret, rc = EXIT_FAILURE;
+	int ret;
+	int rc = EXIT_FAILURE;
 #if (defined(HAVE_EXECVEAT) ||	\
      defined(HAVE_FEXECVE)) &&	\
     defined(O_PATH)
 	int fdexec;
 #endif
-	uint64_t exec_fails = 0, exec_calls = 0;
+	uint64_t exec_fails = 0;
+	uint64_t exec_calls = 0;
 	uint32_t exec_max = DEFAULT_EXECS;
 	size_t exec_method_idx;
 	size_t exec_fork_method_idx;
 	int exec_method = EXEC_METHOD_ALL;
 	int exec_fork_method = EXEC_FORK_METHOD_FORK;
 	bool exec_no_pthread = false;
-	size_t arg_max, cache_max, stress_pid_hash_table_size;
+	size_t arg_max;
+	size_t cache_max;
+	size_t stress_pid_hash_table_size;
 	char *str;
 
 	if (!stress_setting_get("exec-max", &exec_max)) {
@@ -839,8 +844,8 @@ static int stress_exec(stress_args_t *args)
     defined(O_PATH)
 	fdexec = open(exec_prog, O_PATH);
 	if (fdexec < 0) {
-		pr_fail("%s: open O_PATH on /proc/self/exe failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_fail("%s: open O_PATH '%s' failed, errno=%d (%s)\n",
+			args->name, exec_prog, errno, strerror(errno));
 		rc = EXIT_FAILURE;
 		goto err_rm;
 	}
@@ -850,7 +855,8 @@ static int stress_exec(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		NOCLOBBER uint32_t i, reap_count = 0;
+		CLOBBERED uint32_t i;
+		CLOBBERED uint32_t reap_count = 0;
 		pid_t pid;
 
 		for (i = 0; i < exec_max; i++) {
@@ -860,7 +866,7 @@ static int stress_exec(stress_args_t *args)
 #else
 			const bool alloc_stack = false;
 #endif
-			NOCLOBBER stress_pid_hash_t *sph;
+			stress_pid_hash_t * CLOBBERED sph;
 
 			if (UNLIKELY(!stress_continue_flag()))
 				break;
@@ -953,7 +959,7 @@ static int stress_exec(stress_args_t *args)
 
 		reap_count = 0;
 		for (i = 0; i < HASH_EXECS; i++) {
-			stress_pid_hash_t *sph = stress_pid_hash_table[i];
+			const stress_pid_hash_t *sph = stress_pid_hash_table[i];
 
 			while (sph) {
 				reap_count++;
@@ -1006,11 +1012,30 @@ err_free_ld_library_path:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("execve"),
+#if defined(HAVE_EXECVEAT) &&	\
+    defined(O_PATH)
+	STRESS_EX_SYSCALL("execveat"),
+#endif
+#if defined(HAVE_FEXECVE) &&	\
+    defined(O_PATH)
+	STRESS_EX_SYSCALL("fexecve"),
+#endif
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_exec_info = {
 	.stressor = stress_exec,
 	.supported = stress_exec_supported,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

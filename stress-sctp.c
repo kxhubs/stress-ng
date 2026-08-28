@@ -102,8 +102,8 @@ static const stress_opt_t opts[] = {
 	{ OPT_sctp_domain,   "sctp-domain",   TYPE_ID_INT_DOMAIN, 0, 0, &sctp_domain_mask },
 	{ OPT_sctp_if,       "sctp-if",       TYPE_ID_STR, 0, 0, NULL },
 	{ OPT_sctp_max_size, "sctp-max-size", TYPE_ID_SIZE_T, MIN_SCTP_MAX_SIZE, MAX_SCTP_MAX_SIZE, NULL },
-	{ OPT_sctp_port,     "sctp-port",   TYPE_ID_INT_PORT, MIN_PORT, MAX_PORT, NULL },
-	{ OPT_sctp_sched,    "sctp-sched",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_sctp_sched },
+	{ OPT_sctp_port,     "sctp-port",     TYPE_ID_INT_PORT, MIN_PORT, MAX_PORT, NULL },
+	{ OPT_sctp_sched,    "sctp-sched",    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_sctp_sched },
 	END_OPT,
 };
 
@@ -366,11 +366,12 @@ static int OPTIMIZE3 stress_sctp_client(
 	const int sctp_sched_type,
 	const char *sctp_if)
 {
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 	int rc = EXIT_SUCCESS;
 
 	(void)sctp_sched_type;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 
@@ -397,14 +398,13 @@ retry:
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
-
 		if (UNLIKELY(stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 							sctp_domain, sctp_port, sctp_if,
 							&addr, &addr_len, NET_ADDR_LOOPBACK) < 0)) {
 			(void)close(fd);
 			return EXIT_FAILURE;
 		}
-		if (UNLIKELY(connect(fd, addr, addr_len) < 0)) {
+		if (UNLIKELY(connect(fd, (struct sockaddr *)&addr, addr_len) < 0)) {
 			const int save_errno = errno;
 
 			(void)close(fd);
@@ -445,7 +445,7 @@ retry:
 			ssize_t n;
 
 			n = sctp_recvmsg(fd, buf, sizeof(buf),
-				NULL, 0, &sndrcvinfo, &flags);
+				NULL, NULL, &sndrcvinfo, &flags);
 			if (UNLIKELY(n <= 0))
 				break;
 			if (n >= (ssize_t)sizeof(pid_t)) {
@@ -467,17 +467,7 @@ retry:
 		(void)close(fd);
 	} while (stress_continue(args));
 
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SYS_UN_H) &&	\
-    defined(HAVE_SOCKADDR_UN)
-	if (sctp_domain == AF_UNIX) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
-
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#else
-	UNEXPECTED
-#endif
+	stress_net_af_unix_unlink(sctp_domain, &addr);
 	return rc;
 }
 
@@ -495,16 +485,17 @@ static int OPTIMIZE3 stress_sctp_server(
 	const size_t sctp_max_size)
 {
 	char ALIGN64 buf[MAX_SCTP_MAX_SIZE];
+	struct sockaddr_storage addr;
+	socklen_t addr_len = 0;
+	const size_t sctp_min_size = (sctp_max_size & 0xf) + 16;
 	int fd;
 	int so_reuseaddr = 1;
-	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
 	int rc = EXIT_SUCCESS;
 	int idx = 0;
-	const size_t sctp_min_size = (sctp_max_size & 0xf) + 16;
 
 	(void)sctp_sched_type;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (stress_signal_stop_stressing(args->name, SIGALRM)) {
 		rc = EXIT_FAILURE;
 		goto die;
@@ -536,7 +527,7 @@ static int OPTIMIZE3 stress_sctp_server(
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 		rc = stress_exit_status(errno);
 		pr_fail("%s: bind failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
@@ -604,17 +595,7 @@ static int OPTIMIZE3 stress_sctp_server(
 die_close:
 	(void)close(fd);
 die:
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SYS_UN_H) &&	\
-    defined(HAVE_SOCKADDR_UN)
-	if (addr && (sctp_domain == AF_UNIX)) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
-
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#else
-	UNEXPECTED
-#endif
+	stress_net_af_unix_unlink(sctp_domain, &addr);
 	return rc;
 }
 
@@ -631,14 +612,17 @@ static void stress_sctp_sigpipe(int signum)
  */
 static int stress_sctp(stress_args_t *args)
 {
-	pid_t pid, mypid = getpid();
+	char *sctp_if = NULL;
+	size_t sctp_sched = 1; /* default to fcfs */
+	size_t sctp_max_size = DEFAULT_SCTP_MAX_SIZE;
+	pid_t pid;
+	const pid_t mypid = getpid();
 	int sctp_port = DEFAULT_SCTP_PORT;
 	int sctp_domain = AF_INET;
 	int sctp_sched_type = -1; /* undefined */
-	size_t sctp_sched = 1; /* default to fcfs */
-	size_t sctp_max_size = DEFAULT_SCTP_MAX_SIZE;
-	int ret, reserved_port, parent_cpu;
-	char *sctp_if = NULL;
+	int ret;
+	int reserved_port;
+	int parent_cpu;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -693,12 +677,10 @@ static int stress_sctp(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -734,12 +716,29 @@ finish:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("getsockopt"),
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("recvmsg"),
+	STRESS_EX_SYSCALL("sendmsg"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("shutdown"),
+	STRESS_EX_SYSCALL("socket"),
+
+	STRESS_EX_LIBRARY("sctp"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sctp_info = {
 	.stressor = stress_sctp,
 	.classifier = CLASS_NETWORK,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sctp_info = {

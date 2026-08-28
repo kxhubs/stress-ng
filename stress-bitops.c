@@ -60,14 +60,15 @@ static int OPTIMIZE3 stress_bitops_sign(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		register int32_t sign1, sign2;
+		register int32_t sign1;
+		register int32_t sign2;
 
 		/* #1 sign, comparison */
-		sign1 = -(v < 0);
+		sign1 = -(int32_t)(v < 0);
 		sum += sign1;
 
 		/* #2 sign, sign bit */
-		sign2 = -(int)((unsigned int)((int)v) >> ((sizeof(int) * CHAR_BIT) - 1));
+		sign2 = -(int32_t)((uint32_t)((int32_t)v) >> ((sizeof(int) * CHAR_BIT) - 1));
 		sum += sign2;
 
 		if (UNLIKELY(sign1 != sign2)) {
@@ -97,7 +98,8 @@ static int OPTIMIZE3 stress_bitops_abs(const char *name, uint32_t *count)
 
 	for (i = 0; i < 1000; i++) {
 		register const int32_t mask = v >> (((sizeof(int) * CHAR_BIT)) - 1);
-		register int32_t abs1, abs2;
+		register int32_t abs1;
+		register int32_t abs2;
 
 		/* #1 abs, mask method 1 */
 		abs1 = (v + mask) ^ mask;
@@ -131,7 +133,8 @@ static int OPTIMIZE3 stress_bitops_bswap(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		register uint32_t bswap1, bswap2;
+		register uint32_t bswap1;
+		register uint32_t bswap2;
 
 		/* #1 bswap shift method 1 */
 		bswap1 = ((v >> 0) & 0xff) << 24 |
@@ -181,7 +184,9 @@ static int OPTIMIZE3 TARGET_CLONES stress_bitops_countbits(const char *name, uin
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t c1, c2, tmp;
+		uint32_t c1;
+		uint32_t c2;
+		uint32_t tmp;
 
 		/* #1, Count bits, naive method */
 		for (tmp = v, c1 = 0; tmp; tmp >>= 1)
@@ -274,7 +279,10 @@ static int OPTIMIZE3 TARGET_CLONES stress_bitops_clz(const char *name, uint32_t 
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t c1, c2, tmp, n;
+		uint32_t c1;
+		uint32_t c2;
+		uint32_t tmp;
+		uint32_t n;
 
 		if (v == 0) {
 			c1 = 32;
@@ -374,8 +382,16 @@ static int OPTIMIZE3 TARGET_CLONES stress_bitops_ctz(const char *name, uint32_t 
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t c1, c2, tmp, n;
-		uint32_t b0, b1, b2, b3, b4, bz;
+		uint32_t c1;
+		uint32_t c2;
+		uint32_t tmp;
+		uint32_t n;
+		uint32_t b0;
+		uint32_t b1;
+		uint32_t b2;
+		uint32_t b3;
+		uint32_t b4;
+		uint32_t bz;
 
 		/* #1 Count trailing zeros, naive method */
 		if (UNLIKELY(v == 0)) {
@@ -418,7 +434,7 @@ static int OPTIMIZE3 TARGET_CLONES stress_bitops_ctz(const char *name, uint32_t 
 		}
 
 		/* #3 Count trailing zeros, Gaudet method */
-		tmp = v & -v;
+		tmp = v & (uint32_t)-(int32_t)v;
 		bz = tmp ? 0 : 1;
 		b4 = (tmp & 0x0000ffff) ? 0 : 16;
 		b3 = (tmp & 0x00ff00ff) ? 0 : 8;
@@ -484,7 +500,8 @@ static int OPTIMIZE3 stress_bitops_cmp(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		int32_t cmp1, cmp2;
+		int32_t cmp1;
+		int32_t cmp2;
 
 		/* #1 simple comparisons */
 		if (x < y)
@@ -534,16 +551,17 @@ static int OPTIMIZE3 stress_bitops_parity(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		bool p1, p2;
+		bool p1;
+		bool p2;
 		uint32_t tmp;
 
 		/* #1 Parity, very naive method */
-		for (p1 = 0, tmp = v; tmp; tmp >>= 1)
+		for (p1 = false, tmp = v; tmp; tmp >>= 1)
 			p1 = (tmp & 1) ? !p1 : p1;
 		sum += p1;
 
 		/* #2 Parity, naive method */
-		for (p2 = 0, tmp = v; tmp; tmp = tmp & (tmp - 1))
+		for (p2 = false, tmp = v; tmp; tmp = tmp & (tmp - 1))
 			p2 = !p2;
 		sum += p2;
 		if (UNLIKELY(p1 != p2)) {
@@ -612,7 +630,8 @@ static int OPTIMIZE3 stress_bitops_min(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		register int32_t min1, min2;
+		register int32_t min1;
+		register int32_t min2;
 
 		min1 = y ^ ((x ^ y) & -(x < y));
 		sum += min1;
@@ -634,6 +653,7 @@ static int OPTIMIZE3 stress_bitops_min(const char *name, uint32_t *count)
 	return EXIT_SUCCESS;
 }
 
+#if !defined(__PCC__)
 /*
  *  stress_bitops_max()
  *	maximum of x, y
@@ -648,7 +668,8 @@ static int OPTIMIZE3 stress_bitops_max(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		register int32_t max1, max2;
+		register int32_t max1;
+		register int32_t max2;
 
 		max1 = x ^ ((x ^ y) & -(x < y));
 		sum += max1;
@@ -669,6 +690,7 @@ static int OPTIMIZE3 stress_bitops_max(const char *name, uint32_t *count)
 	*count += 2 * i;
 	return EXIT_SUCCESS;
 }
+#endif
 
 /*
  *  stress_bitops_log2()
@@ -685,16 +707,24 @@ static int OPTIMIZE3 stress_bitops_log2(const char *name, uint32_t *count)
 		static const int8_t bitposition[32] ALIGN64 = {
 			 0,  9,  1, 10, 13, 21,  2, 29,
 			11, 14, 16, 18, 22, 25,  3, 30,
-			 8, 12, 20, 28, 15, 17, 24, 7,
+			 8, 12, 20, 28, 15, 17, 24,  7,
 			19, 27, 23,  6, 26,  5,  4, 31
 		};
-		uint32_t ln2_1, ln2_2, tmp, shift;
+		uint32_t ln2_1;
+		uint32_t ln2_2;
+		uint32_t tmp;
+		uint32_t shift;
 
+#if defined(HAVE_BUILTIN_CLZ)
+		ln2_1 = (UNLIKELY(v == 0)) ? 0 : (8 * sizeof(v)) - __builtin_clz(v) - 1;
+		sum += ln2_1;
+#else
 		tmp = v;
 		ln2_1 = 0;
 		while (tmp >>= 1)
 			ln2_1++;
 		sum += ln2_1;
+#endif
 
 		tmp = v;
 		ln2_2 = 0;
@@ -776,8 +806,15 @@ static int OPTIMIZE3 stress_bitops_reverse(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t tmp, r1, r2, s, mask;
-		uint8_t b1, b2, b3, b4;
+		uint32_t tmp;
+		uint32_t r1;
+		uint32_t r2;
+		uint32_t s;
+		uint32_t mask;
+		uint8_t b1;
+		uint8_t b2;
+		uint8_t b3;
+		uint8_t b4;
 
 		r1 = v;
 		s = (sizeof(r1) * CHAR_BIT) - 1;
@@ -874,16 +911,19 @@ static int OPTIMIZE3 stress_bitops_reverse(const char *name, uint32_t *count)
  */
 static int OPTIMIZE3 stress_bitops_pwr2(const char *name, uint32_t *count)
 {
-	register uint32_t i, j = stress_mwc32();
+	register uint32_t i;
+	register uint32_t j = stress_mwc32();
 
 	for (i = 0; i < 1000; i++, j += i) {
-		register bool is_pwr2, result;
+		register bool is_pwr2;
+		register bool result;
 
 #if defined(HAVE_BUILTIN_POPCOUNT)
 		is_pwr2 = (__builtin_popcount((unsigned int)j) == 1);
 #else
 		{
-			uint32_t tmp, c;
+			uint32_t tmp;
+			uint32_t c;
 
 			for (tmp = j, c = 0; tmp; c++)
 				tmp &= (tmp - 1);
@@ -915,7 +955,9 @@ static int OPTIMIZE3 stress_bitops_rnddnpwr2(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t c1, c2, tmp;
+		uint32_t c1;
+		uint32_t c2;
+		uint32_t tmp;
 
 		/*
 		 *  #1 rnddnpwr2: 1 << (31 - clz(v))
@@ -978,7 +1020,9 @@ static int OPTIMIZE3 stress_bitops_rnduppwr2(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		uint32_t c1, c2, tmp;
+		uint32_t c1;
+		uint32_t c2;
+		uint32_t tmp;
 
 		/*
 		 *  #1 rnduppwr2: 1 << (31 - clz(v - 1))
@@ -1050,7 +1094,8 @@ static int OPTIMIZE3 stress_bitops_swap(const char *name, uint32_t *count)
 	uint32_t sum = 0;
 
 	for (i = 0; i < 1000; i++) {
-		register uint32_t sx, sy;
+		register uint32_t sx;
+		register uint32_t sy;
 
 		sx = x;
 		sy = y;
@@ -1092,10 +1137,12 @@ static int OPTIMIZE3 stress_bitops_swap(const char *name, uint32_t *count)
  */
 static int OPTIMIZE3 stress_bitops_zerobyte(const char *name, uint32_t *count)
 {
-	register uint32_t i, j = stress_mwc32();
+	register uint32_t i;
+	register uint32_t j = stress_mwc32();
 
 	for (i = 0; i < 1000; i++, j += i) {
-		register bool has_zero_byte, result;
+		register bool has_zero_byte;
+		register bool result;
 
 		has_zero_byte = ((((j & 0x000000ffU) == 0) |
 				  ((j & 0x0000ff00U) == 0) |
@@ -1124,7 +1171,9 @@ static const stress_bitops_method_info_t bitops_methods[] = {
 	{ "ctz",		stress_bitops_ctz },
 	{ "cmp",		stress_bitops_cmp },
 	{ "log2",		stress_bitops_log2 },
+#if !defined(__PCC__)
 	{ "max",		stress_bitops_max },
+#endif
 	{ "min",		stress_bitops_min },
 	{ "parity",		stress_bitops_parity },
 	{ "pwr2",		stress_bitops_pwr2 },
@@ -1145,7 +1194,8 @@ static const char *stress_bitops_method(const size_t i)
 
 static int stress_bitops_callfunc(const char *name, const size_t method)
 {
-	double t1, t2;
+	double t1;
+	double t2;
 	uint32_t count = 0;
 	int ret;
 
@@ -1163,6 +1213,7 @@ static int stress_bitops_all(const char *name, uint32_t *count)
 {
 	static size_t i = 1;
 	int rc;
+
 	(void)count;
 
 	rc = stress_bitops_callfunc(name, i);
@@ -1216,8 +1267,20 @@ static int stress_bitops(stress_args_t *args)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_bitops_method, "bitops-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_bitops_method },
+	{ OPT_bitops_method, "bitops-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_bitops_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-bit"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("cpu-shift"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_bitops_info = {
@@ -1226,5 +1289,6 @@ const stressor_info_t stress_bitops_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(bitops_methods)
+	.max_metrics_items = SIZEOF_ARRAY(bitops_methods),
+	.exercises = exercises,
 };

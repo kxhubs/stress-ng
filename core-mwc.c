@@ -130,12 +130,13 @@ void stress_mwc_reseed(void)
 	} else {
 		struct timeval tv;
 		struct rusage r;
-		double m1, m5, m15;
+		stress_load_average_info_t load_average_info;
 		union {
 			double d_now;
 			uint64_t u64_now;
 		} u;
-		int i, n;
+		int i;
+		int n;
 		const uint64_t aux_rnd = stress_aux_random_seed();
 		const uint64_t id = stress_machine_id_get();
 		const intptr_t p1 = (intptr_t)&mwc;
@@ -147,9 +148,9 @@ void stress_mwc_reseed(void)
 			mwc.z ^= (uint64_t)tv.tv_sec ^ (uint64_t)tv.tv_usec;
 		mwc.z += ~(p1 - p2);
 		mwc.w += shim_rol64n((uint64_t)getpid(), 3) ^ shim_rol64n((uint64_t)getppid(), 1);
-		if (stress_load_average_get(&m1, &m5, &m15) == 0) {
-			mwc.z += (uint64_t)(128.0 * (m1 + m15));
-			mwc.w += (uint64_t)(256.0 * (m5));
+		if (stress_load_average_get(&load_average_info) == 0) {
+			mwc.z += (uint64_t)(128.0 * (load_average_info.min1 + load_average_info.min15));
+			mwc.w += (uint64_t)(256.0 * load_average_info.min5);
 		}
 		if (getrusage(RUSAGE_SELF, &r) == 0) {
 			mwc.z += r.ru_utime.tv_usec;
@@ -238,6 +239,14 @@ uint64_t OPTIMIZE3 stress_mwc64(void)
 {
 	return (((uint64_t)stress_mwc32()) << 32) | stress_mwc32();
 }
+
+#if defined(HAVE_INT128_T)
+__uint128_t stress_mwc128(void)
+{
+	return ((__uint128_t)stress_mwc64() << 64) |
+		(__uint128_t)stress_mwc64();
+}
+#endif
 
 /*
  *  stress_mwc16()
@@ -344,7 +353,8 @@ static inline ALWAYS_INLINE OPTIMIZE3 uint16_t stress_mwc16mask(const uint16_t v
  */
 uint16_t OPTIMIZE3 stress_mwc16modn(const uint16_t max)
 {
-	register uint16_t mask, val;
+	register uint16_t mask;
+	register uint16_t val;
 
 	if (UNLIKELY(max < 2))
 		return 0;
@@ -380,7 +390,8 @@ static inline ALWAYS_INLINE OPTIMIZE3 uint32_t stress_mwc32mask(const uint32_t v
  */
 uint32_t OPTIMIZE3 stress_mwc32modn(const uint32_t max)
 {
-	register uint32_t mask, val;
+	register uint32_t mask;
+	register uint32_t val;
 
 	if (UNLIKELY(max < 2))
 		return 0;
@@ -420,7 +431,8 @@ static inline ALWAYS_INLINE OPTIMIZE3 uint64_t stress_mwc64mask(const uint64_t v
  */
 uint64_t OPTIMIZE3 stress_mwc64modn(const uint64_t max)
 {
-	register uint64_t mask, val;
+	register uint64_t mask;
+	register uint64_t val;
 
 	if (UNLIKELY(max < 2))
 		return 0;
@@ -468,8 +480,10 @@ void OPTIMIZE3 stress_rndstr(char *str, const size_t len)
 		'w', 'x', 'y', 'z', '0', '1', '2', '3',
 		'4', '5', '6', '7', '8', '9', '-', '_',
 	};
-	register uint32_t r, mask;
-	register char *ptr, *ptr_end;
+	register uint32_t r;
+	register uint32_t mask;
+	register char *ptr;
+	register const char *ptr_end;
 
 	if (len == 0)
 		return;
@@ -500,7 +514,8 @@ void OPTIMIZE3 stress_rndstr(char *str, const size_t len)
  */
 void OPTIMIZE3 stress_uint8rnd4(uint8_t *data, const size_t len)
 {
-	register uint32_t *ptr32, *ptr32end;
+	register uint32_t *ptr32;
+	register const uint32_t *ptr32end;
 	register uint8_t *ptr8 = data;
 	register const uint8_t *ptr8end = data + len;
 

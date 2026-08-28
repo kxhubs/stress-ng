@@ -96,9 +96,10 @@ static int OPTIMIZE3 stress_sigurg_client(
 	const pid_t mypid,
 	const int sock_port)
 {
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 	int rc = EXIT_FAILURE;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 	(void)stress_sched_settings_apply(true);
 	(void)signal(SIGPIPE, SIG_IGN);
@@ -125,7 +126,7 @@ retry:
 			sockfd = -1;
 			return EXIT_FAILURE;
 		}
-		if (UNLIKELY(connect(sockfd, addr, addr_len) < 0)) {
+		if (UNLIKELY(connect(sockfd, (struct sockaddr *)&addr, addr_len) < 0)) {
 			const int errno_tmp = errno;
 
 			(void)close(sockfd);
@@ -140,6 +141,7 @@ retry:
 			}
 			goto retry;
 		}
+
 		ret = fcntl(sockfd, F_SETOWN, getpid());
 		if (UNLIKELY(ret < 0)) {
 			pr_fail("%s: fcntl F_SETOWN, failed, errno=%d (%s)\n",
@@ -196,9 +198,10 @@ static int OPTIMIZE3 stress_sigurg_server(
 	int fd;
 	int so_reuseaddr = 1;
 	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	int rc = EXIT_SUCCESS;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	(void)signal(SIGPIPE, SIG_IGN);
 
 	if (stress_signal_stop_stressing(args->name, SIGALRM) < 0) {
@@ -212,7 +215,6 @@ static int OPTIMIZE3 stress_sigurg_server(
 			args->name, errno, strerror(errno));
 		goto die;
 	}
-
 	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
 		&so_reuseaddr, sizeof(so_reuseaddr)) < 0) {
 		pr_fail("%s: setsockopt failed, errno=%d (%s)\n",
@@ -220,14 +222,12 @@ static int OPTIMIZE3 stress_sigurg_server(
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-
 	if (stress_net_sockaddr_if_set(args->name, args->instance, ppid,
 				       AF_INET, sock_port, NULL,
 				       &addr, &addr_len, NET_ADDR_ANY) < 0) {
 		goto die_close;
 	}
-
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 		rc = stress_exit_status(errno);
 		pr_fail("%s: bind failed on port %d, errno=%d (%s)\n",
 			args->name, sock_port, errno, strerror(errno));
@@ -280,9 +280,12 @@ die:
  */
 static int stress_sigurg(stress_args_t *args)
 {
-	pid_t pid, mypid = getpid();
+	pid_t pid;
+	const pid_t mypid = getpid();
 	int sock_port = DEFAULT_SIGURG_PORT;
-	int rc = EXIT_SUCCESS, reserved_port, parent_cpu;
+	int rc = EXIT_SUCCESS;
+	int reserved_port;
+	int parent_cpu;
 
 	s_args = args;
 
@@ -309,12 +312,10 @@ static int stress_sigurg(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto finish;
@@ -339,11 +340,27 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+	STRESS_EX_SYSCALL("send"),
+	STRESS_EX_SYSCALL("recv"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigurg_info = {
 	.stressor = stress_sigurg,
 	.classifier = CLASS_SIGNAL | CLASS_NETWORK | CLASS_OS,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

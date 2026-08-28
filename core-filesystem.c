@@ -424,7 +424,8 @@ uint64_t stress_fs_size_get(void)
 #if defined(HAVE_SYS_STATVFS_H)
 	int rc;
 	struct statvfs buf;
-	fsblkcnt_t blocks, max_blocks;
+	fsblkcnt_t blocks;
+	fsblkcnt_t max_blocks;
 	const char *path = stress_fs_temp_path_get();
 
 	if (UNLIKELY(!path))
@@ -486,7 +487,9 @@ void stress_fs_usage_bytes(
 	const off_t fs_size_total)
 {
 	const off_t total_fs_size = (off_t)stress_fs_size_get();
-	char s1[32], s2[32], s3[32];
+	char s1[32];
+	char s2[32];
+	char s3[32];
 
 	if (total_fs_size > 0) {
 		pr_inf("%s: using %sB file system space per stressor instance (total %sB of %sB available file system space)\n",
@@ -505,8 +508,8 @@ void stress_fs_usage_bytes(
 int stress_fs_nonblocking_set(const int fd)
 {
 	int flags;
-#if defined(O_NONBLOCK)
 
+#if defined(O_NONBLOCK)
 	if ((flags = fcntl(fd, F_GETFL, 0)) < 0)
 		flags = 0;
 	return fcntl(fd, F_SETFL, O_NONBLOCK | flags);
@@ -791,44 +794,139 @@ ssize_t stress_fs_file_read(
 }
 
 /*
+ * stress_fs_max_file_rlimit()
+ *	binary chop to find largest rlimit NOFILE
+ */
+static uint64_t stress_fs_max_file_rlimit(void)
+{
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_NOFILE)
+	struct rlimit rlim_orig;
+	struct rlimit rlim;
+	rlim_t min = 64;
+	rlim_t max = RLIM_INFINITY / 2;
+	rlim_t cur;
+	rlim_t prev_cur = 0;
+	int i;
+
+#if defined(__linux__)
+	{
+		uint64_t val;
+		char buf[64];
+
+		if (stress_fs_file_read("/proc/sys/fs/file-max", buf, sizeof(buf)) > 0) {
+			errno = 0;
+			if ((sscanf(buf, "%" SCNu64, &val) == 1) && (errno == 0)) {
+				if (val < (uint64_t)max)
+					max = (rlim_t)val;
+			}
+		}
+	}
+#endif
+
+	if (getrlimit(RLIMIT_NOFILE, &rlim_orig) < 0)
+		return 0ULL;
+
+	for (i = 0; i <= 64; i++) {
+		/* unlikely! */
+		if (min > max)
+			return min;
+		cur = min + (max - min) / 2;
+
+		/* Try rlim cur AND max in case we can push both up */
+		rlim.rlim_cur = cur;
+		rlim.rlim_max = cur;
+		if (setrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+			min = cur;
+		} else {
+			/* Try just limi cur */
+			rlim.rlim_cur = cur;
+			rlim.rlim_max = rlim_orig.rlim_max;
+			if (setrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+				min = cur;
+			} else {
+				max = cur;
+			}
+		}
+		/* No change, we got the best max setting */
+		if (cur == prev_cur)
+			return cur;
+		prev_cur = cur;
+	}
+#endif
+	return 0ULL;
+}
+
+/*
  *  stress_fs_max_file_limit_get()
  *	get max number of files that the current
  *	process can open not counting the files that
  *	may already been opened.
  */
-size_t stress_fs_max_file_limit_get(void)
+uint64_t stress_fs_max_file_limit_get(void)
 {
+	uint64_t max_fd = 0;
+	uint64_t rlimit_fd;
 #if defined(HAVE_GETDTABLESIZE)
 	int tablesize;
 #endif
-#if defined(RLIMIT_NOFILE)
-	struct rlimit rlim;
-#endif
-	size_t max_rlim = SIZE_MAX;
-	size_t max_sysconf;
 
-#if defined(HAVE_GETDTABLESIZE)
-	/* try the simple way first */
-	tablesize = getdtablesize();
-	if (tablesize > 0)
-		return (size_t)tablesize;
-#endif
-#if defined(RLIMIT_NOFILE)
-	if (!getrlimit(RLIMIT_NOFILE, &rlim))
-		max_rlim = (size_t)rlim.rlim_cur;
-#endif
+	rlimit_fd = stress_fs_max_file_rlimit();
+	if (rlimit_fd > max_fd)
+		max_fd = rlimit_fd;
+
 #if defined(_SC_OPEN_MAX)
 	{
 		const long int open_max = sysconf(_SC_OPEN_MAX);
 
-		max_sysconf = (open_max > 0) ? (size_t)open_max : SIZE_MAX;
+		if ((open_max > 0) && ((uint64_t)open_max > max_fd))
+			max_fd = (uint64_t)open_max;
 	}
 #else
-	max_sysconf = SIZE_MAX;
-	UNEXPECTED
+	/* got nothing, try SIZE_MAX */
+	if (max_fd == 0)
+		max_fd = SIZE_MAX;
 #endif
-	/* return the lowest of these two */
-	return STRESS_MINIMUM(max_rlim, max_sysconf);
+
+#if defined(HAVE_GETDTABLESIZE)
+	/* constrain down to tablesize */
+	tablesize = getdtablesize();
+	if ((tablesize > 0) && ((uint64_t)tablesize < max_fd))
+		max_fd = (uint64_t)tablesize;
+#endif
+
+	return max_fd;
+}
+
+/*
+ *  stress_fs_max_fd()
+ *	parse maximum file descriptor limit option
+ */
+void stress_fs_max_fd(
+	const char *opt_name,
+	const char *opt_arg,
+	stress_type_id_t *type_id,
+	void *value)
+{
+        uint64_t *open_max = (uint64_t *)value;
+        const uint64_t max_fds = stress_fs_max_file_limit_get();
+
+        (void)opt_name;
+
+        *type_id = TYPE_ID_UINT64;
+        *open_max = (size_t)stress_get_uint64_percent(opt_arg, 1, max_fds, NULL,
+                        "cannot determine maximum number of file descriptors");
+	if (*open_max < 4) {
+		*open_max = 16;
+		pr_inf("setting %s value %s too small, defaulting to lower limit %" PRIu64 "\n",
+			opt_name, opt_arg, *open_max);
+	}
+	if (*open_max > max_fds) {
+		*open_max = max_fds;
+		pr_inf("setting %s value %s too large, defaulting to upper limit %" PRIu64 "\n",
+			opt_name, opt_arg, *open_max);
+	}
 }
 
 /*
@@ -839,7 +937,7 @@ static inline size_t static_fs_open_count_get(void)
 {
 #if defined(__linux__)
 	DIR *dir;
-	struct dirent *d;
+	const struct dirent *d;
 	size_t n = 0;
 
 	dir = opendir("/proc/self/fd");
@@ -870,11 +968,19 @@ static inline size_t static_fs_open_count_get(void)
  */
 size_t stress_fs_file_limit_get(void)
 {
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_NOFILE)
 	struct rlimit rlim;
-	size_t last_opened, opened, max = 65536;	/* initial guess */
+#endif
+	size_t last_opened;
+	size_t opened;
+	size_t max = 65536;	/* initial guess */
 
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_NOFILE)
 	if (!getrlimit(RLIMIT_NOFILE, &rlim))
 		max = (size_t)rlim.rlim_cur;
+#endif
 
 	last_opened = 0;
 
@@ -910,7 +1016,8 @@ size_t stress_fs_file_limit_get(void)
  */
 int stress_fs_bad_fd_get(void)
 {
-#if defined(RLIMIT_NOFILE) &&	\
+#if defined(HAVE_GETRLIMIT) &&	\
+    defined(RLIMIT_NOFILE) &&	\
     defined(F_GETFL)
 	struct rlimit rlim;
 
@@ -933,11 +1040,11 @@ int stress_fs_bad_fd_get(void)
 
 	for (i = 2048; i > fileno(stdout); i--, open_max--) {
 		errno = 0;
-		if ((fcntl((int)open_max, F_GETFL) == -1) && (errno == EBADF))
+		if ((fcntl(open_max, F_GETFL) == -1) && (errno == EBADF))
 			return open_max;
 
 		errno = 0;
-		if ((fcntl((int)i, F_GETFL) == -1) && (errno == EBADF))
+		if ((fcntl(i, F_GETFL) == -1) && (errno == EBADF))
 			return i;
 	}
 #else
@@ -970,7 +1077,8 @@ static inline int stress_fs_max_pipe_size_check(
 	const size_t sz,
 	const size_t page_size)
 {
-	int fds[2], rc = 0;
+	int fds[2];
+	int rc = 0;
 
 	if (UNLIKELY(sz < page_size))
 		return -1;
@@ -997,7 +1105,11 @@ size_t stress_fs_max_pipe_size_get(void)
 
 #if defined(F_SETPIPE_SZ)
 	ssize_t ret;
-	size_t i, prev_sz, sz, min, max;
+	size_t i;
+	size_t prev_sz;
+	size_t sz;
+	size_t min;
+	size_t max;
 	char buf[64];
 	size_t page_size;
 #endif
@@ -1067,7 +1179,8 @@ void stress_fs_dirent_list_free(struct dirent **dlist, const int n)
  */
 int stress_fs_dirent_list_prune(struct dirent **dlist, const int n)
 {
-	int i, j;
+	int i;
+	int j;
 
 	if (UNLIKELY(!dlist))
 		return -1;
@@ -1092,7 +1205,8 @@ int stress_fs_dirent_list_prune(struct dirent **dlist, const int n)
  */
 ssize_t stress_fs_read_discard(const int fd)
 {
-	ssize_t rbytes = 0, ret;
+	ssize_t rbytes = 0;
+	ssize_t ret;
 
 	do {
 		char buffer[4096];
@@ -1117,19 +1231,20 @@ ssize_t stress_fs_read(
 	const ssize_t size,
 	const bool ignore_sig_eintr)
 {
-	ssize_t rbytes = 0, ret;
+	ssize_t rbytes = 0;
+	ssize_t ret;
 
 	if (UNLIKELY(!buffer || (size < 1)))
 		return -1;
 	do {
 		char *ptr = ((char *)buffer) + rbytes;
-ignore_eintr:
-		ret = read(fd, (void *)ptr, (size_t)(size - rbytes));
-		if (ignore_sig_eintr && (ret < 0) && (errno == EINTR))
-			goto ignore_eintr;
+
+		do {
+			ret = read(fd, (void *)ptr, (size_t)(size - rbytes));
+		} while (ignore_sig_eintr && (ret < 0) && (errno == EINTR));
 		if (ret > 0)
 			rbytes += ret;
-	} while ((ret > 0) && (rbytes != size));
+	} while ((ret > 0) && (rbytes < size));
 
 	return (ret <= 0) ? ret : rbytes;
 }
@@ -1146,21 +1261,25 @@ ssize_t stress_fs_write(
 	const ssize_t size,
 	const bool ignore_sig_eintr)
 {
-	ssize_t wbytes = 0, ret;
+	ssize_t wbytes = 0;
+	ssize_t ret;
+	ssize_t max_sz = STRESS_MB;
 
 	if (UNLIKELY(!buffer || (size < 1)))
 		return -1;
 
 	do {
-		const void *ptr = (void *)((uintptr_t)buffer + wbytes);
-ignore_eintr:
-		ret = write(fd, ptr, (size_t)(size - wbytes));
-		/* retry if interrupted */
-		if (ignore_sig_eintr && (ret < 0) && (errno == EINTR))
-			goto ignore_eintr;
+		const char *ptr = ((const char *)buffer) + wbytes;
+
+		do {
+			ssize_t sz = size - wbytes;
+
+			sz = (sz > max_sz) ? max_sz : sz;
+			ret = write(fd, (const void *)ptr, (size_t)sz);
+		} while (ignore_sig_eintr && (ret < 0) && (errno == EINTR));
 		if (ret > 0)
 			wbytes += ret;
-	} while ((ret > 0) && (wbytes != size));
+	} while ((ret > 0) && (wbytes < size));
 
 	return (ret <= 0) ? ret : wbytes;
 }
@@ -1264,7 +1383,8 @@ static bool static_fs_partition_dev_find(
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		uint64_t blocks;
 		char devname[129];
-		unsigned int pmajor, pminor;
+		unsigned int pmajor;
+		unsigned int pminor;
 
 		if (sscanf(buf, "%u %u %" SCNu64 " %128s", &pmajor, &pminor, &blocks, devname) == 4) {
 			if ((devmajor == pmajor) && (devminor == pminor)) {
@@ -1397,7 +1517,8 @@ const char *stress_fs_type_get(const char *filename)
  */
 void stress_fs_close_fds(int *fds, const size_t n)
 {
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	if (UNLIKELY(!fds))
 		return;
@@ -1476,10 +1597,12 @@ void stress_fs_chattr_flags_unset(const char *pathname)
  */
 static int CONST OPTIMIZE3 stress_fs_dirent_filter_dotty(const struct dirent *d)
 {
-	if (d->d_name[0] == '.') {
-		if (d->d_name[1] == '\0')
+	const char *d_name = d->d_name;
+
+	if (d_name[0] == '.') {
+		if (d_name[1] == '\0')
 			return 0;
-		if ((d->d_name[1] == '.') && LIKELY((d->d_name[2] == '\0')))
+		if ((d_name[1] == '.') && LIKELY((d_name[2] == '\0')))
 			return 0;
 	}
 	return 1;
@@ -1537,7 +1660,8 @@ static void stress_fs_clean_dir_files(
 	const size_t path_posn)
 {
 	struct stat statbuf;
-	char *ptr, *end;
+	char *ptr;
+	const char *end;
 	int n;
 	struct dirent **names = NULL;
 
@@ -1554,11 +1678,11 @@ static void stress_fs_clean_dir_files(
 		return;
 
 	/* We don't remove paths with .. in */
-	if (strstr(path, ".."))
+	if (shim_strstr(path, ".."))
 		return;
 
 	/* We don't remove paths that our out of the scope */
-	if (strncmp(path, temp_path, temp_path_len))
+	if (shim_strncmp(path, temp_path, temp_path_len))
 		return;
 
 	n = scandir(path, &names, stress_fs_dirent_filter_dotty, alphasort);
@@ -1571,7 +1695,7 @@ static void stress_fs_clean_dir_files(
 	end = path + PATH_MAX;
 
 	while (n--) {
-		size_t name_len = strlen(names[n]->d_name) + 1;
+		size_t name_len = shim_strlen(names[n]->d_name) + 1;
 #if !defined(DT_DIR) ||	\
     !defined(DT_LNK) ||	\
     !defined(DT_REG)
@@ -1585,7 +1709,7 @@ static void stress_fs_clean_dir_files(
 		}
 
 		(void)snprintf(ptr, (size_t)(end - ptr), "/%s", names[n]->d_name);
-		name_len = strlen(ptr);
+		name_len = shim_strlen(ptr);
 
 #if defined(DT_DIR) &&	\
     defined(DT_LNK) &&	\
@@ -1606,7 +1730,7 @@ static void stress_fs_clean_dir_files(
 			free(names[n]);
 			static_fs_inode_flags_unset(temp_path, 0);
 			stress_fs_chattr_flags_unset(path);
-			if (strstr(path, "swap"))
+			if (shim_strstr(path, "swap"))
 				(void)stress_memory_swap_off(path);
 			(void)shim_unlink(path);
 			break;
@@ -1653,7 +1777,7 @@ void stress_fs_clean_dir(
 	const uint32_t instance)
 {
 	const char *temp_path = stress_fs_temp_path_get();
-	const size_t temp_path_len = strlen(temp_path);
+	const size_t temp_path_len = shim_strlen(temp_path);
 
 	if (LIKELY(name != NULL)) {
 		char path[PATH_MAX];
@@ -1687,4 +1811,93 @@ int stress_fs_drop_caches(const int flags)
 
 	return 0;
 #endif
+}
+
+/*
+ *  stress_fs_io_stats_read()
+ *	read per process I/O stats
+ */
+static void stress_fs_io_stats_read(const int which, stress_io_stats_t *io_stats)
+{
+#if defined(__linux__)
+	FILE *fp;
+	char buffer[256];
+	uint64_t val;
+	stress_io_stats_t new_stats;
+
+	(void)shim_memset(&new_stats, 0, sizeof(new_stats));
+
+	fp = fopen("/proc/self/io", "r");
+	if (!fp)
+		return;
+
+	while (fscanf(fp, "%255s %" SCNu64,  buffer, &val) == 2) {
+		if (!shim_strcmp(buffer, "read_bytes:"))
+			new_stats.read_bytes = val;
+		else if (!shim_strcmp(buffer, "write_bytes:"))
+			new_stats.write_bytes = val;
+	}
+	(void)fclose(fp);
+
+	if (which == 0) {
+		(void)shim_memcpy(io_stats, &new_stats, sizeof(*io_stats));
+	} else {
+		io_stats->read_bytes = new_stats.read_bytes - io_stats->read_bytes;
+		io_stats->write_bytes = new_stats.write_bytes - io_stats->write_bytes;
+	}
+#else
+	(void)which;
+	(void)shim_memset(io_stats, 0, sizeof(*io_stats));
+#endif
+}
+
+/*
+ *  stress_fs_io_stats_begin()
+ *	get io stats at beginning of stress run
+ */
+void stress_fs_io_stats_begin(stress_io_stats_t *io_stats)
+{
+	stress_fs_io_stats_read(0, io_stats);
+}
+
+/*
+ *  stress_fs_io_stats_begin()
+ *	get io stats at end of stress run
+ */
+void stress_fs_io_stats_end(stress_io_stats_t *io_stats)
+{
+	stress_fs_io_stats_read(1, io_stats);
+}
+
+/*
+ *  stress_fs_dentry_state_get()
+ *	get the number of cached dentries
+ */
+void stress_fs_dentry_state_get(stress_fs_dentry_stat_t *dentry_stat)
+{
+#if defined(__linux__)
+	FILE *fp;
+	int n;
+
+	(void)shim_memset(dentry_stat, 0, sizeof(*dentry_stat));
+	fp = fopen("/proc/sys/fs/dentry-state", "r");
+	if (!fp)
+		return;
+
+	n = fscanf(fp, "%" SCNd64 " %" SCNd64 " "
+		       "%" SCNd64 " %" SCNd64 " "
+		       "%" SCNd64 " %" SCNd64,
+		       &dentry_stat->nr_dentry,
+		       &dentry_stat->nr_unused,
+		       &dentry_stat->age_limit,
+		       &dentry_stat->want_pages,
+		       &dentry_stat->nr_negative,
+		       &dentry_stat->reserved);
+	(void)fclose(fp);
+
+	if (LIKELY(n == 6))
+		return;
+#endif
+	(void)shim_memset(dentry_stat, 0, sizeof(*dentry_stat));
+	return;
 }

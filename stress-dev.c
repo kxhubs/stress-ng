@@ -236,13 +236,15 @@ typedef struct dev_info {
 
 static const stress_help_t help[] = {
 	{ NULL,	"dev N",	"start N device entry thrashing stressors" },
+	{ NULL, "dev-alldev",   "exercise all devices (rather than just /dev/devname0)" },
 	{ NULL, "dev-file name","specify the /dev/ file to exercise" },
 	{ NULL,	"dev-ops N",	"stop after N device thrashing bogo ops" },
 	{ NULL,	NULL,		NULL }
 };
 
 static const stress_opt_t opts[] = {
-	{ OPT_dev_file, "dev-file", TYPE_ID_STR, 0, 0, NULL },
+	{ OPT_dev_alldev, "dev-alldev", TYPE_ID_BOOL, 0, 1, NULL },
+	{ OPT_dev_file,   "dev-file",   TYPE_ID_STR, 0, 0, NULL },
 	END_OPT,
 };
 
@@ -423,13 +425,13 @@ static void stress_dev_media_linux(
 			return;
 
 		if (!mdi.driver[0])
-			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO %s: null driver name\n",
+			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO '%s': null driver name\n",
 				args->name, devpath);
 		if (!mdi.model[0])
-			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO %s: null model name\n",
+			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO '%s': null model name\n",
 				args->name, devpath);
 		if (!mdi.bus_info[0])
-			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO %s: null bus_info field\n",
+			pr_inf("%s: ioctl MEDIA_IOC_DEVICE_INFO '%s': null bus_info field\n",
 				args->name, devpath);
 	}
 #endif
@@ -512,7 +514,7 @@ static void stress_dev_dm_linux(
 
 			for (i = 0; i < dm->data_size; i++) {
 #if defined(DM_DEV_STATUS)
-				if (strlen(nl->name) < 4096) {
+				if (shim_strlen(nl->name) < 4096) {
 
 					uint8_t buf2[sizeof(struct dm_ioctl) + 4096] ALIGNED(8);
 					struct dm_ioctl *dm2 = (struct dm_ioctl *)shim_assume_aligned(buf2, 8);
@@ -571,6 +573,7 @@ static void stress_dev_dm_linux(
 
 #if defined(RWF_NOWAIT) &&	\
     defined(O_DIRECT) &&	\
+    defined(HAVE_SYS_UIO_H) &&	\
     defined(HAVE_PREADV2)
 	{
 		/*
@@ -1090,7 +1093,8 @@ static void stress_dev_blk(
 #if defined(BLKROGET)
 	/* readonly state */
 	{
-		int ret, ro;
+		int ret;
+		int ro;
 
 		ret = ioctl(fd, BLKROGET, &ro);
 #if defined(BLKROSET)
@@ -1104,7 +1108,8 @@ static void stress_dev_blk(
 #if defined(BLKBSZGET)
 	/* get block device soft block size */
 	{
-		int ret, sz;
+		int ret;
+		int sz;
 
 		ret = ioctl(fd, BLKBSZGET, &sz);
 #if defined(BLKBSZSET)
@@ -1249,7 +1254,8 @@ static inline bool is_scsi_dev(dev_info_t *dev_info)
 		return false;
 
 	for (i = 0; !is_scsi && (i < n); i++) {
-		int j, m;
+		int j;
+		int m;
 		char scsi_block_path[PATH_MAX];
 		struct dirent **scsi_block_list;
 
@@ -1265,7 +1271,7 @@ static inline bool is_scsi_dev(dev_info_t *dev_info)
 			continue;
 
 		for (j = 0; j < m; j++) {
-			if (!strcmp(dev_info->name, scsi_block_list[j]->d_name)) {
+			if (!shim_strcmp(dev_info->name, scsi_block_list[j]->d_name)) {
 				is_scsi = true;
 				break;
 			}
@@ -1713,7 +1719,8 @@ static void cdrom_get_address_msf(
  */
 static void stress_cdrom_ioctl_msf(const int fd)
 {
-	int starttrk = 0, endtrk = 0;
+	int starttrk = 0;
+	int endtrk = 0;
 
 	(void)fd;
 	(void)starttrk;
@@ -2653,7 +2660,7 @@ static void stress_dev_acpi_thermal_rel_get(
 {
 	char *buf;
 
-	if ((length < 1) || (length > 64 * KB))
+	if ((length < 1) || (length > 64 * STRESS_KB))
 		return;
 	buf = (char *)malloc((size_t)length);
 	if (!buf)
@@ -3239,7 +3246,6 @@ STRESS_PRAGMA_POP
 	{
 		struct snd_ctl_elem_list list;
 
-
 		(void)shim_memset(&list, 0, sizeof(list));
 
 		if (ioctl(fd, SNDRV_CTL_IOCTL_ELEM_LIST, &list) == 0) {
@@ -3342,7 +3348,8 @@ static void stress_dev_parport_linux(
 
 #if defined(PPGETMODE)
 	{
-		int ret, mode;
+		int ret;
+		int mode;
 
 		ret = ioctl(fd, PPGETMODE, &mode);
 #if defined(PPSETMODE)
@@ -3356,7 +3363,8 @@ static void stress_dev_parport_linux(
 
 #if defined(PPGETPHASE)
 	{
-		int ret, phase;
+		int ret;
+		int phase;
 
 		ret = ioctl(fd, PPGETPHASE, &phase);
 #if defined(PPSETPHASE)
@@ -3378,7 +3386,8 @@ static void stress_dev_parport_linux(
 
 #if defined(PPGETFLAGS)
 	{
-		int ret, uflags;
+		int ret;
+		int uflags;
 
 		ret = ioctl(fd, PPGETFLAGS, &uflags);
 #if defined(PPSETFLAGS)
@@ -3913,7 +3922,7 @@ static inline int stress_dev_lock(const char *path, const int fd)
 	{
 		int ret;
 
-		if (strncmp(path, "/dev/tty", 8))
+		if (shim_strncmp(path, "/dev/tty", 8))
 			return 0;
 
 		ret = ioctl(fd, TIOCEXCL);
@@ -3944,7 +3953,7 @@ static inline void stress_dev_unlock(const char *path, const int fd)
 {
 #if defined(TIOCEXCL) &&	\
     defined(TIOCNXCL)
-	if (strncmp(path, "/dev/tty", 8))
+	if (shim_strncmp(path, "/dev/tty", 8))
 		return;
 
 #if defined(LOCK_EX) &&	\
@@ -4027,7 +4036,8 @@ static inline void stress_dev_rw(
 	sys_dev_info_t **sys_dev_info,
 	int32_t loops)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 	off_t offset;
 	struct stat statbuf;
 	struct pollfd fds[1];
@@ -4087,7 +4097,7 @@ static inline void stress_dev_rw(
 		(void)stress_fs_fdinfo_read(pid, fd);
 
 		if (shim_fstat(fd, &statbuf) < 0) {
-			pr_fail("%s: stat failed on %s, errno=%d (%s)\n",
+			pr_fail("%s: stat '%s' failed, errno=%d (%s)\n",
 				args->name, path, errno, strerror(errno));
 		} else {
 			if (!(S_ISBLK(statbuf.st_mode) || S_ISCHR(statbuf.st_mode))) {
@@ -4109,10 +4119,10 @@ static inline void stress_dev_rw(
     defined(HAVE_TERMIOS) &&	\
     defined(TCGETS)
 		if (S_ISCHR(statbuf.st_mode) &&
-		    strncmp("/dev/vsock", path, 10) &&
-		    strncmp("/dev/dri", path, 8) &&
-		    strncmp("/dev/nmem", path, 9) &&
-		    strncmp("/dev/ndctl", path, 10) &&
+		    shim_strncmp("/dev/vsock", path, 10) &&
+		    shim_strncmp("/dev/dri", path, 8) &&
+		    shim_strncmp("/dev/nmem", path, 9) &&
+		    shim_strncmp("/dev/ndctl", path, 10) &&
 		    (ioctl(fd, TCGETS, &tios) == 0))
 			stress_dev_tty(args, fd, path);
 #endif
@@ -4217,7 +4227,7 @@ static inline void stress_dev_rw(
 		VOID_RET(int, shim_fsync(fd));
 
 		for (i = 0; i < SIZEOF_ARRAY(dev_funcs); i++) {
-			if (!strncmp(path, dev_funcs[i].devpath, dev_funcs[i].devpath_len))
+			if (!shim_strncmp(path, dev_funcs[i].devpath, dev_funcs[i].devpath_len))
 				dev_funcs[i].func(args, fd, path);
 		}
 		stress_dev_close_unlock(path, fd);
@@ -4288,7 +4298,7 @@ static void stress_dev_files(
 	dev_info_t *dev_info_list,
 	sys_dev_info_t **sys_dev_info)
 {
-	int32_t loops = args->instance < 8 ? (int32_t)args->instance + 1 : 8;
+	const int32_t loops = args->instance < 8 ? (int32_t)args->instance + 1 : 8;
 	static int try_failed = 0;
 	dev_info_t *di;
 
@@ -4375,7 +4385,8 @@ static void stress_dev_infos_free(dev_info_t **list)
  */
 static bool stress_dev_avoid(char *filename)
 {
-	char tmp[PATH_MAX], *name;
+	char tmp[PATH_MAX];
+	char *name;
 
 	(void)shim_strscpy(tmp, filename, sizeof(tmp));
 	name = basename(tmp);
@@ -4388,15 +4399,15 @@ static bool stress_dev_avoid(char *filename)
 	 *  Avoid https://bugs.xenserver.org/browse/XSO-809
 	 *  see: LP#1741409, so avoid opening /dev/hpet
 	 */
-	if (!strcmp(name, "hpet") && linux_xen_guest())
+	if (!shim_strcmp(name, "hpet") && linux_xen_guest())
 		return true;
-	if (!strncmp(name, "ttyS", 4))
+	if (!shim_strncmp(name, "ttyS", 4))
 		return true;
 	/*
 	 *  Closing watchdog files will cause
 	 *  systems to be rebooted, so avoid these!
 	 */
-	if (!strncmp(name, "watchdog", 8))
+	if (!shim_strncmp(name, "watchdog", 8))
 		return true;
 	return false;
 }
@@ -4418,7 +4429,7 @@ static void stress_dev_info_add(
 
 	if (stress_dev_avoid(path)) {
 		if (warn)
-			pr_inf("%s: avoiding use of %s\n", args->name, path);
+			pr_inf("%s: avoiding use of '%s'\n", args->name, path);
 		return;
 	}
 	if (readlink(path, linkpath, sizeof(linkpath)) > 0) {
@@ -4426,7 +4437,7 @@ static void stress_dev_info_add(
 
 		if (name && stress_dev_avoid(name)) {
 			if (warn)
-				pr_inf("%s: avoiding use of %s\n", args->name, path);
+				pr_inf("%s: avoiding use of '%s'\n", args->name, path);
 			return;
 		}
 	}
@@ -4459,10 +4470,12 @@ static void stress_dev_infos_get(
 	const char *path,
 	const char *tty_name,
 	dev_info_t **list,
-	size_t *list_len)
+	size_t *list_len,
+	const bool dev_alldev)
 {
 	struct dirent **dlist;
-	int i, n;
+	int i;
+	int n;
 	const mode_t flags = S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
 	if (UNLIKELY(!stress_continue(args)))
@@ -4486,13 +4499,13 @@ static void stress_dev_infos_get(
 		if (stress_dev_avoid(d->d_name))
 			continue;
 
-		len = strlen(d->d_name);
+		len = shim_strlen(d->d_name);
 
 		/*
-		 *  Exercise no more than 3 of the same device
+		 *  Exercise no more than 1 of the same device
 		 *  driver, e.g. ttyS0..ttyS1
 		 */
-		if (len > 1) {
+		if (!dev_alldev && (len > 1)) {
 			int dev_n;
 			char *ptr = d->d_name + len - 1;
 
@@ -4501,14 +4514,15 @@ static void stress_dev_infos_get(
 			ptr++;
 			if (sscanf(ptr, "%d", &dev_n) != 1)
 				continue;
-			if (dev_n > 2)
+			if (dev_n > 1)
 				continue;
 		}
+
 
 		(void)stress_fs_make_filename(tmp, sizeof(tmp), path, d->d_name);
 
 		/* Don't exercise our tty */
-		if (tty_name && !strcmp(tty_name, tmp))
+		if (tty_name && !shim_strcmp(tty_name, tmp))
 			continue;
 
 		switch (shim_dirent_type(path, d)) {
@@ -4518,7 +4532,7 @@ static void stress_dev_infos_get(
 				continue;
 			if ((statbuf.st_mode & flags) == 0)
 				continue;
-			stress_dev_infos_get(args, tmp, tty_name, list, list_len);
+			stress_dev_infos_get(args, tmp, tty_name, list, list_len, dev_alldev);
 			break;
 		case SHIM_DT_BLK:
 		case SHIM_DT_CHR:
@@ -4618,7 +4632,8 @@ static void stress_sys_dev_infos_get(
 	const int depth)
 {
 	struct dirent **dlist;
-	int i, n;
+	int i;
+	int n;
 	const mode_t flags = S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
 	if (UNLIKELY(!stress_continue(args)))
@@ -4742,7 +4757,8 @@ static inline void stress_sys_dev_infos_free(sys_dev_info_t **list)
 static int stress_dev(stress_args_t *args)
 {
 	pthread_t pthreads[STRESS_DEV_THREADS_MAX];
-	int ret[STRESS_DEV_THREADS_MAX], rc = EXIT_SUCCESS;
+	int ret[STRESS_DEV_THREADS_MAX];
+	int rc = EXIT_SUCCESS;
 	stress_pthread_args_t pa;
 	char *dev_file = NULL;
 	const int stdout_fd = fileno(stdout);
@@ -4751,11 +4767,11 @@ static int stress_dev(stress_args_t *args)
 	dev_info_t dev_null = { "/dev/null", "null", 0, &dev_state_null, NULL };
 	size_t mmap_dev_states_size;
 	const size_t page_size = args->page_size;
-
 	dev_info_t *dev_info_list = NULL;
 	size_t dev_info_list_len = 0;
-
-	sys_dev_info_t *sys_dev_info_list = NULL, *sys_dev_info_list_end = NULL;
+	sys_dev_info_t *sys_dev_info_list = NULL;
+	sys_dev_info_t *sys_dev_info_list_end = NULL;
+	bool dev_alldev = false;
 
 	stress_dev_state_init(&dev_state_null);
 
@@ -4764,26 +4780,27 @@ static int stress_dev(stress_args_t *args)
 
 	(void)shim_memset(ret, 0, sizeof(ret));
 
+	(void)stress_setting_get("dev-alldev", &dev_alldev);
 	(void)stress_setting_get("dev-file", &dev_file);
 	if (dev_file) {
 		mode_t mode;
 		struct stat statbuf;
 
 		if (shim_stat(dev_file, &statbuf) < 0) {
-			pr_fail("%s: cannot access file %s\n",
+			pr_fail("%s: cannot stat file '%s'\n",
 				args->name, dev_file);
 			return EXIT_FAILURE;
 		}
 		mode = statbuf.st_mode & S_IFMT;
 		if ((mode != S_IFBLK) && (mode != S_IFCHR)) {
-			pr_fail("%s: file %s is not a character or block device\n",
+			pr_fail("%s: file '%s' is not a character or block device\n",
 				args->name, dev_file);
 			return EXIT_FAILURE;
 		}
 
 		stress_dev_info_add(args, dev_file, &dev_info_list, &dev_info_list_len, true);
 	} else {
-		stress_dev_infos_get(args, "/dev", tty_name, &dev_info_list, &dev_info_list_len);
+		stress_dev_infos_get(args, "/dev", tty_name, &dev_info_list, &dev_info_list_len, dev_alldev);
 		stress_sys_dev_infos_get(args, "/sys/dev", &sys_dev_info_list, &sys_dev_info_list_end, 0);
 	}
 
@@ -4811,7 +4828,7 @@ static int stress_dev(stress_args_t *args)
 		goto deinit;
 	}
 	stress_memory_anon_name_set(mmap_dev_states, mmap_dev_states_size, "dev-states");
-	
+
 	stress_dev_info_list_state_init(dev_info_list, mmap_dev_states);
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
@@ -4821,11 +4838,16 @@ static int stress_dev(stress_args_t *args)
 	do {
 		pid_t pid;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
+			if (UNLIKELY(!stress_continue(args))) {
+				rc = EXIT_SUCCESS;
+				break;
+			}
+			pr_fail("%s: fork failed, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+			rc = EXIT_FAILURE;
+			break;
 		} else if (pid > 0) {
 			int status;
 			pid_t wret;
@@ -4922,11 +4944,23 @@ deinit:
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("ioctl"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dev_info = {
 	.stressor = stress_dev,
 	.classifier = CLASS_DEV | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_dev_info = {

@@ -103,7 +103,8 @@ static double TARGET_CLONES OPTIMIZE3 name(			\
 	register int i;						\
 	const int n = sizeof(r.f) / (sizeof(r.f[0]));		\
 	const int loops = LOOPS_PER_CALL >> 1;			\
-	double t1, t2;						\
+	double t1;						\
+	double t2;						\
 								\
 	(void)success;						\
 								\
@@ -137,7 +138,8 @@ static double TARGET_CLONES OPTIMIZE3 name(			\
 	register int i;						\
 	const int n = sizeof(r.f) / (sizeof(r.f[0]));		\
 	const int loops = LOOPS_PER_CALL >> 1;			\
-	double t1, t2;						\
+	double t1;						\
+	double t2;						\
 								\
 	(void)success;						\
 								\
@@ -171,7 +173,8 @@ static double TARGET_CLONES OPTIMIZE3 name(			\
 	register int i;						\
 	const int n = sizeof(r.f) / (sizeof(r.f[0]));		\
 	const int loops = LOOPS_PER_CALL >> 1;			\
-	double t1, t2;						\
+	double t1;						\
+	double t2;						\
 								\
 	(void)success;						\
 								\
@@ -205,7 +208,8 @@ static double TARGET_CLONES OPTIMIZE3 name(			\
 	register int i;						\
 	const int n = sizeof(r.f) / (sizeof(r.f[0]));		\
 	const int loops = LOOPS_PER_CALL >> 1;			\
-	double t1, t2;						\
+	double t1;						\
+	double t2;						\
 								\
 	(void)success;						\
 								\
@@ -395,8 +399,10 @@ static double stress_vecfp_all(
 
 static int stress_vecfp(stress_args_t *args)
 {
-	size_t i, max_elements = 0, mmap_size;
 	stress_vecfp_init *vecfp_init;
+	size_t i;
+	size_t max_elements = 0;
+	size_t mmap_size;
 	size_t vecfp_method = 0;	/* "all" */
 	bool success = true;
 
@@ -417,7 +423,7 @@ static int stress_vecfp(stress_args_t *args)
 			mmap_size, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (vecfp_init == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu initializing elements%s, "
+		pr_inf_skip("%s: mmap %zu initializing elements failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, max_elements,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -487,8 +493,22 @@ static const char *stress_vecfp_method(size_t i)
 }
 
 static const stress_opt_t opts[] = {
-        { OPT_vecfp_method, "vecfp-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_vecfp_method },
+        { OPT_vecfp_method, "vecfp-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_vecfp_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-vector"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-division"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_vecfp_info = {
@@ -497,12 +517,13 @@ const stressor_info_t stress_vecfp_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_vecfp_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(stress_vecfp_funcs),
+	.exercises = exercises,
 };
 #else
 
 static const stress_opt_t opts[] = {
-        { OPT_vecfp_method, "vecfp-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+        { OPT_vecfp_method, "vecfp-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

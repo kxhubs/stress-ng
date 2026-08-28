@@ -31,7 +31,8 @@ static const stress_help_t help[] = {
  */
 static int stress_sigpending(stress_args_t *args)
 {
-	sigset_t new_sigset ALIGN64, old_sigset ALIGN64;
+	sigset_t new_sigset ALIGN64;
+	sigset_t old_sigset ALIGN64;
 
 	if (stress_signal_handler(args->name, SIGUSR1, stress_signal_ignore_handler, NULL) < 0)
 		return EXIT_FAILURE;
@@ -94,9 +95,21 @@ static int stress_sigpending(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("sigpending"),
+	STRESS_EX_SYSCALL("sigprocmask"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigpending_info = {
 	.stressor = stress_sigpending,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -74,7 +74,8 @@ enum membarrier_cmd_flag {
 static int stress_membarrier_exercise(stress_args_t *args, membarrier_info_t *info)
 {
 	int ret;
-	unsigned int i, mask;
+	unsigned int i;
+	unsigned int mask;
 	double t;
 
 	ret = shim_membarrier(MEMBARRIER_CMD_QUERY, 0, 0);
@@ -149,12 +150,15 @@ static void *stress_membarrier_thread(void *arg)
  */
 static int stress_membarrier(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	/* We have MAX_MEMBARRIER_THREADS plus the stressor process */
 	membarrier_info_t info[MAX_MEMBARRIER_THREADS + 1];
+	stress_pthread_args_t pargs[MAX_MEMBARRIER_THREADS + 1];
 	size_t i;
-	stress_pthread_args_t pargs = { args, NULL, 0 };
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	ret = shim_membarrier(MEMBARRIER_CMD_QUERY, 0, 0);
 	if (UNLIKELY(ret < 0)) {
@@ -186,10 +190,12 @@ static int stress_membarrier(stress_args_t *args)
 	keep_running = true;
 
 	for (i = 0; i < MAX_MEMBARRIER_THREADS; i++) {
-		pargs.data = &info[i];
+		pargs[i].args = args;
+		pargs[i].data = &info[i];
+		pargs[i].pthread_ret = 0;
 		info[i].pthread_ret =
 			pthread_create(&info[i].pthread, NULL,
-				stress_membarrier_thread, (void *)&pargs);
+				stress_membarrier_thread, (void *)&pargs[i]);
 	}
 
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
@@ -231,10 +237,21 @@ static int stress_membarrier(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("membarrier"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_membarrier_info = {
 	.stressor = stress_membarrier,
 	.classifier = CLASS_CPU_CACHE | CLASS_MEMORY,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_membarrier_info = {

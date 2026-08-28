@@ -32,17 +32,17 @@
  *	a named type in the tz_info_list.
  */
 static uint32_t stress_tz_type_instance(
-	stress_tz_info_t *tz_info_list,
+	const stress_tz_info_t *tz_info_list,
 	const char *type)
 {
-	stress_tz_info_t *tz_info;
+	const stress_tz_info_t *tz_info;
 	uint32_t type_instance = 0;
 
 	if (!type)
 		return 0;
 
 	for (tz_info = tz_info_list; tz_info; tz_info = tz_info->next) {
-		if (!strcmp(type, tz_info->type))
+		if (!shim_strcmp(type, tz_info->type))
 			type_instance++;
 	}
 	return type_instance;
@@ -72,7 +72,7 @@ static void stress_tz_insert(stress_tz_info_t **tz_info_list, stress_tz_info_t *
 	stress_tz_info_t **tz_info = tz_info_list;
 
 	while (*tz_info) {
-		if (strcmp((*tz_info)->type, new_tz_info->type) > 0) {
+		if (shim_strcmp((*tz_info)->type, new_tz_info->type) > 0) {
 			new_tz_info->next = *tz_info;
 			break;
 		}
@@ -102,7 +102,7 @@ int stress_tz_init(stress_tz_info_t **tz_info_list)
 		FILE *fp;
 
 		/* Ignore non TZ interfaces */
-		if (strncmp(entry->d_name, "thermal_zone", 12))
+		if (shim_strncmp(entry->d_name, "thermal_zone", 12))
 			continue;
 
 		/* Ensure we don't overstep the max limit of TZs */
@@ -128,8 +128,12 @@ int stress_tz_init(stress_tz_info_t **tz_info_list)
 		if ((fp = fopen(path, "r")) != NULL) {
 			char type[128];
 
+			(void)shim_memset(type, 0, sizeof(type));
 			if (fgets(type, sizeof(type), fp) != NULL) {
-				type[strcspn(type, "\n")] = '\0';
+				const size_t idx = shim_strcspn(type, "\n");
+
+				if (idx < sizeof(type))
+					type[idx] = '\0';
 				stress_tz_type_fix(type);
 				tz_info->type = shim_strdup(type);
 				tz_info->type_instance = stress_tz_type_instance(*tz_info_list, type);
@@ -219,7 +223,7 @@ static int stress_tz_compare(const void *p1, const void *p2)
 	const stress_tz_info_t *const *tz2 = (const stress_tz_info_t *const *)p2;
 	int ret;
 
-	ret = strcmp((*tz1)->type, (*tz2)->type);
+	ret = shim_strcmp((*tz1)->type, (*tz2)->type);
 	if (ret == 0) {
 		if ((int)(*tz1)->type_instance < (int)(*tz2)->type_instance)
 			return -1;
@@ -246,7 +250,8 @@ void stress_tz_dump(FILE *yaml, stress_list_item_t *stressors_list)
 	for (item = stressors_list; item; item = item->next) {
 		stress_tz_info_t *tz_info;
 		int32_t  j;
-		size_t i, n;
+		size_t i;
+		size_t n;
 		bool dumped_heading = false;
 		stress_tz_info_t **tz_infos;
 		bool print_nl = false;
@@ -257,6 +262,9 @@ void stress_tz_dump(FILE *yaml, stress_list_item_t *stressors_list)
 		/* Find how many items in list */
 		for (n = 0, tz_info = g_shared->tz_info; tz_info; tz_info = tz_info->next, n++)
 			;
+
+		if (!n)
+			continue;
 
 		/*
 		 *  Allocate array, populate with tz_info and sort
@@ -289,7 +297,8 @@ void stress_tz_dump(FILE *yaml, stress_list_item_t *stressors_list)
 
 			if (total) {
 				const double temp = (count > 0) ? ((double)total / count) / 1000.0 : 0.0;
-				char tmp[64], *type;
+				char tmp[64];
+				char *type;
 
 				if (!dumped_heading) {
 					const char *name = item->stressor->name;

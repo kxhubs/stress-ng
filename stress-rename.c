@@ -101,7 +101,8 @@ static int exercise_renameat2(
 	const int newfd,
 	const int bad_fd)
 {
-	int ret, file_fd;
+	int ret;
+	int file_fd;
 
 	/* Exercise with invalid flags */
 	ret = renameat2(oldfd, old_name, newfd, new_name, (unsigned int)~0);
@@ -213,8 +214,11 @@ static char *stress_basename(char *filename)
  */
 static int stress_rename(stress_args_t *args)
 {
-	char name1[PATH_MAX], name2[PATH_MAX];
-	char *oldname = name1, *newname = name2, *tmpname;
+	char name1[PATH_MAX];
+	char name2[PATH_MAX];
+	char *oldname = name1;
+	char *newname = name2;
+	char *tmpname;
 	FILE *fp;
 	uint64_t i = 0;
 	const uint32_t inst1 = args->instance * 2;
@@ -255,8 +259,8 @@ restart:
 	if ((fp = fopen(oldname, "w+")) == NULL) {
 		int rc = stress_exit_status(errno);
 
-		pr_err("%s: fopen failed, errno=%d: (%s)%s\n",
-			args->name, errno, strerror(errno),
+		pr_err("%s: fopen '%s' failed, errno=%d: (%s)%s\n",
+			args->name, oldname, errno, strerror(errno),
 			stress_fs_type_get(oldname));
 		(void)stress_fs_temp_dir_rm(args->name, args->pid, inst1);
 		(void)stress_fs_temp_dir_rm(args->name, args->pid, inst2);
@@ -303,7 +307,8 @@ restart:
 
 #if defined(EXERCISE_RENAMEAT)
 		if (tmp_fd >= 0) {
-			char *oldbasename, *newbasename;
+			const char *oldbasename;
+			const char *newbasename;
 
 			(void)stress_fs_temp_filename(newname, PATH_MAX,
 				args->name, args->pid, inst1, i++);
@@ -336,7 +341,8 @@ restart:
 
 #if defined(EXERCISE_RENAMEAT2)
 		if (tmp_fd >= 0) {
-			char *oldbasename, *newbasename;
+			const char *oldbasename;
+			const char *newbasename;
 
 			(void)stress_fs_temp_filename(newname, PATH_MAX,
 				args->name, args->pid, inst1, i++);
@@ -384,9 +390,29 @@ restart:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+#if defined(EXERCISE_RENAMEAT)
+	STRESS_EX_SYSCALL("fynsc"),
+#endif
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_OPENAT)
+	STRESS_EX_SYSCALL("openat"),
+#endif
+	STRESS_EX_SYSCALL("rename"),
+#if defined(HAVE_RENAMEAT)
+	STRESS_EX_SYSCALL("renameat"),
+#endif
+#if defined(HAVE_RENAMEAT2)
+	STRESS_EX_SYSCALL("renameat2"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rename_info = {
 	.stressor = stress_rename,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

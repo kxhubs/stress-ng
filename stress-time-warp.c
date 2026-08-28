@@ -104,7 +104,7 @@ static int stress_time_warp_rusage(clockid_t clockid, struct timespec *ts)
 	if (LIKELY(ret == 0)) {
 		const long int usec = (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec);
 
-		ts->tv_sec = usage.ru_utime.tv_sec + usage.ru_stime.tv_sec + 
+		ts->tv_sec = usage.ru_utime.tv_sec + usage.ru_stime.tv_sec +
 				(usec / 1000000);
 		ts->tv_nsec = 1000 * (usec % 1000000);
 	}
@@ -200,7 +200,8 @@ static int stress_time_warp(stress_args_t *args)
 {
 	stress_time_t stress_times[SIZEOF_ARRAY(clocks)];
 	size_t i;
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 
 	(void)shim_memset(&stress_times, 0, sizeof(stress_times));
 
@@ -273,11 +274,34 @@ static int stress_time_warp(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("syscall-rate"),
+	STRESS_EX_FEATURE("timer"),
+
+#if defined(HAVE_GETRUSAGE)
+	STRESS_EX_SYSCALL("getrusage"),
+#endif
+	STRESS_EX_SYSCALL("gettimeofday"),
+#if defined(HAVE_TIME)
+	STRESS_EX_SYSCALL("time"),
+#endif
+#if (defined(HAVE_LIB_RT) && defined(HAVE_CLOCK_GETTIME))
+	STRESS_EX_SYSCALL("clock_gettime"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_time_warp_info = {
 	.stressor = stress_time_warp,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_time_warp_info = {

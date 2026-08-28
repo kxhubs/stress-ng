@@ -30,9 +30,9 @@
 #define PAGE_WR_FLAG			(0x01)
 #define PAGE_RD_FLAG			(0x02)
 
-#define MIN_MMAPTORTURE_BYTES		(16 * MB)
+#define MIN_MMAPTORTURE_BYTES		(16 * STRESS_MB)
 #define MAX_MMAPTORTURE_BYTES   	(MAX_MEM_LIMIT)
-#define DEFAULT_MMAPTORTURE_BYTES	(256 * MB)
+#define DEFAULT_MMAPTORTURE_BYTES	(256 * STRESS_MB)
 
 #define MIN_MMAPTORTURE_MSYNC		(0)
 #define MAX_MMAPTORTURE_MSYNC		(100)
@@ -367,12 +367,13 @@ static void stress_mmaptorture_msync(
 }
 
 static void stress_mmaptorture_vm_name(
-	uint8_t *ptr,
+	const uint8_t *ptr,
 	const size_t size,
 	const size_t page_size)
 {
 	char vma_name[32];
-	size_t i, j;
+	size_t i;
+	size_t j;
 	static const char hex[] = "0123456789ABCDEF";
 
 	for (i = 0, j = 0; i < size; i += page_size, j++) {
@@ -394,17 +395,17 @@ static int stress_mmaptorture_child(stress_args_t *args, void *context)
 	const pid_t mypid = getpid();
 #endif
 	char *data;
-	NOCLOBBER uint32_t mmaptorture_msync = DEFAULT_MMAPTORTURE_MSYNC;
-	NOCLOBBER mmap_info_t *mappings;
-	NOCLOBBER off_t mmap_fd_offset = 0;
+	CLOBBERED uint32_t mmaptorture_msync = DEFAULT_MMAPTORTURE_MSYNC;
+	mmap_info_t * CLOBBERED mappings;
+	CLOBBERED off_t mmap_fd_offset = 0;
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	NOCLOBBER stress_numa_mask_t *numa_mask = NULL;
-	NOCLOBBER stress_numa_mask_t *numa_nodes = NULL;
+	stress_numa_mask_t * CLOBBERED numa_mask = NULL;
+	stress_numa_mask_t * CLOBBERED numa_nodes = NULL;
 #endif
 	size_t i;
 	(void)context;
 
-	if (!stress_setting_get("mmaptorture-msync", &mmaptorture_msync)) {
+	if (!stress_setting_get("mmaptorture-msync", UNCLOBBER(&mmaptorture_msync))) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
 			mmaptorture_msync = MAX_MMAPTORTURE_MSYNC;
 		if (g_opt_flags & OPT_FLAGS_MINIMIZE)
@@ -457,11 +458,12 @@ static int stress_mmaptorture_child(stress_args_t *args, void *context)
 
 	do {
 		unsigned char vec[MMAP_SIZE_MAP];
-		NOCLOBBER uint8_t *ptr;
-		NOCLOBBER size_t n, mmap_size;
-		NOCLOBBER pid_t pid = -1;
-		NOCLOBBER uint64_t total_bytes = 0;
-		NOCLOBBER off_t offset;
+		uint8_t * CLOBBERED ptr;
+		CLOBBERED size_t n = 0;
+		CLOBBERED size_t mmap_size;
+		CLOBBERED pid_t pid = -1;
+		CLOBBERED uint64_t total_bytes = 0;
+		CLOBBERED off_t offset;
 		bool random_offset;
 
 		if (sigsetjmp(jmp_env, 1))
@@ -852,10 +854,7 @@ mappings_unmap:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 	free(mappings);
 	free(data);
@@ -870,12 +869,14 @@ mappings_unmap:
 static int stress_mmaptorture(stress_args_t *args)
 {
 	int ret;
-	double t_start, duration, rate;
+	double t_start;
+	double duration;
+	double rate;
 
 	mmap_stats = (mmap_stats_t *)stress_mmap_anon_shared(sizeof(*mmap_stats),
 					PROT_READ | PROT_WRITE);
 	if (mmap_stats == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap %zu bytes stats shared page%s, "
+		pr_inf_skip("%s: mmap %zu bytes stats shared page failed%s, "
 			"errno=%d (%s), skipping stressor\n", args->name,
 			sizeof(*mmap_stats), stress_memory_free_get(),
 			errno, strerror(errno));
@@ -917,6 +918,43 @@ static int stress_mmaptorture(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+#if defined(MADV_PAGEOUT)
+	STRESS_EX_FEATURE("swap"),
+#endif
+	STRESS_EX_FEATURE("tlb"),
+
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("mincore"),
+#if defined(HAVE_MSYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+#if defined(HAVE_MPROTECT)
+	STRESS_EX_SYSCALL("mprotect"),
+#endif
+	STRESS_EX_SYSCALL("mlock"),
+#if defined(HAVE_MLOCKALL)
+	STRESS_EX_SYSCALL("mlockall"),
+#endif
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+#if defined(HAVE_MSEAL)
+	STRESS_EX_SYSCALL("mseal"),
+#endif
+	STRESS_EX_SYSCALL("munlock"),
+#if defined(HAVE_MUNLOCKALL)
+	STRESS_EX_SYSCALL("munlockall"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmaptorture_info = {
 	.stressor = stress_mmaptorture,
 	.classifier = CLASS_VM | CLASS_OS,
@@ -925,7 +963,8 @@ const stressor_info_t stress_mmaptorture_info = {
 	.deinit = stress_mmaptorture_deinit,
 	.opts = opts,
 	.help = help,
-	.max_metrics_items = 9
+	.max_metrics_items = 9,
+	.exercises = exercises,
 };
 
 #else
@@ -936,7 +975,7 @@ const stressor_info_t stress_mmaptorture_info = {
 	.verify = VERIFY_NONE,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support",
+	.unimplemented_reason = "built without siglongjmp() support",
 };
 
 #endif

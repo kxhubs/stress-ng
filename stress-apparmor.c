@@ -243,17 +243,17 @@ static void apparmor_spawn(
 	stress_pid_t **s_pids_head,
 	stress_pid_t *s_pid)
 {
-again:
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
+	pid_t pid;
+
+	pid = stress_retry_fork(args, 0);
+	if (pid < 0) {
+		s_pid->pid = pid;
 		return;
-	} else if (s_pid->pid == 0) {
+	} else if (pid == 0) {
 		int ret = EXIT_SUCCESS;
 
-		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		s_pid->pid = getpid();
+		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		stress_sync_start_wait_s_pid(s_pid);
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
@@ -276,6 +276,7 @@ abort:
 		(void)shim_kill(args->pid, SIGUSR1);
 		_exit(ret);
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
 }
@@ -547,7 +548,9 @@ static inline void apparmor_corrupt_flip_one_bit_random(
  */
 static int apparmor_stress_corruption(stress_args_t *args)
 {
-	int rc = EXIT_SUCCESS, i = (int)args->instance, ret = -1;
+	int rc = EXIT_SUCCESS;
+	int i = (int)args->instance;
+	int ret = -1;
 	int j = 0;
 	aa_kernel_interface *kern_if;
 
@@ -627,7 +630,8 @@ static int apparmor_stress_corruption(stress_args_t *args)
 			j++;
 			if ((errno != EPROTO) &&
 			    (errno != EPROTONOSUPPORT) &&
-			     errno != ENOENT) {
+			    (errno != ENOENT) &&
+			    (errno != EEXIST)) {
 				pr_inf("%s: aa_kernel_interface_replace_policy() failed, "
 					"errno=%d (%s)\n", args->name, errno,
 					strerror(errno));
@@ -658,7 +662,8 @@ static const stress_apparmor_func apparmor_funcs[] = {
  */
 static int stress_apparmor(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	size_t i;
 	int rc = EXIT_NO_RESOURCE;
 
@@ -749,12 +754,21 @@ err_free_s_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_LIBRARY("apparmor"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_apparmor_info = {
 	.stressor = stress_apparmor,
 	.supported = stress_apparmor_supported,
 	.classifier = CLASS_OS | CLASS_SECURITY,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

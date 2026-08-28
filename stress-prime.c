@@ -55,7 +55,7 @@ static const char *stress_prime_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_prime_method,   "prime-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_prime_method },
+	{ OPT_prime_method,   "prime-method",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_prime_method },
 	{ OPT_prime_progress, "prime-progress", TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_prime_start,    "prime-start",    TYPE_ID_STR, 0, 0, NULL },
 	END_OPT,
@@ -146,12 +146,15 @@ static int stress_prime_start(char *prime_start, mpz_t start)
 
 static int OPTIMIZE3 stress_prime(stress_args_t *args)
 {
-	double rate, t_progress_secs;
-	NOCLOBBER double t_start;
-	NOCLOBBER double duration = 0.0;
-	NOCLOBBER size_t digits = 0;
+	double rate;
+	double t_progress_secs;
+	CLOBBERED double t_start;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED size_t digits = 0;
 	uint64_t ops;
-	mpz_t start, value, factorial;
+	mpz_t start;
+	mpz_t value;
+	mpz_t factorial;
 	int prime_method = STRESS_PRIME_METHOD_INC;
 	bool prime_progress = false;
 	char *prime_start = NULL;
@@ -196,7 +199,8 @@ static int OPTIMIZE3 stress_prime(stress_args_t *args)
 		return EXIT_NO_RESOURCE;
 
 	do {
-		double t1, t2;
+		double t1;
+		double t2;
 
 		t1 = stress_time_now();
 		mpz_nextprime(value, start);
@@ -252,12 +256,31 @@ finish:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("gmp"),
+	STRESS_EX_LIBRARY("mpfr"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_prime_info = {
 	.stressor = stress_prime,
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE,
 	.opts = opts,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

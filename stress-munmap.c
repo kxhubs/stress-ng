@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-attribute.h"
+#include "core-builtin.h"
 #include "core-mmap.h"
 #include "core-out-of-memory.h"
 #include "core-prime.h"
@@ -84,7 +85,7 @@ static size_t stress_munmap_stride(const size_t n)
 static void stress_munmap_range(
 	stress_args_t *args,
 	void *start,
-	void *end,
+	const void *end,
 	munmap_context_t *ctxt,
 	int *rc)
 {
@@ -93,7 +94,8 @@ static void stress_munmap_range(
 	const size_t size = (uintptr_t)end - (uintptr_t)start;
 	const size_t n_pages = size / page_size;
 	const size_t stride = stress_munmap_stride(n_pages + stress_mwc8());
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	for (i = 0, j = 0; LIKELY(stress_continue(args) && (i < n_pages)); i++) {
 		const size_t offset = j << page_shift;
@@ -129,12 +131,16 @@ static int stress_munmap_child(stress_args_t *args, void *context)
 {
 	FILE *fp;
 	char path[4096];
-	char buf[4096], prot[5];
+	char buf[4096];
+	char prot[5];
 	const pid_t pid = getpid();
 	munmap_context_t *ctxt = (munmap_context_t *)context;
-	void *start, *end, *offset;
+	void *start;
+	void *end;
+	void *offset;
 	int n;
-	unsigned int major, minor;
+	unsigned int major;
+	unsigned int minor;
 	int rc = EXIT_SUCCESS;
 	uint64_t inode;
 
@@ -200,11 +206,11 @@ static int stress_munmap_child(stress_args_t *args, void *context)
 			continue;	/* don't unmap anonymous mappings */
 		if (path[0] == '[')
 			continue;	/* don't unmap special mappings (stack, vdso etc) */
-		if (strstr(path, "libc"))
+		if (shim_strstr(path, "libc"))
 			continue;	/* don't unmap libc */
-		if (strstr(path, "/dev/zero"))
+		if (shim_strstr(path, "/dev/zero"))
 			continue;	/* need this for zero'd page data */
-		if (!strcmp(path, ctxt->exec_path))
+		if (!shim_strcmp(path, ctxt->exec_path))
 			continue;	/* don't unmap stress-ng */
 		if (prot[0] != 'r')
 			continue;	/* don't unmap non-readable pages */
@@ -245,7 +251,7 @@ static int stress_munmap(stress_args_t *args)
 
 	ctxt = (munmap_context_t *)stress_mmap_anon_shared(sizeof(*ctxt), PROT_READ | PROT_WRITE);
 	if (ctxt == MAP_FAILED) {
-		pr_inf_skip("%s: skipping stressor, cannot mmap context buffer, errno=%d (%s)\n",
+		pr_inf_skip("%s: mmap context buffer failed, errno=%d (%s)\n, skipping stressor",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -256,7 +262,7 @@ static int stress_munmap(stress_args_t *args)
 	ctxt->page_shift = stress_munmap_log2(args->page_size);
 	ctxt->exec_path = stress_proc_self_exe_get(exec_path, sizeof(exec_path));
 	if (!ctxt->exec_path) {
-		pr_inf_skip("%s: skipping stressor, cannot determine child executable path\n",
+		pr_inf_skip("%s: cannot determine child executable path, skipping stressor\n",
 			args->name);
 		(void)stress_munmap_anon_shared((void *)ctxt, sizeof(*ctxt));
 		return EXIT_NO_RESOURCE;
@@ -281,11 +287,19 @@ static int stress_munmap(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_munmap_info = {
 	.stressor = stress_munmap,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

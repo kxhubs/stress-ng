@@ -70,7 +70,7 @@ static const char *stress_fd_fork_file(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_fd_fork_fds,  "fd-fork-fds",  TYPE_ID_SIZE_T, STRESS_FD_MIN, STRESS_FD_MAX, NULL },
-	{ OPT_fd_fork_file, "fd-fork-file", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_fd_fork_file },
+	{ OPT_fd_fork_file, "fd-fork-file", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_fd_fork_file },
 	END_OPT,
 };
 
@@ -79,7 +79,8 @@ static void stress_fd_close(
 	const size_t n_fds,
 	stress_fd_close_info_t *info)
 {
-	register size_t i, closed = 0;
+	register size_t i;
+	register size_t closed = 0;
 	double t;
 
 	if (info->use_close_range) {
@@ -109,14 +110,20 @@ static void stress_fd_close(
  */
 static int stress_fd_fork(stress_args_t *args)
 {
-	int *fds, rc = EXIT_SUCCESS;
-	size_t i, count_fd = 1, start_fd = 1, fds_size;
+	int *fds;
+	int rc = EXIT_SUCCESS;
+	size_t i;
+	size_t count_fd = 1;
+	size_t start_fd = 1;
+	size_t fds_size;
 	size_t max_fd = stress_fs_file_limit_get();
 	size_t fd_fork_fds = STRESS_FD_DEFAULT;
 	size_t fd_fork_file = STRESS_FD_ZERO;
 	stress_fd_close_info_t *info;
-	double rate, t_start = -1.0, t_max = -1.0;
-	char *filename;
+	double rate;
+	double t_start = -1.0;
+	double t_max = -1.0;
+	const char *filename;
 
 	if (!stress_setting_get("fd-fork-fds", &fd_fork_fds)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -189,7 +196,7 @@ static int stress_fd_fork(stress_args_t *args)
 	info->fd_min_val = fds[0];
 	info->fd_max_val = fds[0];
 	if (fds[0] < 0) {
-		pr_dbg("%s: open failed on file '%s', errno=%d (%s)\n",
+		pr_dbg("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_fds;
@@ -268,7 +275,7 @@ tidy_fds:
 			filename);
 	}
 
-	rate = (info->metrics.count > 0.0) ? (double)info->metrics.duration / info->metrics.count : 0.0;
+	rate = (info->metrics.count > 0.0) ? info->metrics.duration / info->metrics.count : 0.0;
 	stress_metrics_set(args, "nanosecs per fd close",
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
 	stress_metrics_set(args, "file descriptors open at one time",
@@ -277,7 +284,7 @@ tidy_fds:
 		const double duration = t_max - t_start;
 
 		stress_metrics_set(args, "seconds to open all file descriptors",
-			(double)duration, STRESS_METRIC_GEOMETRIC_MEAN);
+			duration, STRESS_METRIC_GEOMETRIC_MEAN);
 	}
 
 	(void)munmap((void *)info, sizeof(*info));
@@ -286,10 +293,25 @@ tidy_fds:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("page-faults-minor"),
+	STRESS_EX_FEATURE("page-faults-user"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("dup"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fork"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fd_fork_info = {
 	.stressor = stress_fd_fork,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

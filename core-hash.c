@@ -28,7 +28,7 @@
  *	Jenkin's hash on random data
  *	http://www.burtleburtle.net/bob/hash/doobs.html
  */
-uint32_t PURE OPTIMIZE3 stress_hash_jenkin(const uint8_t *data, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_jenkin(const uint8_t *data, const size_t len)
 {
 	register size_t i;
 	register uint32_t h = 0;
@@ -50,7 +50,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_pjw()
  *	Hash a string, from Aho, Sethi, Ullman, Compiling Techniques.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_pjw(const char *str)
+uint32_t OPTIMIZE3 stress_hash_pjw(const char *str)
 {
 	register uint32_t h = 0;
 
@@ -72,7 +72,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_djb2a()
  *	Hash a string, from Dan Bernstein comp.lang.c (xor version)
  */
-uint32_t PURE OPTIMIZE3 stress_hash_djb2a(const char *str)
+uint32_t OPTIMIZE3 stress_hash_djb2a(const char *str)
 {
 	register uint32_t hash = 5381;
 	register int c;
@@ -89,7 +89,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_fnv1a()
  *	Hash a string, using the improved 32 bit FNV-1a hash
  */
-uint32_t PURE OPTIMIZE3 stress_hash_fnv1a(const char *str)
+uint32_t OPTIMIZE3 stress_hash_fnv1a(const char *str)
 {
 	register uint32_t hash = 5381;
 	const uint32_t fnv_prime = 16777619; /* 2^24 + 2^9 + 0x93 */
@@ -108,7 +108,7 @@ PRAGMA_UNROLL_N(4)
  *	Hash a string, using the sdbm data base hash and also
  *	apparently used in GNU awk.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_sdbm(const char *str)
+uint32_t OPTIMIZE3 stress_hash_sdbm(const char *str)
 {
 	register uint32_t hash = 0;
 	register int c;
@@ -124,7 +124,7 @@ PRAGMA_UNROLL_N(4)
  *	Hash a string using a C implementation of the Exim nhash
  *	algorithm.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_nhash(const char *str)
+uint32_t OPTIMIZE3 stress_hash_nhash(const char *str)
 {
 	static const uint32_t ALIGN64 primes[] = {
 		3, 5, 7, 11, 13, 17, 19, 23, 29, 31,
@@ -151,7 +151,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_murmur_32_scramble
  *	helper to scramble bits
  */
-static inline uint32_t PURE OPTIMIZE3 stress_hash_murmur_32_scramble(uint32_t k)
+static inline uint32_t OPTIMIZE3 stress_hash_murmur_32_scramble(register uint32_t k)
 {
 	k *= 0xcc9e2d51;
 	k = (k << 15) | (k >> 17);
@@ -165,7 +165,7 @@ static inline uint32_t PURE OPTIMIZE3 stress_hash_murmur_32_scramble(uint32_t k)
  *	Murmur3 hash, code derived from example code in
  *	https://en.wikipedia.org/wiki/MurmurHash
  */
-uint32_t PURE OPTIMIZE3 stress_hash_murmur3_32(
+uint32_t OPTIMIZE3 stress_hash_murmur3_32(
 	const uint8_t *key,
 	size_t len,
 	uint32_t seed)
@@ -287,7 +287,7 @@ static const uint32_t ALIGN64 crc32c_table[256] = {
  *  crc32c the Castagnoli CRC32
  *	lookup table implementation
  */
-uint32_t PURE OPTIMIZE3 stress_hash_crc32c(const char *str)
+uint32_t OPTIMIZE3 stress_hash_crc32c(const char *str)
 {
 	register uint32_t crc = ~0U;
 	register uint8_t val;
@@ -304,10 +304,11 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_adler32()
  *	Mark Adler 32 bit hash
  */
-uint32_t PURE OPTIMIZE3 stress_hash_adler32(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_adler32(const char *str, const size_t len)
 {
 	register const uint32_t mod = 65521;
-	register uint32_t a = 1, b = 0;
+	register uint32_t a = 1;
+	register uint32_t b = 0;
 
 	(void)len;
 
@@ -323,7 +324,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_muladd32()
  *	simple 32 bit multiply/add hash
  */
-uint32_t PURE OPTIMIZE3 stress_hash_muladd32(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_muladd32(const char *str, const size_t len)
 {
 	register uint32_t prod = (uint32_t)len;
 
@@ -341,7 +342,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_muladd64()
  *	simple 64 bit multiply/add hash
  */
-uint32_t PURE OPTIMIZE3 stress_hash_muladd64(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_muladd64(const char *str, const size_t len)
 {
 	register uint64_t prod = len;
 
@@ -360,7 +361,7 @@ PRAGMA_UNROLL_N(4)
  *	Kernighan and Ritchie hash, from The C programming Language,
  *	section 6.6, "Hashing" 2nd Edition.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_kandr(const char *str)
+uint32_t OPTIMIZE3 stress_hash_kandr(const char *str)
 {
 	register uint32_t hash;
 
@@ -376,7 +377,7 @@ PRAGMA_UNROLL_N(4)
  *	Coffin hash
  * 	https://stackoverflow.com/a/7666668/5407270
  */
-uint32_t PURE OPTIMIZE3 stress_hash_coffin(const char *str)
+uint32_t OPTIMIZE3 stress_hash_coffin(const char *str)
 {
 	register uint32_t result = 0x55555555;
 
@@ -391,7 +392,7 @@ uint32_t PURE OPTIMIZE3 stress_hash_coffin(const char *str)
  *  stress_hash_coffin32_le()
  *	Coffin hash, 32 bit optimized fetch, little endian version
  */
-uint32_t PURE OPTIMIZE3 stress_hash_coffin32_le(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_coffin32_le(const char *str, const size_t len)
 {
 	register uint32_t result = 0x55555555;
 	register size_t n = len;
@@ -428,7 +429,7 @@ uint32_t PURE OPTIMIZE3 stress_hash_coffin32_le(const char *str, const size_t le
  *  stress_hash_coffin32_be()
  *	Coffin hash, 32 bit optimized fetch, big endian version
  */
-uint32_t PURE OPTIMIZE3 stress_hash_coffin32_be(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_coffin32_be(const char *str, const size_t len)
 {
 	register uint32_t result = 0x55555555;
 	register size_t n = len;
@@ -465,7 +466,7 @@ uint32_t PURE OPTIMIZE3 stress_hash_coffin32_be(const char *str, const size_t le
  *	Kernighan and Ritchie hash, from The C programming Language,
  *	section 6.6, "Table lookup" 1st Edition.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_loselose(const char *str)
+uint32_t OPTIMIZE3 stress_hash_loselose(const char *str)
 {
 	register uint32_t hash;
 
@@ -482,7 +483,7 @@ PRAGMA_UNROLL_N(4)
  *	Donald E. Knuth in The Art Of Computer Programming Volume 3,
  *	"sorting and search" chapter 6.4.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_knuth(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_knuth(const char *str, const size_t len)
 {
 	register uint32_t hash = (uint32_t)len;
 
@@ -500,7 +501,7 @@ PRAGMA_UNROLL_N(4)
  *      https://github.com/aappleby/smhasher/blob/master/src/Hashes.cpp
  *
  */
-uint32_t PURE OPTIMIZE3 stress_hash_x17(const char *str)
+uint32_t OPTIMIZE3 stress_hash_x17(const char *str)
 {
 	register const uint8_t *ptr = (const uint8_t *)str;
 	register uint8_t val;
@@ -517,23 +518,30 @@ PRAGMA_UNROLL_N(4)
  * stress_hash_mid5()
  *	middle 5 chars in a string
  */
-uint32_t PURE OPTIMIZE3 stress_hash_mid5(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_mid5(const char *str, const size_t len)
 {
 	const uint8_t *ustr = (const uint8_t *)str;
+	uint32_t ret;
+
 	switch (len) {
 	default:
 		ustr += (len - 5) / 2;
-		return (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12) ^ (ustr[3] << 18) ^ (ustr[4] << 24));
+		ret = (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12) ^ (ustr[3] << 18) ^ (ustr[4] << 24));
+		break;
 	case 4:
-		return (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12) ^ (ustr[3] << 18));
+		ret = (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12) ^ (ustr[3] << 18));
+		break;
 	case 3:
-		return (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12));
+		ret = (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6) ^ (ustr[2] << 12));
+		break;
 	case 2:
-		return (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6));
+		ret = (uint32_t)len ^ (uint32_t)(ustr[0] ^ (ustr[1] << 6));
+		break;
 	case 1:
-		return (uint32_t)len ^ ustr[0];
+		ret = (uint32_t)len ^ ustr[0];
+		break;
 	}
-	return 0;
+	return ret;
 }
 
 /*
@@ -542,7 +550,7 @@ uint32_t PURE OPTIMIZE3 stress_hash_mid5(const char *str, const size_t len)
  *	from the string and partially rolling right to remix bits back into
  *	the hash. Designed and Implemented Colin Ian King, free to reuse.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_mulxror64(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_mulxror64(const char *str, const size_t len)
 {
 	register uint64_t hash = len;
 	register size_t i;
@@ -570,7 +578,7 @@ PRAGMA_UNROLL_N(4)
  *	from the string and partially rolling right to remix bits back into
  *	the hash. Designed and Implemented Colin Ian King, free to reuse.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_mulxror32(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_mulxror32(const char *str, const size_t len)
 {
 	register uint32_t hash = (uint32_t)len;
 	register size_t i;
@@ -596,7 +604,7 @@ PRAGMA_UNROLL_N(4)
  * stress_hash_xorror64()
  *
  */
-uint32_t PURE OPTIMIZE3 stress_hash_xorror64(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_xorror64(const char *str, const size_t len)
 {
 	register uint64_t hash = ~(uint64_t)len;
 	register size_t i;
@@ -623,7 +631,7 @@ PRAGMA_UNROLL_N(4)
  * stress_hash_xorror32()
  *
  */
-uint32_t PURE OPTIMIZE3 stress_hash_xorror32(const char *str, const size_t len)
+uint32_t OPTIMIZE3 stress_hash_xorror32(const char *str, const size_t len)
 {
 	register uint32_t hash = ~(uint32_t)len;
 	register size_t i;
@@ -651,7 +659,7 @@ PRAGMA_UNROLL_N(8)
  *  stress_hash_sedgwick()
  *	simple hash from Robert Sedgwicks Algorithms in C book.
  */
-uint32_t PURE OPTIMIZE3 stress_hash_sedgwick(const char *str)
+uint32_t OPTIMIZE3 stress_hash_sedgwick(const char *str)
 {
 	const uint32_t b = 378551;
 	register uint32_t a = 63689;
@@ -669,7 +677,7 @@ PRAGMA_UNROLL_N(4)
  *  stress_hash_sobel()
  *	bitwise hash by Justin Sobel
  */
-uint32_t PURE OPTIMIZE3 stress_hash_sobel(const char *str)
+uint32_t OPTIMIZE3 stress_hash_sobel(const char *str)
 {
 	register uint32_t hash = 1315423911;
 
@@ -710,7 +718,7 @@ stress_hash_table_t *stress_hash_create(const size_t n)
 static inline stress_hash_t *stress_hash_find(stress_hash_t *hash, const char *str)
 {
 	while (hash) {
-		if (!strcmp(str, HASH_STR(hash)))
+		if (!shim_strcmp(str, HASH_STR(hash)))
 			return hash;
 		hash = hash->next;
 	}
@@ -722,7 +730,9 @@ static inline stress_hash_t *stress_hash_find(stress_hash_t *hash, const char *s
  *	get a hash entry based on the given string. returns NULL if it does
  *	not exist
  */
-stress_hash_t *stress_hash_get(stress_hash_table_t *hash_table, const char *str)
+stress_hash_t *stress_hash_get(
+	const stress_hash_table_t *hash_table,
+	const char *str)
 {
 	uint32_t h;
 
@@ -758,7 +768,7 @@ stress_hash_t *stress_hash_add(stress_hash_table_t *hash_table, const char *str)
 		return hash;
 
 	/* Not found, so add a new hash */
-	len = strlen(str) + 1;
+	len = shim_strlen(str) + 1;
 	hash = (stress_hash_t *)malloc(sizeof(*hash) + len);
 	if (UNLIKELY(!hash))
 		return NULL;

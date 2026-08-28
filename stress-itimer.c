@@ -157,8 +157,8 @@ static int stress_itimer(stress_args_t *args)
 	if (setitimer(ITIMER_PROF, &timer, NULL) < 0) {
 		if (errno == EINVAL) {
 			if (stress_instance_zero(args))
-				pr_inf_skip("%s: skipping stressor, setitimer with "
-					"ITIMER_PROF is not implemented\n",
+				pr_inf_skip("%s: setitimer with ITIMER_PROF is not "
+					"implemented, skipping stressor\n",
 					args->name);
 			return EXIT_NOT_IMPLEMENTED;
 		}
@@ -190,12 +190,23 @@ static int stress_itimer(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("timer"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("getitimer"),
+	STRESS_EX_SYSCALL("setitimer"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_itimer_info = {
 	.stressor = stress_itimer,
 	.classifier = CLASS_INTERRUPT | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

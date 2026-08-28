@@ -42,6 +42,15 @@
 #define SCHED_EXT	(7)
 #endif
 
+#if defined(HAVE_SCHED_SETAFFINITY) &&					     \
+    (defined(_POSIX_PRIORITY_SCHEDULING) || defined(__linux__)) &&	     \
+    (defined(SCHED_OTHER) || defined(SCHED_BATCH) || defined(SCHED_IDLE)) && \
+    !defined(__OpenBSD__) &&						     \
+    !defined(__minix__) &&						     \
+    !defined(__APPLE__)
+#define HAVE_SCHEDULING
+#endif
+
 typedef struct {
 	const int sched;
 	const char *const sched_name;
@@ -52,10 +61,10 @@ typedef struct {
 extern const stress_sched_types_t stress_sched_types[];
 extern const size_t stress_sched_types_length;
 
-extern const char *stress_sched_name_get(const int sched) RETURNS_NONNULL;
+extern const char PURE *stress_sched_name_get(const int sched) RETURNS_NONNULL;
 extern WARN_UNUSED int stress_sched_set(const pid_t pid, const int sched,
 	const int sched_priority, const bool quiet);
-extern WARN_UNUSED int32_t stress_sched_opt_get(const char *const str);
+extern WARN_UNUSED int stress_sched_parse(const char *const str);
 extern int stress_sched_settings_apply(const bool quiet);
 extern ssize_t stress_sched_ext_ops_get(char *buf, const size_t len);
 

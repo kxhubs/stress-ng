@@ -46,6 +46,49 @@ typedef struct {
 	void 		*libc_func;
 } stress_str_method_info_t;
 
+/*
+ *  stress_rndstr_case()
+ *	generate upper or lower case (and misc chars) randomized strings, note
+ *	that upper must contain chars that are not in lower and visa-versa. Also
+ *	upper and lower must not contain '+'.
+ */
+static void OPTIMIZE3 stress_rndstr_case(char *str, const size_t len, bool uppercase)
+{
+	static const char upper[32] ALIGNED(32) = {
+		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+		'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+		'[', ']', '^', '_', '/', '-'
+	};
+	static const char lower[32] ALIGNED(32) = {
+		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+		'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+		'!', '#', '$', '%', '&', '*',
+	};
+
+	register const char *alphabet;
+	register char *ptr;
+	register const char *ptr_end;
+	register const uint32_t mask = 0xc0000000;
+	register uint32_t v = stress_mwc32() | mask;
+
+	if (UNLIKELY(len == 0))
+		return;
+
+	alphabet = uppercase ? upper : lower;
+	ptr = str;
+	ptr_end = str + len - 1;
+
+	while (ptr < ptr_end) {
+		*ptr++ = alphabet[v & 0x1f];
+		v >>= 5;
+
+		/* out of random bits, get more... */
+		if (UNLIKELY(v == 3))
+			v = stress_mwc32() | mask;
+	}
+	*ptr = '\0';
+}
+
 static const stress_help_t help[] = {
 	{ NULL,	"str N",	   "start N workers exercising lib C string functions" },
 	{ NULL,	"str-method func", "specify the string function to stress" },
@@ -456,7 +499,7 @@ static size_t stress_strncmp(stress_args_t *args, stress_str_args_t *info)
 		STRCHK(info, 0 != test_strncmp(str1, str1 + i, len1 - i));
 		STRCHK(info, 0 == test_strncmp(str1 + i, str1 + i, len1 - i));
 
-		STRCHK(info, 0 != test_strncmp(str1 + i, str2, len2 - i));
+		STRCHK(info, 0 != test_strncmp(str1 + i, str2, len1 - i));
 		STRCHK(info, 0 != test_strncmp(str2, str1 + i, len2));
 	}
 	stress_bogo_add(args, 9);
@@ -631,11 +674,14 @@ static size_t stress_str_all(stress_args_t *args, stress_str_args_t *info)
  */
 static int stress_str(stress_args_t *args)
 {
-	char ALIGN64 str1[STR1LEN], ALIGN64 str2[STR2LEN];
+	char ALIGN64 str1[STR1LEN];
+	char ALIGN64 str2[STR2LEN];
 	char ALIGN64 strdst[STRDSTLEN];
 	stress_str_args_t info;
 	const stress_str_method_info_t *str_method_info;
-	size_t i, str_method = 0;
+	size_t i;
+	size_t str_method = 0;
+	bool toggle = false;
 
 	(void)stress_setting_get("str-method", &str_method);
 	str_method_info = &str_methods[str_method];
@@ -650,7 +696,8 @@ static int stress_str(stress_args_t *args)
 	info.strdstlen = sizeof(strdst);
 	info.failed = false;
 
-	stress_rndstr(info.str1, info.len1);
+	stress_rndstr_case(info.str1, info.len1, toggle);
+	toggle = !toggle;
 
 	stress_zero_metrics(metrics, SIZEOF_ARRAY(metrics));
 
@@ -663,7 +710,8 @@ static int stress_str(stress_args_t *args)
 		register size_t tmplen;
 		double t;
 
-		stress_rndstr(info.str2, info.len2);
+		stress_rndstr_case(info.str2, info.len2, toggle);
+		toggle = !toggle;
 
 		t = stress_time_now();
 		metrics[str_method].count += (double)str_method_info->func(args, &info);
@@ -701,8 +749,22 @@ static const char *stress_str_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_str_method, "str-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_str_method },
+	{ OPT_str_method, "str-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_str_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("string"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_str_info = {
@@ -711,5 +773,6 @@ const stressor_info_t stress_str_info = {
 	.verify = VERIFY_OPTIONAL,
 	.opts = opts,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(str_methods)
+	.max_metrics_items = SIZEOF_ARRAY(str_methods),
+	.exercises = exercises,
 };

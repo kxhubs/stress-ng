@@ -40,9 +40,9 @@
 UNEXPECTED
 #endif
 
-#define MIN_USERFAULT_BYTES	(4 * KB)
+#define MIN_USERFAULT_BYTES	(4 * STRESS_KB)
 #define MAX_USERFAULT_BYTES	(MAX_MEM_LIMIT)
-#define DEFAULT_USERFAULT_BYTES	(256 * MB)
+#define DEFAULT_USERFAULT_BYTES	(256 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"userfaultfd N",	"start N page faulting workers with userspace handling" },
@@ -231,23 +231,28 @@ static inline int handle_page_fault(
  */
 static int stress_userfaultfd_child(stress_args_t *args, void *context)
 {
-	const size_t page_size = args->page_size;
-	size_t sz;
-	uint8_t *data;
-	void *zero_page = NULL;
-	int fd = -1, rc = EXIT_SUCCESS, count = 0;
-	const unsigned int uffdio_copy = 1 << _UFFDIO_COPY;
-	const unsigned int uffdio_zeropage = 1 << _UFFDIO_ZEROPAGE;
-	pid_t pid;
-	const pid_t self = getpid();
+	static uint8_t stack[STACK_SIZE]; /* Child clone stack */
 	struct uffdio_api api;
 	struct uffdio_register reg;
 	stress_context_t c;
-	bool do_poll = true;
-	static uint8_t stack[STACK_SIZE]; /* Child clone stack */
+	void *zero_page = NULL;
+	uint8_t *data;
 	uint8_t *stack_top = (uint8_t *)stress_stack_top((void *)stack, STACK_SIZE);
-	size_t userfaultfd_bytes, userfaultfd_bytes_total = DEFAULT_USERFAULT_BYTES;
-	double t, duration = 0.0, rate;
+	const size_t page_size = args->page_size;
+	size_t sz;
+	size_t userfaultfd_bytes;
+	size_t userfaultfd_bytes_total = DEFAULT_USERFAULT_BYTES;
+	pid_t pid;
+	const pid_t self = getpid();
+	const unsigned int uffdio_copy = 1 << _UFFDIO_COPY;
+	const unsigned int uffdio_zeropage = 1 << _UFFDIO_ZEROPAGE;
+	int fd = -1;
+	int rc = EXIT_SUCCESS;
+	int count = 0;
+	bool do_poll = true;
+	double t;
+	double duration = 0.0;
+	double rate;
 
 	if (stress_signal_sigchld_handler(args) < 0)
 		return EXIT_NO_RESOURCE;
@@ -272,7 +277,7 @@ static int stress_userfaultfd_child(stress_args_t *args, void *context)
 	sz = userfaultfd_bytes & ~(page_size - 1);
 
 	if (posix_memalign(&zero_page, page_size, page_size)) {
-		pr_err("%s: failed to allocate %zu byte zero page%s\n",
+		pr_err("%s: allocate %zu byte zero page failed%s\n",
 			args->name, page_size, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -281,7 +286,7 @@ static int stress_userfaultfd_child(stress_args_t *args, void *context)
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED) {
 		rc = EXIT_NO_RESOURCE;
-		pr_err("%s: failed to mmap %zu byte buffer%s, errno=%d (%s)\n",
+		pr_err("%s: mmap %zu byte buffer failed%s, errno=%d (%s)\n",
 			args->name, sz, stress_memory_free_get(),
 			errno, strerror(errno));
 		goto free_zeropage;
@@ -495,13 +500,27 @@ static int stress_userfaultfd(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_userfaultfd_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("page-faults-major"),
+
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("mummap"),
+	STRESS_EX_SYSCALL("poll"),
+	STRESS_EX_SYSCALL("userfaultfd"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_userfaultfd_info = {
 	.stressor = stress_userfaultfd,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.supported = stress_userfaultfd_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_userfaultfd_info = {

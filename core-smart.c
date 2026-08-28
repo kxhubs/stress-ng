@@ -61,7 +61,7 @@
 #define CBD_LBA_HIGH		(0xc2)
 #define CBD_DEVICE		(0x00) /* all zero */
 #define CBD_COMMAND		(0xb0) /* command: read smart log */
-#define CBD_RESVERVED		(0x00) /* N/A */
+#define CBD_RESERVED		(0x00) /* N/A */
 #define CBD_CONTROL		(0x00)
 
 #define ATTR_FLAG_WARRANTY	(0x01)
@@ -186,6 +186,10 @@ static const char * const id_str[256] = {
 	[0xf2] = "Total LBAs Read",
 	[0xf3] = "Total LBAs Written Expanded",
 	[0xf4] = "Total LBAs Read Expanded",
+	[0xf5] = "Remaining Rated Write Endurance",
+	[0xf6] = "Cumulative Host Sectors Written",
+	[0xf7] = "Host Program Page Count",
+	[0xf8] = "Background Program Page Count",
 	[0xf9] = "NAND Writes (1GiB)",
 	[0xfa] = "Read Error Retry Rate",
 	[0xfb] = "Minimum Spares Remaining",
@@ -211,7 +215,7 @@ static uint8_t cdb[] = {
 	CBD_LBA_HIGH,
 	CBD_DEVICE,
 	CBD_COMMAND,
-	CBD_RESVERVED,
+	CBD_RESERVED,
 	CBD_CONTROL
 };
 
@@ -236,13 +240,16 @@ static void stress_smart_data_free(stress_smart_data_t **data)
 static stress_smart_data_t *stress_smart_data_read(const char *path)
 {
 	int fd;
-	uint8_t buf[BUF_SZ], sbuf[SENSE_BUF_SZ];
+	uint8_t buf[BUF_SZ];
+	uint8_t sbuf[SENSE_BUF_SZ];
 	sg_io_hdr_t sg_io_hdr;
 	const stress_smart_raw_value_t *rv_start = (const stress_smart_raw_value_t *)(buf + 2);
 	const stress_smart_raw_value_t *rv_end = (const stress_smart_raw_value_t *)(buf + sizeof(buf));
 	const stress_smart_raw_value_t *rv;
 	stress_smart_data_t *data;
-	size_t i, size, values_size;
+	size_t i;
+	size_t size;
+	size_t values_size;
 
 	if (UNLIKELY(!path))
 		return NULL;
@@ -290,8 +297,10 @@ static stress_smart_data_t *stress_smart_data_read(const char *path)
  */
 static size_t stress_smart_data_diff_count(stress_smart_dev_t *dev)
 {
-	size_t i, n;
-	stress_smart_data_t *begin, *end;
+	size_t i;
+	size_t n;
+	stress_smart_data_t *begin;
+	stress_smart_data_t *end;
 
 	begin = dev->data_begin;
 	end = dev->data_end;
@@ -326,7 +335,8 @@ static size_t stress_smart_data_diff_count(stress_smart_dev_t *dev)
 static void stress_smart_data_diff(stress_smart_dev_t *dev)
 {
 	size_t i;
-	stress_smart_data_t *begin, *end;
+	stress_smart_data_t *begin;
+	stress_smart_data_t *end;
 
 	begin = dev->data_begin;
 	end = dev->data_end;
@@ -348,7 +358,7 @@ static void stress_smart_data_diff(stress_smart_dev_t *dev)
 				const int32_t delta = (int32_t)(rv2->data - rv1->data);
 
 				if (delta) {
-					const char *dev_name = (strncmp(dev->dev_name, "/dev/", 5) == 0) ?
+					const char *dev_name = (shim_strncmp(dev->dev_name, "/dev/", 5) == 0) ?
 								dev->dev_name + 5 : dev->dev_name;
 					pr_inf("%-10.10s %2.2x %-30.30s %11" PRIu32 " %11" PRId32 "\n",
 						dev_name, attr_id,
@@ -371,7 +381,7 @@ static int CONST stress_smart_dev_filter(const struct dirent *d)
 
 	if ((d->d_name[0] == '\0') || (d->d_name[0] == '.'))
 		return 0;
-	len = strlen(d->d_name);
+	len = shim_strlen(d->d_name);
 	if (len < 1)		/* Also unlikely */
 		return 0;
 	if (isdigit((unsigned char)d->d_name[len - 1]))
@@ -388,7 +398,7 @@ static int CONST stress_smart_dev_sort(const struct dirent **d1, const struct di
 {
 	int cmp;
 
-	cmp = strcmp((*d1)->d_name, (*d2)->d_name);
+	cmp = shim_strcmp((*d1)->d_name, (*d2)->d_name);
 	if (cmp < 0)
 		return -1;
 	if (cmp > 0)
@@ -404,7 +414,8 @@ static int CONST stress_smart_dev_sort(const struct dirent **d1, const struct di
 static void stress_smart_read_devs(void)
 {
 	struct dirent **devs = NULL;
-	int i, n;
+	int i;
+	int n;
 
 	smart_devs.dev = NULL;
 
@@ -512,7 +523,7 @@ void stress_smart_stop(void)
 			}
 		} else {
 			if (devs == 0) {
-				char *extra;
+				const char *extra;
 
 				if (stress_capabilities_check(SHIM_CAP_IS_ROOT)) {
 					extra = "";

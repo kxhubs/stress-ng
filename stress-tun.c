@@ -120,7 +120,12 @@ static int stress_tun(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		int i, fd, sfd, ret, status, parent_cpu;
+		int i;
+		int fd;
+		int sfd;
+		int ret;
+		int status;
+		int parent_cpu;
 		pid_t pid;
 		struct ifreq ifr;
 		struct sockaddr_in *tun_addr;
@@ -133,7 +138,7 @@ static int stress_tun(stress_args_t *args)
 
 		fd = open(tun_dev, O_RDWR);
 		if (UNLIKELY(fd < 0)) {
-			pr_fail("%s: cannot open %s, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, tun_dev, errno, strerror(errno));
 			stress_net_release_ports(port, port);
 			return EXIT_FAILURE;
@@ -406,13 +411,27 @@ clean_up:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("lock-contention"),
+
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("recvfrom"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tun_info = {
 	.stressor = stress_tun,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.supported = stress_tun_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_tun_info = {

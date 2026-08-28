@@ -22,9 +22,9 @@
 #include "core-prime.h"
 #include "core-mmap.h"
 
-#define MIN_VM_SPLICE_BYTES	(4 * KB)
-#define MAX_VM_SPLICE_BYTES	(64 * MB)
-#define DEFAULT_VM_SPLICE_BYTES	(64 * KB)
+#define MIN_VM_SPLICE_BYTES	(4 * STRESS_KB)
+#define MAX_VM_SPLICE_BYTES	(64 * STRESS_MB)
+#define DEFAULT_VM_SPLICE_BYTES	(64 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"vm-splice N",		"start N workers reading/writing using vmsplice" },
@@ -39,6 +39,7 @@ static const stress_opt_t opts[] = {
 };
 
 #if defined(HAVE_VMSPLICE) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(SPLICE_F_MOVE)
 
 /*
@@ -47,12 +48,19 @@ static const stress_opt_t opts[] = {
  */
 static int stress_vm_splice(stress_args_t *args)
 {
-	int fd, fds[2], rc = EXIT_SUCCESS;
+	int fd;
+	int fds[2];
+	int rc = EXIT_SUCCESS;
 	uint64_t *buf;
 	const size_t page_size = args->page_size;
-	size_t sz, vm_splice_bytes, vm_splice_bytes_total = DEFAULT_VM_SPLICE_BYTES;
+	size_t sz;
+	size_t vm_splice_bytes;
+	size_t vm_splice_bytes_total = DEFAULT_VM_SPLICE_BYTES;
 	uint64_t *data;
-	double duration = 0.0, bytes = 0.0, vm_splices = 0.0, rate;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double vm_splices = 0.0;
+	double rate;
 	int metrics_counter = 0;
 	uint64_t checkval = stress_mwc64();
 	uint64_t prime;
@@ -75,7 +83,7 @@ static int stress_vm_splice(stress_args_t *args)
 	buf = (uint64_t *)stress_mmap_populate(NULL, sz, PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes buffer%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu byte buffer failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, sz,
 			stress_memory_free_get(), errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -84,7 +92,7 @@ static int stress_vm_splice(stress_args_t *args)
 	data = (uint64_t *)stress_mmap_populate(NULL, page_size, PROT_READ | PROT_WRITE,
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (data == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu sized buffer%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu byte buffer failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, page_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)munmap((void *)buf, sz);
@@ -102,7 +110,7 @@ static int stress_vm_splice(stress_args_t *args)
 
 	fd = open("/dev/null", O_WRONLY);
 	if (fd < 0) {
-		pr_fail("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_fail("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		(void)munmap((void *)data, page_size);
 		(void)munmap((void *)buf, sz);
@@ -120,7 +128,8 @@ static int stress_vm_splice(stress_args_t *args)
 
 	(void)shim_memset((void *)buf, 0, sz);
 	do {
-		ssize_t ret, n_bytes;
+		ssize_t ret;
+		ssize_t n_bytes;
 		struct iovec iov ALIGN64;
 		double t;
 
@@ -188,7 +197,7 @@ static int stress_vm_splice(stress_args_t *args)
 
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec vm-splice rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	rate = (duration > 0.0) ? vm_splices / duration : 0.0;
 	stress_metrics_set(args, "vm-splice calls per sec",
 		rate, STRESS_METRIC_HARMONIC_MEAN);
@@ -204,12 +213,24 @@ static int stress_vm_splice(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("vmsplice"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vm_splice_info = {
 	.stressor = stress_vm_splice,
 	.classifier = CLASS_VM | CLASS_PIPE_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_vm_splice_info = {

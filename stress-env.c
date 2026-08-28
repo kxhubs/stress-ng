@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-out-of-memory.h"
 
@@ -46,9 +47,10 @@ static int stress_env_child(stress_args_t *args, void *context)
 	const size_t page_size = args->page_size;
 	uint64_t i = 0;
 	uint64_t env_max;
-	uint32_t seed_w, seed_z;
+	uint32_t seed_w;
+	uint32_t seed_z;
 	size_t arg_max;
-	const size_t arg_huge = 16 * MB;
+	const size_t arg_huge = 16 * STRESS_MB;
 	char *value;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	int rc = EXIT_SUCCESS;
@@ -141,7 +143,7 @@ static int stress_env_child(stress_args_t *args, void *context)
 					} else {
 						tmp = value[env_sz];
 						value[env_sz] = '\0';
-						if (strcmp(value, val)) {
+						if (shim_strcmp(value, val)) {
 							pr_fail("%s: environment variable %s contains incorrect data\n",
 								args->name, name);
 							rc = EXIT_FAILURE;
@@ -151,7 +153,7 @@ static int stress_env_child(stress_args_t *args, void *context)
 				}
 				ret = unsetenv(name);
 				if (ret < 0) {
-					pr_fail("%s: unsetenv on variable %s failed, errno=%d (%s)\n",
+					pr_fail("%s: unsetenv on variable '%s' failed, errno=%d (%s)\n",
 						args->name, name, errno, strerror(errno));
 					rc = EXIT_FAILURE;
 				}
@@ -176,6 +178,14 @@ reap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-ll-write"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("oom"),
+
+	STRESS_EX_END,
+};
+
 /*
  *  stress_env()
  *	stress environment variables
@@ -189,5 +199,6 @@ const stressor_info_t stress_env_info = {
 	.stressor = stress_env,
 	.classifier = CLASS_OS | CLASS_VM,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };

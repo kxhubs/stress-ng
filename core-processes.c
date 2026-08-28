@@ -42,7 +42,9 @@ static int stress_processes_dump_filter(const struct dirent *d)
  */
 void stress_processes_dump(void)
 {
-	int i, n, pid_width = 5;
+	int i;
+	int n;
+	int pid_width = 5;
 
 	struct dirent **namelist = NULL;
 
@@ -51,7 +53,7 @@ void stress_processes_dump(void)
 		return;
 
 	for (i = 0; i < n; i++) {
-		const int len = (int)strlen(namelist[i]->d_name);
+		const int len = (int)shim_strlen(namelist[i]->d_name);
 
 		pid_width = STRESS_MAXIMUM(pid_width, len);
 	}
@@ -63,8 +65,9 @@ void stress_processes_dump(void)
 		char cmd[4096];
 		char state[16];
 		char name[32];
-		char *p_name;
-		pid_t pid, ppid;
+		const char *p_name;
+		pid_t pid;
+		pid_t ppid;
 		ssize_t ret;
 		long val;
 
@@ -85,7 +88,7 @@ void stress_processes_dump(void)
 					break;
 			}
 		}
-		if (strstr(cmd, "stress-ng") == NULL)
+		if (shim_strstr(cmd, "stress-ng") == NULL)
 			continue;
 
 		if (sscanf(namelist[i]->d_name, "%ld", &val) != 1)
@@ -101,11 +104,13 @@ void stress_processes_dump(void)
 			(void)snprintf(name, sizeof(name), "%u", (unsigned int)statbuf.st_uid);
 			p_name = name;
 #else
-			struct passwd *pwd;
+			struct passwd pwd;
+			struct passwd *pwd_ptr = NULL;
+			char pwdbuf[1024];
 
-			pwd = getpwuid(statbuf.st_uid);
-			if (pwd && pwd->pw_name) {
-				p_name = pwd->pw_name;
+			(void)shim_getpwuid_r(statbuf.st_uid, &pwd, pwdbuf, sizeof(pwdbuf), &pwd_ptr);
+			if (pwd_ptr && pwd_ptr->pw_name) {
+				p_name = pwd_ptr->pw_name;
 			} else {
 				(void)snprintf(name, sizeof(name), "%u", (unsigned int)statbuf.st_uid);
 				p_name = name;
@@ -118,7 +123,7 @@ void stress_processes_dump(void)
 		if (ret > 0) {
 			const char *ptr;
 
-			ptr = strstr(buf, "\nPPid:");
+			ptr = shim_strstr(buf, "\nPPid:");
 			if (ptr) {
 				intmax_t ppid_val;
 
@@ -127,7 +132,7 @@ void stress_processes_dump(void)
 				ppid = (pid_t)ppid_val;
 			}
 			(void)shim_strscpy(state, "?", sizeof(state));
-			ptr = strstr(buf, "\nState:");
+			ptr = shim_strstr(buf, "\nState:");
 			if (ptr) {
 				if (sscanf(ptr, "\nState:%1s", state) != 1)
 					(void)shim_strscpy(state, "?", sizeof(state));

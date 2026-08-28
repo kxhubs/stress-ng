@@ -18,9 +18,9 @@
 #
 
 #
-# Codename "mayday machine masher"
+# Codename "Premday Process Pressurizer"
 #
-VERSION=0.21.01
+VERSION=0.22.00
 
 #
 # Determine supported toolchains
@@ -53,6 +53,9 @@ COMPILER = scan-build
 override CC := $(CC) clang
 endif
 
+OBJDUMP ?= objdump
+READELF ?= readelf
+
 #
 # check for ALT linux gcc, define HAVE_ALT_LINUX_GCC, see core-shim.c
 # https://github.com/ColinIanKing/stress-ng/issues/452
@@ -79,11 +82,16 @@ VNNI_CFLAGS += $(filter-out $(VNNI_OFLAGS_REMOVE),$(CFLAGS))
 #
 ifeq "$(findstring -O,$(CFLAGS))" ""
 ifeq ($(BUILD_SMALL),1)
-	override CFLAGS += -Os
+	override CFLAGS += -Os -DBUILD_SMALL
+else
+ifeq ($(COMPILER),icx)
+	override CFLAGS += -O2 -axCORE-AVX512
 else
 	override CFLAGS += -O2
 endif
 endif
+endif
+
 ifeq "$(findstring -O,$(VNNI_CFLAGS))" ""
 ifeq ($(BUILD_SMALL),1)
 	override CFLAGS += -Os
@@ -129,8 +137,10 @@ PEDANTIC_FLAGS := \
 	-Wno-missing-braces -Wno-sign-compare -Wno-multichar \
 	-Warray-bounds=2 -Wstringop-overflow -Wformat-overflow \
 	-Wmaybe-uninitialized -Wshadow -Wdouble-promotion \
-	-Wcast-align=strict -Wduplicated-cond \
-	-Wduplicated-branches \
+	-Wcast-align=strict -Wduplicated-cond -Warith-conversion \
+	-Wtrailing-whitespace -Wleading-whitespace \
+	-Wduplicated-branches -Wconstant-logical-operand \
+	-Wrestrict -Wfloat-conversion \
 	-DHAVE_PEDANTIC
 endif
 override CFLAGS += $(foreach flag,$(PEDANTIC_FLAGS),$(cc_supports_flag))
@@ -150,9 +160,14 @@ endif
 #
 # Test for hardening flags and apply them if applicable
 #
-MACHINE := $(shell make -f Makefile.machine)
+ARCH := $(shell if $(OBJDUMP) -H > /dev/null 2>&1 ; then \
+		$(CC) test/test-machine.c -o test-machine > /dev/null 2>&1 && \
+			$(READELF) -h ./test-machine 2>/dev/null | grep Machine | tr '[:upper:]' '[:lower:]' | awk '{ print $$NF }' | sed 's/\///g' || echo "unknown"; \
+		rm -f test-machine; \
+		else echo "unknown"; fi)
+
 ifneq ($(PRESERVE_CFLAGS),1)
-ifneq ($(MACHINE),$(filter $(MACHINE),alpha hppa ia64))
+ifneq ($(ARCH),$(filter $(ARCH),alpha hppa ia64))
 flag = -Wformat -fstack-protector-strong -Werror=format-security
 #
 # add -D_FORTIFY_SOURCE=2 if _FORTIFY_SOURCE is not already defined
@@ -171,7 +186,7 @@ ifeq ($(BUILD_SMALL),1)
 ifneq ($(filter-out clang icc scan-build,$(COMPILER)),)
 override CFLAGS += $(foreach flag,-fipa-pta -fivopts,$(cc_supports_flag))
 override CFLAGS += $(foreach flag,-ftree-vectorize -ftree-slp-vectorize,$(cc_supports_flag))
-ifeq ($(filter $(MACHINE),ibms390 s390),)
+ifeq ($(filter $(ARCH),s390),)
 override CFLAGS += $(foreach flag,-fmodulo-sched,$(cc_supports_flag))
 endif
 endif
@@ -337,6 +352,7 @@ HEADERS = \
 	core-ignite-cpu.h \
 	core-interrupts.h \
 	core-io-priority.h \
+	core-ioctl.h \
 	core-job.h \
 	core-helper.h \
 	core-killpid.h \
@@ -423,6 +439,7 @@ CORE_SRC = \
 	core-interrupts.c \
 	core-io-uring.c \
 	core-io-priority.c \
+	core-ioctl.c \
 	core-job.c \
 	core-killpid.c \
 	core-klog.c \
@@ -479,6 +496,7 @@ CORE_SRC_GEN = \
 STRESS_SRC = \
 	stress-access.c \
 	stress-acl.c \
+	stress-acct.c \
 	stress-affinity.c \
 	stress-af-alg.c \
 	stress-aio.c \
@@ -494,6 +512,7 @@ STRESS_SRC = \
 	stress-binderfs.c \
 	stress-bitonicsort.c \
 	stress-bitops.c \
+	stress-bpf.c \
 	stress-branch.c \
 	stress-brk.c \
 	stress-bsearch.c \
@@ -525,6 +544,7 @@ STRESS_SRC = \
 	stress-dccp.c \
 	stress-dekker.c \
 	stress-dentry.c \
+	stress-dentrycache.c \
 	stress-dev.c \
 	stress-dev-shm.c \
 	stress-dfp.c \
@@ -540,6 +560,7 @@ STRESS_SRC = \
 	stress-enosys.c \
 	stress-env.c \
 	stress-epoll.c \
+	stress-epollmany.c \
 	stress-eth-sniff.c \
 	stress-eventfd.c \
 	stress-exec.c \
@@ -570,6 +591,7 @@ STRESS_SRC = \
 	stress-fp.c \
 	stress-fp-error.c \
 	stress-fp-misc.c \
+	stress-fp-subnormal.c \
 	stress-fpunch.c \
 	stress-fractal.c \
 	stress-fsize.c \
@@ -578,6 +600,7 @@ STRESS_SRC = \
 	stress-funccall.c \
 	stress-funcret.c \
 	stress-futex.c \
+	stress-gamma.c \
 	stress-get.c \
 	stress-getrandom.c \
 	stress-getdent.c \
@@ -589,6 +612,7 @@ STRESS_SRC = \
 	stress-heapsort.c \
 	stress-hrtimers.c \
 	stress-hsearch.c \
+	stress-hugepage.c \
 	stress-hyperbolic.c \
 	stress-icache.c \
 	stress-icmp-flood.c \
@@ -683,7 +707,9 @@ STRESS_SRC = \
 	stress-oom-pipe.c \
 	stress-opcode.c \
 	stress-open.c \
+	stress-ovpn.c \
 	stress-pagemove.c \
+	stress-pagescatter.c \
 	stress-pageswap.c \
 	stress-pci.c \
 	stress-personality.c \
@@ -766,6 +792,7 @@ STRESS_SRC = \
 	stress-sigq.c \
 	stress-sigrt.c \
 	stress-sigsegv.c \
+	stress-sigstop.c \
 	stress-sigsuspend.c \
 	stress-sigtrap.c \
 	stress-sigurg.c \
@@ -784,6 +811,7 @@ STRESS_SRC = \
 	stress-softlockup.c \
 	stress-spawn.c \
 	stress-sparsematrix.c \
+	stress-spec-rollback.c \
 	stress-spinmem.c \
 	stress-splice.c \
 	stress-stack.c \
@@ -879,8 +907,8 @@ cov: cov_clean clean build_info config.h
 
 build_info:
 	$(PRE_Q)echo "Compiler: $(COMPILER)"
+	$(PRE_Q)echo "Arch: $(ARCH)"
 	$(PRE_Q)echo "CFLAGS: $(CFLAGS)"
-	$(PRE_Q)echo "LDFLAGS: $(LDFLAGS)"
 
 .SUFFIXES: .cpp .c .o
 
@@ -901,7 +929,12 @@ stress-ng: config.h $(OBJS)
 	$(PRE_Q)echo "LD $@"
 	$(eval LINK_TOOL := $(shell if [ -n "$(shell grep '^#define HAVE_EIGEN' config.h)" ]; then echo $(CXX); else echo $(CC); fi))
 	$(eval LDFLAGS_EXTRA := $(shell grep CONFIG_LDFLAGS config | sed 's/CONFIG_LDFLAGS +=//' | tr '\n' ' '))
-	$(PRE_V)$(LINK_TOOL) $(OBJS) -lm $(LDFLAGS) $(LDFLAGS_EXTRA) $(CFLAGS) -o $@
+	$(eval LDFLAGS_WRAP := $(shell if [ -n "$(shell grep '^#define HAVE_LD_WRAP_CPU_INDICATOR_INIT' config.h)" ]; then echo -Wl,--wrap=__cpu_indicator_init; fi))
+	$(PRE_V)$(LINK_TOOL) $(OBJS) -lm $(LDFLAGS) $(LDFLAGS_EXTRA) $(LDFLAGS_WRAP) $(CFLAGS) -o $@
+
+stress-ovpn.o: stress-ovpn.c $(HEADERS) $(HEADERS_GEN)
+	$(PRE_Q)echo "CC $<"
+	$(PRE_V)$(CC) $(CFLAGS) $(shell pkg-config --cflags libnl-3.0 2>/dev/null) -DHAVE_CFLAGS='"$(CFLAGS)"' -DHAVE_LDFLAGS='"$(LDFLAGS)"' -DHAVE_CXXFLAGS='"$(CXXFLAGS)"' -c -o $@ $<
 
 stress-eigen-ops.o: config.h stress-eigen-ops.cpp stress-eigen-ops.c
 	$(PRE_V)if grep -q '^#define HAVE_EIGEN' config.h; then \
@@ -933,8 +966,8 @@ apparmor-data.h: usr.bin.pulseaudio.eg config.h
 		echo "Generating empty AppArmor profile"; \
 		touch apparmor-data.bin; \
 	fi
-	$(PRE_V)echo "/* autogenerated at built time */" > apparmor-data.h
-	$(PRE_V)echo "static const signed char g_apparmor_data[]= { " >> apparmor-data.h
+	$(PRE_V)echo "/* autogenerated at build time */" > apparmor-data.h
+	$(PRE_V)echo "static const signed char g_apparmor_data[]= {" >> apparmor-data.h
 	$(PRE_V)od -tx1 -An -v < apparmor-data.bin | \
 		sed 's/[0-9a-f][0-9a-f]/0x&,/g' | \
 		sed '$$ s/.$$//' >> apparmor-data.h
@@ -971,10 +1004,13 @@ core-perf.o: core-perf.c core-perf-event.c config.h
 	$(PRE_V)$(CC) $(CFLAGS) -c -o $@ $<
 
 core-config.c: config.h
-	$(PRE_V)echo "extern const char stress_config[];" > core-config.c
-	$(PRE_V)echo "const char stress_config[] = " >> core-config.c
-	$(PRE_V)sed 's/.*/"&\\n"/' config.h >> core-config.c
-	$(PRE_V)echo ";" >> core-config.c
+	$(PRE_V)echo "#include <unistd.h>" > core-config.c
+	$(PRE_V)echo "" >> core-config.c
+	$(PRE_V)echo "extern const char * const stress_config[];" >> core-config.c
+	$(PRE_V)echo "const char * const stress_config[] = {" >> core-config.c
+	$(PRE_V)sed 's/.*/    "&",/' config.h >> core-config.c
+	$(PRE_V)echo "    NULL," >> core-config.c
+	$(PRE_V)echo "};" >> core-config.c
 
 stress-vecmath.o: stress-vecmath.c config.h
 	$(PRE_Q)echo CC $<
@@ -985,13 +1021,10 @@ stress-vecmath.o: stress-vecmath.c config.h
 #
 git-commit-id.h:
 	$(PRE_Q)echo "MK $@"
-	@if [ -e .git/HEAD -a -e .git/index ]; then \
-		echo "#define STRESS_GIT_COMMIT_ID \"$(shell git rev-parse HEAD)\"" > $@ ; \
-	else \
-		echo "#define STRESS_GIT_COMMIT_ID \"\"" > $@ ; \
-	fi
+	@test -e .git/HEAD -a -e .git/index && rev=$$(git rev-parse HEAD 2>/dev/null) || rev=; \
+	echo "#define STRESS_GIT_COMMIT_ID \"$$rev\"" > $@ ;
 
-$(OBJS): stress-ng.h Makefile Makefile.config Makefile.machine
+$(OBJS): stress-ng.h Makefile Makefile.config
 
 stress-ng.1.gz: stress-ng.1
 	$(PRE_V)gzip -n -c $< > $@
@@ -1000,7 +1033,7 @@ stress-ng.1.gz: stress-ng.1
 dist:
 	rm -rf stress-ng-$(VERSION)
 	mkdir stress-ng-$(VERSION)
-	cp -rp Makefile Makefile.config Makefile.machine $(CORE_SRC) \
+	cp -rp Makefile Makefile.config $(CORE_SRC) \
 		$(STRESS_SRC) $(HEADERS) stress-ng.1 COPYING syscalls.txt \
 		mascot README.md CITATIONS.md \
 		Dockerfile README.Android test \

@@ -67,7 +67,7 @@ typedef struct {
 	stress_workload_info_t *info;	/* generic workload info */
 } stress_workload_thread_t;
 
-stress_workload_thread_t stress_workload_threads[WORKLOAD_THREADS_MAX];
+static stress_workload_thread_t stress_workload_threads[WORKLOAD_THREADS_MAX];
 #endif
 
 #define NUM_BUCKETS	(20)
@@ -132,11 +132,11 @@ static const char *stress_workload_sched(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_workload_dist,      "workload-dist",      TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_workload_dist },
+	{ OPT_workload_dist,      "workload-dist",      TYPE_ID_SIZE_T_METHOD, 0, 0, stress_workload_dist },
 	{ OPT_workload_load,      "workload-load",      TYPE_ID_UINT32, 1, 100, NULL },
-	{ OPT_workload_method,    "workload-method",    TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_workload_method },
+	{ OPT_workload_method,    "workload-method",    TYPE_ID_SIZE_T_METHOD, 0, 0, stress_workload_method },
 	{ OPT_workload_quanta_us, "workload-quanta-us", TYPE_ID_UINT32,  1, 10000000, NULL },
-	{ OPT_workload_sched,     "workload-sched",     TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_workload_sched },
+	{ OPT_workload_sched,     "workload-sched",     TYPE_ID_SIZE_T_METHOD, 0, 0, stress_workload_sched },
 	{ OPT_workload_slice_us,  "workload-slice-us",  TYPE_ID_UINT32, 1, 10000000, NULL },
 	{ OPT_workload_threads,   "workload-threads",   TYPE_ID_UINT32, 0, WORKLOAD_THREADS_MAX, NULL },
 	END_OPT,
@@ -161,7 +161,9 @@ static int stress_workload_set_sched(
 #endif
 	struct sched_param param;
 	int ret = 0;
-	int max_prio, min_prio, rng_prio;
+	int max_prio;
+	int min_prio;
+	int rng_prio;
 	const pid_t pid = getpid();
 	const char *policy_name;
 	int policy;
@@ -311,10 +313,11 @@ static void stress_workload_bucket_account(stress_workload_bucket_t *bucket, con
 		bucket->overflow++;
 }
 
-static void stress_workload_bucket_report(stress_args_t *args, stress_workload_bucket_t *bucket)
+static void stress_workload_bucket_report(stress_args_t *args, const stress_workload_bucket_t *bucket)
 {
 	size_t i;
-	int width1, width2;
+	int width1;
+	int width2;
 	char buf[64];
 	uint64_t total;
 
@@ -343,14 +346,14 @@ static void stress_workload_bucket_report(stress_args_t *args, stress_workload_b
 			width1, (uint64_t)((double)i * bucket->width),
 			width1, (uint64_t)((double)(i + 1) * bucket->width) - 1,
 			width2, bucket->bucket[i],
-			(double)100.0 * (double)bucket->bucket[i] / (double)total);
+			100.0 * (double)bucket->bucket[i] / (double)total);
 	}
 	pr_dbg("%s: %*" PRIu64 " .. %*s %*" PRIu64 " %4.1f\n",
 		args->name,
 		width1, (uint64_t)((double)i * bucket->width),
 		width1, "",
 		width2, bucket->overflow,
-		(double)100.0 * (double)bucket->overflow / (double)total);
+		100.0 * (double)bucket->overflow / (double)total);
 	pr_block_end();
 }
 
@@ -389,9 +392,13 @@ static int stress_workload_exercise(
 {
 	size_t i;
 	const double scale_us_to_sec = 1.0 / STRESS_DBL_MICROSECOND;
-	double t_begin, t_end, sleep_duration_ns, run_duration_sec;
-	const double scale32bit = 1.0 / (double)4294967296.0;
-	double sum, scale;
+	const double scale32bit = 1.0 / 4294967296.0;
+	double t_begin;
+	double t_end;
+	double sleep_duration_ns;
+	double run_duration_sec;
+	double sum;
+	double scale;
 	uint32_t offset;
 
 	run_duration_sec = (double)workload_quanta_us * scale_us_to_sec * ((double)workload_load / 100.0);
@@ -535,10 +542,11 @@ static int stress_workload(stress_args_t *args)
 	size_t workload_sched = 0;		/* undefined */
 	size_t workload_dist_idx = 0;
 	size_t workload_method_idx = 0;
-	int workload_dist, workload_method;
+	int workload_dist;
+	int workload_method;
 	stress_workload_t *workload;
 	uint8_t *mapped_buffer;
-	const size_t buffer_len = MB;
+	const size_t buffer_len = STRESS_MB;
 	size_t mapped_buffer_len;
 	stress_workload_bucket_t slice_offset_bucket;
 	int rc = EXIT_SUCCESS;
@@ -662,7 +670,7 @@ static int stress_workload(stress_args_t *args)
 
 	workload = (stress_workload_t *)calloc(max_quanta, sizeof(*workload));
 	if (!workload) {
-		pr_inf_skip("%s: cannot allocate %" PRIu32 " scheduler workload timings%s, "
+		pr_inf_skip("%s: allocate %" PRIu32 " scheduler workload timings failed%s, "
 			"skipping stressor\n", args->name, max_quanta,
 			stress_memory_free_get());
 		rc = EXIT_NO_RESOURCE;
@@ -723,10 +731,22 @@ exit_free_buffer:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_workload_info = {
 	.stressor = stress_workload,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

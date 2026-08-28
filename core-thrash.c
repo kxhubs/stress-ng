@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-attribute.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
 #include "core-numa.h"
@@ -96,7 +97,7 @@ static void stress_thrash_state(const char *state)
 static size_t stress_thrash_read_proc_maps(
 	const pid_t pid,
 	stress_proc_maps_t *proc_maps,
-	size_t max_maps)
+	const size_t max_maps)
 {
 	FILE *fp;
 	size_t n = 0;
@@ -117,7 +118,9 @@ static size_t stress_thrash_read_proc_maps(
 	 * Look for field 0060b000-0060c000 r--p 0000b000 08:01 1901726
 	 */
 	while (fgets(buffer, sizeof(buffer), fp)) {
-		uintmax_t begin, end, len;
+		uintmax_t begin;
+		uintmax_t end;
+		uintmax_t len;
 		char tmppath[1024];
 		char prot[6];
 
@@ -126,7 +129,7 @@ static size_t stress_thrash_read_proc_maps(
 			continue;
 
 		/* Avoid vdso and vvar.. */
-		if (strncmp("[v", tmppath, 2) == 0)
+		if (shim_strncmp("[v", tmppath, 2) == 0)
 			continue;
 
 		/* Ensure end look sane */
@@ -171,7 +174,8 @@ static void stress_thrash_pagein_self(
 {
 	int ret;
 	const size_t page_size = stress_memory_page_size_get();
-	struct sigaction bus_action, segv_action;
+	struct sigaction bus_action;
+	struct sigaction segv_action;
 	size_t i;
 	static const char name[] = "core-thrash";
 
@@ -219,8 +223,10 @@ static int stress_pagein_proc(const pid_t pid)
 {
 	char path[PATH_MAX];
 	stress_proc_maps_t proc_maps[MAX_PROC_MAPS];
-	int fdmem, rc = 0;
-	size_t i, n_maps;
+	int fdmem;
+	int rc = 0;
+	size_t i;
+	size_t n_maps;
 	const size_t page_size = stress_memory_page_size_get();
 
 	if ((pid == parent_pid) || (pid == getpid()))
@@ -237,7 +243,8 @@ static int stress_pagein_proc(const pid_t pid)
 	 * Look for field 0060b000-0060c000 r--p 0000b000 08:01 1901726
 	 */
 	for (i = 0; thrash_run && (i < n_maps); i++) {
-		uintmax_t off, end;
+		uintmax_t off;
+		uintmax_t end;
 		const uintmax_t max_off = ((uintmax_t)~(off_t)0) - (page_size - 1);
 
 		/* ignore non-readable mappings */
@@ -253,7 +260,8 @@ static int stress_pagein_proc(const pid_t pid)
 
 		for (off = proc_maps[i].begin; thrash_run && (off < end); off += page_size) {
 			unsigned long int data;
-			off_t ret, pos;
+			off_t ret;
+			off_t pos;
 
 			pos = (off_t)off;
 
@@ -671,10 +679,7 @@ int stress_thrash_start(void)
 		thrash_run = false;
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-		if (numa_mask)
-			stress_numa_mask_free(numa_mask);
-		if (numa_nodes)
-			stress_numa_mask_free(numa_nodes);
+		stress_numa_mask_nodes_free(numa_mask, numa_nodes);;
 #endif
 
 		stress_thrash_state("exit");

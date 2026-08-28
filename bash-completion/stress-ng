@@ -32,6 +32,26 @@ _stress_ng()
                 compopt -o nosort
                 return 0
                 ;;
+	'--no-madvise-opts')
+		local advice=$($1 --no-madvise-opts '?'  2>&1 | cut -d':' -f2)
+                COMPREPLY=( $(compgen -W "$advice" -- $cur) )
+                return 0
+                ;;
+	'--exercise-feature')
+		local features=$($1 --exercise-feature '?' --log-brief 2>&1 | cut -d':' -f2- | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+                COMPREPLY=( $(compgen -W "$features" -- $cur) )
+                return 0
+                ;;
+	'--exercise-library')
+		local libraries=$($1 --exercise-library '?' --log-brief 2>&1 | cut -d':' -f2- | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+                COMPREPLY=( $(compgen -W "$libraries" -- $cur) )
+                return 0
+                ;;
+	'--exercise-syscall')
+		local syscalls=$($1 --exercise-syscall '?' --log-brief 2>&1 | cut -d':' -f2- | tr ' ' '\n' | sort | uniq | tr '\n' ' ')
+                COMPREPLY=( $(compgen -W "$syscalls" -- $cur) )
+                return 0
+                ;;
         '--ionice-class')
                 local classes=$($1 --ionice-class which 2>&1 | cut -d':' -f2)
                 COMPREPLY=( $(compgen -W "$classes" -- $cur) )
@@ -59,21 +79,54 @@ _stress_ng()
                 COMPREPLY=( $(compgen -W "$stressors" $cur) )
                 return 0
                 ;;
+	'--with')
+		local stressors=$($1 --stressors)
+                COMPREPLY=( $(compgen -W "$stressors" $cur) )
+                return 0
+                ;;
+	'--vmstat-units')
+                COMPREPLY=( $(compgen -W "k m g t p e" -- $cur) )
+                return 0
+                ;;
         '--zlib-level')
                 COMPREPLY=( $(compgen -W "0 1 2 3 4 5 6 7 8 9" -- $cur) )
+                return 0
+                ;;
+	'--af-alg-type')
+                COMPREPLY=( $(compgen -W "all ahash shash skciper rng aead" -- $cur) )
+                return 0
+                ;;
+	'--fd-fork-file')
+                COMPREPLY=( $(compgen -W "null random stdin stdout zero" -- $cur) )
+                return 0
+                ;;
+	'--goto-direction')
+                COMPREPLY=( $(compgen -W "forward backward random" -- $cur) )
+                return 0
+                ;;
+        '--gpu-devnode')
+		local devs=$(find /dev/dri/ -type c)
+                COMPREPLY=( $(compgen -W "$devs" -- $cur) )
+                return 0
+                ;;
+	'--ioport-port')
+                COMPREPLY=( $(compgen -W "post vga-dac-r bochs-debug" -- $cur) )
                 return 0
                 ;;
 	'--bad-ioctl-method' | \
 	'--besselmath-method' | \
 	'--bitops-method' | \
+	'--branch-jumps' | \
 	'--bsearch-method' | \
 	'--bubblesort-method' | \
+	'--cachehammer-method' | \
 	'--cacheline-method' | \
 	'--chyperbolic-method' | \
 	'--cpu-method' | \
 	'--crypt-method' | \
 	'--ctrig-method' | \
 	'--cyclic-method' | \
+	'--dentrycache-method' | \
 	'--dfp-method' | \
 	'--eigen-method' | \
 	'--exec-fork-method' | \
@@ -86,6 +139,7 @@ _stress_ng()
 	'--hash-method' | \
 	'--heapsort-method' | \
 	'--hsearch-method' | \
+	'--hugepage-method' | \
 	'--hyperbolic-method' | \
 	'--intmath-method' | \
 	'--ipsec-mb-method' | \
@@ -146,23 +200,31 @@ _stress_ng()
                 ;;
 	'--cyclic-policy' | \
 	'--dccp-opts' | \
+	'--dentry-order' | \
 	'--filename-opts' | \
 	'--hdd-opts' | \
+	'--ioport-opts' | \
+	'--ipsec-mb-feature' | \
+	'--jpeg-image' | \
+	'--min-nanosleep-sched' | \
+	'--monte-carlo-rand' | \
+	'--numacopy-affinity' | \
+	'--numacopy-mode' | \
+	'--prio-inv-type' | \
+	'--prio-inv-policy' | \
+	'--sctp-sched' | \
 	'--sock-opts' | \
 	'--sock-type' | \
 	'--sock-protocol' | \
+	'--stream-madvise' | \
+	'--syscall-rank' | \
 	'--revio-opts' | \
-	'--touch-opts')
-                local options=$($1 $prev which 2>&1 | cut -d':' -f2)
-                COMPREPLY=( $(compgen -W "$options" -- $cur) )
-                return 0
-                ;;
-	'--dentry-order')
-                local options=$($1 $prev which 2>&1 | cut -d':' -f2)
-                COMPREPLY=( $(compgen -W "$options" -- $cur) )
-                return 0
-                ;;
-	'--stream-madvise' | '--vm-madvise')
+	'--touch-opts' | \
+	'--varyload-type' | \
+	'--vm-madvise' | \
+	'--workload-dist' | \
+	'--workload-sched' | \
+	'--yield-sched')
                 local options=$($1 $prev which 2>&1 | cut -d':' -f2)
                 COMPREPLY=( $(compgen -W "$options" -- $cur) )
                 return 0
@@ -180,6 +242,7 @@ _stress_ng()
 	'--affinity-rand' | \
 	'--aggressive' | \
 	'--autogroup' | \
+	'--bad-ioctl-alldev' | \
 	'--bigheap-mlock' | \
 	'--brk-mlock' | \
 	'--brk-notouch' | \
@@ -198,19 +261,24 @@ _stress_ng()
 	'--cache-sfence' | \
 	'--cachehammer-numa' | \
 	'--cacheline-affinity' | \
-	'--compact-memory' | \
 	'--change-cpu' | \
+	'--compact-memory' | \
 	'--config' | \
 	'--cpu-online-affinity,' | \
 	'--cpu-online-all' | \
 	'--daemon-wait' | \
+	'--dentry-negative' | \
+	'--dev-alldev' | \
 	'--dry-run' | \
+	'--epollmany-delete' | \
 	'--eventfd-nonblock' | \
 	'--exec-no-pthread' | \
+	'--exercised' | \
 	'--far-branch-flush' | \
 	'--far-branch-pageout' | \
 	'--fd-race-dev' | \
 	'--fd-race-proc' | \
+	'--filehole-defrag' | \
 	'--fma-libc' | \
 	'--fork-pageout' | \
 	'--fork-unmap' | \
@@ -218,12 +286,16 @@ _stress_ng()
 	'--forkheavy-mlock' | \
 	'--ftrace' | \
 	'--get-slow-sync' | \
-	'--hrtimers-adjust' | \
 	'--help' | \
+	'--hrtimers-adjust' | \
+	'--hugepage-dontneed' | \
+	'--hugepage-remove' | \
+	'--icmp-flood-max-size' | \
 	'--ignite-cpu' | \
 	'--interrupts' | \
 	'--intmath-fast' | \
 	'--io-uring-rand' | \
+	'--ios' | \
 	'--itimer-rand' | \
 	'--keep-files' | \
 	'--keep-name' | \
@@ -258,15 +330,14 @@ _stress_ng()
 	'--metrics' | \
 	'--metrics-brief' | \
 	'--mincore-random' | \
-	'--min-nanosleep-sched,' | \
 	'--minimize' | \
 	'--mmap-async' | \
 	'--mmap-file' | \
 	'--mmap-madvise' | \
 	'--mmap-mergeable' | \
 	'--mmap-mlock' | \
-	'--mmap-mprotect' | \
 	'--mmap-mmap2' | \
+	'--mmap-mprotect' | \
 	'--mmap-numa' | \
 	'--mmap-odirect' | \
 	'--mmap-osync' | \
@@ -274,8 +345,8 @@ _stress_ng()
 	'--mmap-stressful' | \
 	'--mmap-write-check' | \
 	'--mmapaddr-mlock' | \
-	'--mmapcow-free' | \
 	'--mmapcow-fork' | \
+	'--mmapcow-free' | \
 	'--mmapcow-mlock' | \
 	'--mmapcow-numa' | \
 	'--mmapfiles-numa' | \
@@ -288,8 +359,7 @@ _stress_ng()
 	'--mmaphuge-numa' | \
 	'--mmapmany-mlock' | \
 	'--mmapmany-numa' | \
-	'--mmaprandom-mappings' | \
-	'--mmaprandom-maxpages' | \
+	'--mmaprandom-numa' | \
 	'--module-no-modver' | \
 	'--module-no-unload' | \
 	'--module-no-vermag' | \
@@ -304,12 +374,15 @@ _stress_ng()
 	'--numa-shuffle-addr' | \
 	'--numa-shuffle-node' | \
 	'--oomable' | \
-	'--oom-no-child' | \
 	'--oom-avoid' | \
+	'--oom-no-child' | \
 	'--open-fd' | \
+	'--ovpn-tunnel' | \
 	'--page-in' | \
 	'--pagemove-mlock' | \
 	'--pagemove-numa' | \
+	'--pagescatter-numa' | \
+	'--pagescatter-populate' | \
 	'--pathological' | \
 	'--perf' | \
 	'--physpage-mtrr' | \
@@ -330,6 +403,8 @@ _stress_ng()
 	'--resources-mlock' | \
 	'--ring-pipe-splice' | \
 	'--sched-reclaim' | \
+	'--schedmix-cpumix' | \
+	'--schedpolicy-cpumix' | \
 	'--schedpolicy-rand' | \
 	'--seek-punch' | \
 	'--sem-shared' | \
@@ -343,7 +418,6 @@ _stress_ng()
 	'--sock-nodelay' | \
 	'--sock-zerocopy' | \
 	'--sockfd-reuse' | \
-	'--sparsematrix-method' | \
 	'--spinmem-affinity' | \
 	'--spinmem-numa' | \
 	'--spinmem-yield' | \
@@ -364,13 +438,15 @@ _stress_ng()
 	'--sync-start' | \
 	'--syslog' | \
 	'--taskset-random' | \
+	'--thrash' | \
 	'--timer-rand' | \
 	'--timerfd-rand' | \
+	'--tlb-numa-nombind' | \
+	'--tlb-numa-nopageout' | \
 	'--tmpfs-mmap-async' | \
 	'--tmpfs-mmap-file' | \
 	'--tsc-lfence' | \
 	'--tsc-rdtscp' | \
-	'--thrash' | \
 	'--times' | \
 	'--timestamp' | \
 	'--tz' | \

@@ -41,8 +41,10 @@ static const stress_opt_t opts[] = {
  */
 static int stress_mincore_file(stress_args_t *args)
 {
-	int ret, fd;
+	int ret;
+	int fd;
 	char filename[PATH_MAX];
+
 	ret = stress_fs_temp_dir_make_args(args);
 	if (ret != 0)
 		return -1;
@@ -74,7 +76,7 @@ static void stress_mincore_expect(
 	const int ret_expected,	/* expected return value */
 	const int err,		/* returned errno */
 	const int err_expected,	/* expected errno */
-	char *msg,		/* test message */
+	const char *msg,	/* test message */
 	int *rc)		/* return code */
 {
 	if (LIKELY(ret == ret_expected)) {
@@ -100,13 +102,19 @@ static void stress_mincore_expect(
  */
 static int stress_mincore(stress_args_t *args)
 {
-	uint8_t *addr = NULL, *prev_addr = NULL;
+	uint8_t *addr = NULL;
+	const uint8_t *prev_addr = NULL;
 	const size_t page_size = args->page_size;
 	const intptr_t mask = ~((intptr_t)page_size - 1);
 	bool mincore_random = false;
-	int fd, rc = EXIT_SUCCESS;
-	uint8_t *mapped, *unmapped, *fdmapped;
-	double duration = 0.0, count = 0.0, rate;
+	int fd;
+	int rc = EXIT_SUCCESS;
+	uint8_t *mapped;
+	uint8_t *unmapped;
+	uint8_t *fdmapped;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	(void)stress_setting_get("mincore-random", &mincore_random);
 
@@ -303,12 +311,26 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("maple-tree-read"),
+	STRESS_EX_FEATURE("mmap-lock"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+
+	STRESS_EX_SYSCALL("mincore"),
+#if defined(MS_ASYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mincore_info = {
 	.stressor = stress_mincore,
 	.classifier = CLASS_OS | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mincore_info = {

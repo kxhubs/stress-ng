@@ -53,7 +53,8 @@ static void stress_unlink_exercise(
 	stress_metrics_t *metrics,
 	char *filenames[UNLINK_FILES])
 {
-	int fds[UNLINK_FILES], n;
+	int fds[UNLINK_FILES];
+	int n;
 	size_t idx[UNLINK_FILES];
 	register size_t i;
 	const size_t mask = UNLINK_FILES - 1;
@@ -96,13 +97,13 @@ static void stress_unlink_exercise(
 			fds[i] = -1;
 
 		for (i = 0; LIKELY(stress_continue(args) && (i < UNLINK_FILES)); i++) {
-			int mode, retries = 0;
+			int mode;
+			int retries = 0;
 
 			if (UNLIKELY((i & 7) == 7)) {
 				if (link(filenames[i - 1], filenames[i]) == 0) {
 					fds[i] = open(filenames[i], O_RDWR);
-					if (fds[i] < 0)
-						continue;
+					continue;
 				}
 			}
 retry:
@@ -193,15 +194,17 @@ retry:
  */
 static int stress_unlink(stress_args_t *args)
 {
-	int ret, rc = EXIT_SUCCESS;
-	char *filenames[UNLINK_FILES];
 	char pathname[PATH_MAX];
+	char *filenames[UNLINK_FILES];
 	stress_pid_t s_pids[UNLINK_PROCS];
 	stress_metrics_t *metrics;
 	const size_t metrics_sz = sizeof(*metrics) * (UNLINK_PROCS + 1);
-	double duration = 0.0, count = 0.0, rate;
-
 	register size_t i;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	stress_sync_init_pids(s_pids, UNLINK_PROCS);
 
@@ -209,7 +212,7 @@ static int stress_unlink(stress_args_t *args)
 					PROT_READ | PROT_WRITE,
 					MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (metrics == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes for metrics%s, "
+		pr_inf_skip("%s: mmap %zu bytes for metrics failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, metrics_sz,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -238,7 +241,7 @@ static int stress_unlink(stress_args_t *args)
 
 		filenames[i] = shim_strdup(filename);
 		if (!filenames[i]) {
-			pr_inf_skip("%s: failed to allocate filenames%s, "
+			pr_inf_skip("%s: allocate filenames failed%s, "
 				"skipping stressor\n", args->name,
 				stress_memory_free_get());
 			goto filenames_free;
@@ -295,12 +298,25 @@ metrics_free:
 	(void)stress_fs_temp_dir_rm_args(args);
 
 	return rc;
-
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("fdatasync"),
+	STRESS_EX_SYSCALL("open"),
+	STRESS_EX_SYSCALL("link"),
+	STRESS_EX_SYSCALL("unlink"),
+
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_unlink_info = {
 	.stressor = stress_unlink,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_NONE,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

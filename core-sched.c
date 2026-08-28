@@ -103,7 +103,8 @@ int stress_sched_set(
 	const bool quiet)
 {
 #if defined(SCHED_FIFO) || defined(SCHED_RR)
-	int min, max;
+	int min;
+	int max;
 #endif
 #if defined(SCHED_DEADLINE) &&	\
     defined(__linux__)
@@ -269,30 +270,42 @@ int PURE stress_sched_set(
 #endif
 
 /*
- *  stess_sched_opt_get()
- *	get scheduler policy
+ *  stress_sched_find()
+ *	find scheduling type based on human readable name
  */
-int32_t stress_sched_opt_get(const char *const str)
+static int stress_sched_find(const char *const str)
 {
 	size_t i;
 
 	for (i = 0; i < stress_sched_types_length; i++) {
-		if (!strcmp(stress_sched_types[i].sched_name, str))
+		if (!shim_strcmp(stress_sched_types[i].sched_name, str))
 			return stress_sched_types[i].sched;
 	}
-	if (strcmp("which", str))
+	return UNDEFINED;
+}
+
+/*
+ *  stess_sched_parse()
+ *	parse scheduler policy
+ */
+int stress_sched_parse(const char *const str)
+{
+	if (stress_sched_find(str) != UNDEFINED)
+		return 0;
+	if (shim_strcmp("which", str))
 		(void)fprintf(stderr, "invalid sched option: %s\n", str);
 	if (stress_sched_types_length == (0)) {
 		(void)fprintf(stderr, "no scheduler options are available\n");
 	} else {
+		size_t i;
+
 		(void)fprintf(stderr, "available scheduler options are:");
 		for (i = 0; i < stress_sched_types_length; i++) {
 			(void)fprintf(stderr, " %s", stress_sched_types[i].sched_name);
 		}
 		(void)fprintf(stderr, "\n");
 	}
-	_exit(EXIT_FAILURE);
-	return 0;
+	return -1;
 }
 
 /*
@@ -304,13 +317,15 @@ int32_t stress_sched_opt_get(const char *const str)
  */
 int stress_sched_settings_apply(const bool quiet)
 {
-	int32_t sched = UNDEFINED;
+	char *sched_str;
+	int sched = UNDEFINED;
 	int32_t sched_prio = UNDEFINED;
 
-	(void)stress_setting_get("sched", &sched);
+	if (stress_setting_get("sched", &sched_str))
+		sched = stress_sched_find(sched_str);
 	(void)stress_setting_get("sched-prio", &sched_prio);
 
-	return stress_sched_set(getpid(), (int)sched, sched_prio, quiet);
+	return stress_sched_set(getpid(), sched, sched_prio, quiet);
 }
 
 /*
@@ -333,7 +348,7 @@ ssize_t stress_sched_ext_ops_get(char *buf, const size_t len)
 	ret = stress_fs_file_read("/sys/kernel/sched_ext/state", state, sizeof(state));
 	if (ret < 0) {
 		return 0;
-	} else if (strncmp(state, "disabled", 8) == 0) {
+	} else if (shim_strncmp(state, "disabled", 8) == 0) {
 		return 0;
 	}
 #if defined(__linux__)

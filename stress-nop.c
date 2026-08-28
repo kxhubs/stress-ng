@@ -330,9 +330,11 @@ static void MLOCKED_TEXT NORETURN stress_sigill_nop_handler(int signum)
 static int stress_nop(stress_args_t *args)
 {
 	size_t nop_instr = 0;
-	NOCLOBBER stress_nop_instr_t *instr;
-	NOCLOBBER bool do_random;
-	double duration = 0.0, count = 0.0, rate;
+	stress_nop_instr_t * CLOBBERED instr;
+	CLOBBERED bool do_random;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 
 	(void)stress_setting_get("nop-instr", &nop_instr);
 	instr = &nop_instrs[nop_instr];
@@ -379,20 +381,31 @@ static const char *stress_nop_instr(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_nop_instr, "nop-instr", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_nop_instr },
+	{ OPT_nop_instr, "nop-instr", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_nop_instr },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("frontend-decoder"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_nop_info = {
 	.stressor = stress_nop,
 	.classifier = CLASS_CPU,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_nop_instr, "nop-instr", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_nop_instr, "nop-instr", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 

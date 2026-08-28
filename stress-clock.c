@@ -152,7 +152,8 @@ static const char * PURE stress_clock_name(int id)
  * check_invalid_clock_id()
  * function to check if given clock_id is valid
  */
-static inline bool check_invalid_clock_id(const clockid_t id) {
+static inline bool check_invalid_clock_id(const clockid_t id)
+{
         struct timespec tp;
 
         (void)shim_memset(&tp, 0, sizeof(tp));
@@ -160,7 +161,7 @@ static inline bool check_invalid_clock_id(const clockid_t id) {
 }
 #endif
 
-static inline bool aux_clock_nonfatal_error(const clockid_t id, int errnum)
+static inline bool aux_clock_nonfatal_error(const clockid_t id, const int errnum)
 {
 	(void)id;
 	(void)errnum;
@@ -295,7 +296,8 @@ static int stress_clock(stress_args_t *args)
 			size_t i;
 
 			for (i = 0; i < SIZEOF_ARRAY(clocks); i++) {
-				struct timespec t, t1;
+				struct timespec t;
+				struct timespec t1;
 				int ret;
 
 				/* Save current time to reset later if required */
@@ -314,14 +316,12 @@ static int stress_clock(stress_args_t *args)
 				/* Ensuring clock_settime cannot succeed without privilege */
 				if (!is_root) {
 					ret = shim_clock_settime(clocks[i].id, &t1);
-					if (ret < 0) {
-						if (UNLIKELY(((errno != EPERM) && (errno != EINVAL)))) {
-							/* This is an error, report it! */
-							pr_fail("%s: clock_settime failed, did not have privilege to "
-								"set time, expected EPERM or EINVAL, instead got errno=%d (%s)\n",
-								args->name, errno, strerror(errno));
-							rc = EXIT_FAILURE;
-						}
+					if ((ret < 0) && UNLIKELY(((errno != EPERM) && (errno != EINVAL)))) {
+						/* This is an error, report it! */
+						pr_fail("%s: clock_settime failed, did not have privilege to "
+							"set time, expected EPERM or EINVAL, instead got errno=%d (%s)\n",
+							args->name, errno, strerror(errno));
+						rc = EXIT_FAILURE;
 					}
 				}
 
@@ -601,11 +601,63 @@ static int stress_clock(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("timer"),
+
+#if defined(CLOCK_THREAD_CPUTIME_ID) && \
+    defined(HAVE_CLOCK_GETTIME)
+	STRESS_EX_SYSCALL("clock_gettime"),
+#endif
+#if defined(CLOCK_THREAD_CPUTIME_ID) && \
+    defined(HAVE_CLOCK_SETTIME)
+	STRESS_EX_SYSCALL("clock_settime"),
+#endif
+#if defined(HAVE_CLOCK_GETRES)
+	STRESS_EX_SYSCALL("clock_getres"),
+#endif
+#if defined(HAVE_CLOCK_NANOSLEEP) &&	\
+    defined(TIMER_ABSTIME)
+	STRESS_EX_SYSCALL("clock_nanosleep"),
+#endif
+#if defined(__NR_clock_adjtime) &&	\
+    defined(HAVE_TIMEX) &&		\
+    defined(HAVE_SYS_TIMEX_H) &&	\
+    defined(CLOCK_THREAD_CPUTIME_ID) &&	\
+    defined(ADJ_SETOFFSET)
+	STRESS_EX_SYSCALL("clock_adjtime"),
+#endif
+#if defined(HAVE_TIMER_CREATE) &&	\
+    defined(HAVE_TIMER_DELETE) &&	\
+    defined(HAVE_TIMER_GETTIME) &&	\
+    defined(HAVE_TIMER_GETOVERRUN) &&	\
+    defined(HAVE_TIMER_SETTIME)
+	STRESS_EX_SYSCALL("timer_create"),
+	STRESS_EX_SYSCALL("timer_delete"),
+	STRESS_EX_SYSCALL("timer_gettime"),
+	STRESS_EX_SYSCALL("timer_getoverrun"),
+	STRESS_EX_SYSCALL("timer_settime"),
+#endif
+#if defined(__linux__) &&		\
+    defined(HAVE_POLL_H) &&		\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_clock_info = {
 	.stressor = stress_clock,
 	.classifier = CLASS_INTERRUPT | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_clock_info = {

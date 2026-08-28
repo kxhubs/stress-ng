@@ -66,7 +66,8 @@ static int do_fchown(
 	const uid_t uid,
 	const gid_t gid)
 {
-	int tmp, ret;
+	int tmp;
+	int ret;
 
 	if (stress_chown_check(fchown(fd, uid, gid)) < 0)
 		return -errno;
@@ -121,7 +122,8 @@ static int do_chown(
 	const uid_t uid,
 	const gid_t gid)
 {
-	int tmp, ret;
+	int tmp;
+	int ret;
 
 	if (stress_chown_check(chown_func(filename, uid, gid)) < 0)
 		return -errno;
@@ -165,9 +167,12 @@ restore:
 static int stress_chown(stress_args_t *args)
 {
 	const pid_t ppid = getppid();
-	int fd = -1, rc = EXIT_FAILURE, retries = 0;
+	int fd = -1;
+	int rc = EXIT_FAILURE;
+	int retries = 0;
 	const int bad_fd = stress_fs_bad_fd_get();
-	char filename[PATH_MAX], pathname[PATH_MAX];
+	char filename[PATH_MAX];
+	char pathname[PATH_MAX];
 	const uid_t uid = getuid();
 	const gid_t gid = getgid();
 	bool cap_chown = false;
@@ -180,13 +185,11 @@ static int stress_chown(stress_args_t *args)
 	 *  Allow for multiple workers to chown the *same* file
 	 */
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name, ppid, 0);
-	if (mkdir(pathname, S_IRWXU) < 0) {
-		if (errno != EEXIST) {
-			rc = stress_exit_status(errno);
-			pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
-				args->name, pathname, errno, strerror(errno));
-			return rc;
-		}
+	if ((mkdir(pathname, S_IRWXU) < 0) && (errno != EEXIST)) {
+		rc = stress_exit_status(errno);
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
+			args->name, pathname, errno, strerror(errno));
+		return rc;
 	}
 	(void)stress_fs_temp_filename(filename, sizeof(filename),
 		args->name, ppid, 0, 0);
@@ -194,7 +197,7 @@ static int stress_chown(stress_args_t *args)
 	if (stress_instance_zero(args)) {
 		if ((fd = creat(filename, S_IRUSR | S_IWUSR)) < 0) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: creat %s failed, errno=%d (%s)\n",
+			pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			goto tidy;
 		}
@@ -217,7 +220,7 @@ static int stress_chown(stress_args_t *args)
 				goto tidy;
 			}
 			if (++retries >= 1000) {
-				pr_inf("%s: chown: file %s took %d "
+				pr_inf("%s: chown '%s' took %d "
 					"retries to open and gave up "
 					"(instance %" PRIu32 ")%s\n",
 					args->name, filename, retries, args->instance,
@@ -252,7 +255,7 @@ static int stress_chown(stress_args_t *args)
 
 		ret = do_chown(chown, filename, cap_chown, uid, gid);
 		if ((ret < 0) && (ret != -EPERM)) {
-			pr_fail("%s: chown %s failed, errno=%d (%s)%s\n",
+			pr_fail("%s: chown '%s' failed, errno=%d (%s)%s\n",
 				args->name, filename, errno, strerror(errno),
 				stress_fs_type_get(filename));
 			rc = EXIT_FAILURE;
@@ -260,7 +263,7 @@ static int stress_chown(stress_args_t *args)
 		}
 		ret = do_chown(lchown, filename, cap_chown, uid, gid);
 		if ((ret < 0) && (ret != -EPERM)) {
-			pr_fail("%s: lchown %s failed, errno=%d (%s)%s\n",
+			pr_fail("%s: lchown '%s' failed, errno=%d (%s)%s\n",
 				args->name, filename, errno, strerror(errno),
 				stress_fs_type_get(filename));
 			rc = EXIT_FAILURE;
@@ -284,9 +287,17 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("chown"),
+	STRESS_EX_SYSCALL("fhown"),
+	STRESS_EX_SYSCALL("lchown"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_chown_info = {
 	.stressor = stress_chown,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

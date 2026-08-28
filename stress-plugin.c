@@ -18,6 +18,7 @@
  */
 #include "stress-ng.h"
 #include "core-capabilities.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
 
@@ -154,7 +155,9 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 	ElfW(Dyn) *section;
 	char * strtab = NULL;
 	unsigned long int symentries = 0;
-	size_t i, size, n_funcs;
+	size_t i;
+	size_t size;
+	size_t n_funcs;
 
 	stress_plugin_methods = NULL;
 	stress_plugin_methods_num = 0;
@@ -164,7 +167,7 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 
 	stress_plugin_so_dl = dlopen(opt_arg, RTLD_LAZY | RTLD_GLOBAL);
 	if (!stress_plugin_so_dl) {
-		fprintf(stderr, "option %s: cannot load shared object file %s "
+		(void)fprintf(stderr, "option %s: cannot load shared object file '%s' "
 			"(please specify full path to .so file)\n", opt_name, opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
@@ -172,7 +175,7 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 
 	dlinfo(stress_plugin_so_dl, RTLD_DI_LINKMAP, &map);
 	if (!map) {
-		fprintf(stderr, "plugin-so: cannot find linkmap in file %s\n", opt_arg);
+		(void)fprintf(stderr, "plugin-so: cannot find linkmap in file '%s'\n", opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -194,17 +197,17 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 	}
 
 	if (!symtab) {
-		fprintf(stderr, "plugin-so: cannot find symbol table in file %s\n", opt_arg);
+		(void)fprintf(stderr, "plugin-so: cannot find symbol table in file '%s'\n", opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 	if (!strtab) {
-		fprintf(stderr, "plugin-so: cannot find string table in file %s\n", opt_arg);
+		(void)fprintf(stderr, "plugin-so: cannot find string table in file '%s'\n", opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 	if (!symentries) {
-		fprintf(stderr, "plugin-so: cannot find symbol table entry count in file %s\n", opt_arg);
+		(void)fprintf(stderr, "plugin-so: cannot find symbol table entry count in file '%s'\n", opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
@@ -215,19 +218,19 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 			const ElfW(Sym) *sym = &symtab[i];
 			const char *str = &strtab[sym->st_name];
 
-			if (!strncmp(str, "stress_", 7))
+			if (!shim_strncmp(str, "stress_", 7))
 				n_funcs++;
 		}
 	}
 	if (!n_funcs) {
-		fprintf(stderr, "plugin-so: cannot find any function symbols in file %s\n", opt_arg);
+		(void)fprintf(stderr, "plugin-so: cannot find any function symbols in file '%s'\n", opt_arg);
 		longjmp(g_error_env, 1);
 		stress_no_return();
 	}
 
 	stress_plugin_methods = (stress_plugin_method_info_t *)calloc(n_funcs + 1, sizeof(*stress_plugin_methods));
 	if (!stress_plugin_methods) {
-		fprintf(stderr, "plugin-so: cannot allocate %zu plugin methods%s\n",
+		(void)fprintf(stderr, "plugin-so: allocate %zu plugin methods failed%s\n",
 			n_funcs, stress_memory_free_get());
 		longjmp(g_error_env, 1);
 		stress_no_return();
@@ -243,11 +246,11 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 			const ElfW(Sym) *sym = &symtab[i];
 			const char *str = &strtab[sym->st_name];
 
-			if ((strlen(str) > 7) && !strncmp(str, "stress_", 7)) {
+			if ((shim_strlen(str) > 7) && !shim_strncmp(str, "stress_", 7)) {
 				stress_plugin_methods[n_funcs].name = str + 7;
 				stress_plugin_methods[n_funcs].func = (stress_plugin_func)dlsym(stress_plugin_so_dl, str);
 				if (!stress_plugin_methods[n_funcs].func) {
-					fprintf(stderr, "plugin-so: cannot get address of function %s()\n", str);
+					(void)fprintf(stderr, "plugin-so: cannot get address of function %s()\n", str);
 					longjmp(g_error_env, 1);
 					stress_no_return();
 				}
@@ -297,7 +300,7 @@ static int stress_plugin(stress_args_t *args)
 		PROT_READ | PROT_WRITE,
 		MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (sig_count == MAP_FAILED) {
-		pr_fail("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+		pr_fail("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, sig_count_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		(void)dlclose(stress_plugin_so_dl);
@@ -316,11 +319,8 @@ static int stress_plugin(stress_args_t *args)
 	do {
 		pid_t pid;
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
 			pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -418,9 +418,14 @@ static const char *stress_plugin_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_plugin_method, "plugin-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_plugin_method },
-	{ OPT_plugin_so,     "plugin-so",     TYPE_ID_CALLBACK, 0, 0, (void *)stress_plugin_so },
+	{ OPT_plugin_method, "plugin-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_plugin_method },
+	{ OPT_plugin_so,     "plugin-so",     TYPE_ID_CALLBACK, 0, 0, stress_plugin_so },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_LIBRARY("dl"),
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_plugin_info = {
@@ -428,7 +433,8 @@ const stressor_info_t stress_plugin_info = {
 	.classifier = CLASS_CPU | CLASS_OS,
 	.opts = opts,
 	.supported = stress_plugin_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -438,12 +444,12 @@ static void stress_plugin_so(const char *opt_name, const char *opt_arg, stress_t
 	*type_id = TYPE_ID_STR;
 	*(char **)value = stress_const_optdup(opt_arg);
 
-	fprintf(stderr, "option %s '%s' not supported on unimplemented stressor\n", opt_name, opt_arg);
+	(void)fprintf(stderr, "option %s '%s' not supported on unimplemented stressor\n", opt_name, opt_arg);
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_plugin_method, "plugin-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
-	{ OPT_plugin_so,     "plugin-so",     TYPE_ID_CALLBACK, 0, 0, (void *)stress_plugin_so },
+	{ OPT_plugin_method, "plugin-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
+	{ OPT_plugin_so,     "plugin-so",     TYPE_ID_CALLBACK, 0, 0, stress_plugin_so },
 	END_OPT,
 };
 

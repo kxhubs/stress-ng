@@ -89,7 +89,7 @@ static const char *stress_nanosleep_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_nanosleep_threads, "nanosleep-threads", TYPE_ID_UINT32, MIN_NANOSLEEP_THREADS, MAX_NANOSLEEP_THREADS, NULL },
-	{ OPT_nanosleep_method,  "nanosleep-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_nanosleep_method },
+	{ OPT_nanosleep_method,  "nanosleep-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_nanosleep_method },
 	END_OPT,
 };
 
@@ -161,7 +161,7 @@ static void *stress_nanosleep_pthread(void *c)
 	while (stress_continue(args) &&
 	       !thread_terminate &&
 	       (!ctxt->max_ops || (ctxt->counter < ctxt->max_ops))) {
-		cpu_cstate_t *cc;
+		const cpu_cstate_t *cc;
 
 		if (ctxt->mask & STRESS_NANOSLEEP_CSTATE) {
 			for (cc = ctxt->cstate_list; cc; cc = cc->next) {
@@ -199,7 +199,9 @@ static void *stress_nanosleep_pthread(void *c)
 static int stress_nanosleep(stress_args_t *args)
 {
 	uint64_t max_ops;
-	uint32_t i, n, limited = 0;
+	uint32_t i;
+	uint32_t n;
+	uint32_t limited = 0;
 	uint32_t nanosleep_threads = DEFAULT_NANOSLEEP_THREADS;
 	stress_ctxt_t *ctxts;
 	int ret = EXIT_SUCCESS;
@@ -208,8 +210,10 @@ static int stress_nanosleep(stress_args_t *args)
 #if defined(HAVE_CLOCK_GETTIME) &&	\
     defined(CLOCK_MONOTONIC)
 	double overhead_nsec;
-	double overrun_nsec, overrun_count;
-	double underrun_nsec, underrun_count;
+	double overrun_nsec;
+	double overrun_count;
+	double underrun_nsec;
+	double underrun_count;
 	const uint64_t benchmark_loops = 10000;
 #endif
 	cpu_cstate_t *cstate_list = stress_cpuidle_cstate_list_head();
@@ -246,7 +250,7 @@ static int stress_nanosleep(stress_args_t *args)
 
 	ctxts = (stress_ctxt_t *)calloc(nanosleep_threads, sizeof(*ctxts));
 	if (!ctxts) {
-		pr_inf_skip("%s: could not allocate context for %" PRIu32
+		pr_inf_skip("%s: allocate context failed for %" PRIu32
 			" pthreads%s, skipping stressor\n",
 			args->name, nanosleep_threads,
 			stress_memory_free_get());
@@ -313,7 +317,8 @@ tidy:
     defined(CLOCK_MONOTONIC)
 	overhead_nsec = 0.0;
 	for (i = 0; i < benchmark_loops; i++) {
-		struct timespec t1, t2;
+		struct timespec t1;
+		struct timespec t2;
 		long long int dt_nsec;
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t1);
@@ -367,12 +372,26 @@ tidy:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("nanosleep"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_nanosleep_info = {
 	.stressor = stress_nanosleep,
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_nanosleep_info = {

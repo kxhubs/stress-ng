@@ -26,6 +26,18 @@
 #define STRESS_DROP_CACHE_ALL		(STRESS_DROP_CACHE_PAGE_CACHE | \
 					 STRESS_DROP_CACHE_SLAB_OBJECTS)
 
+/*
+ *  https://www.kernel.org/doc/html/v6.6/admin-guide/sysctl/fs.html
+ */
+typedef struct stress_fs_dentry_stat {
+	int64_t	nr_dentry;	/* number of dentries allocated */
+	int64_t nr_unused;	/* dentries not used but in LRU list for reuse */
+	int64_t age_limit;	/* seconds before reclaimed */
+	int64_t want_pages;	/* non-zero when shrink_dcache_pages is called */
+	int64_t nr_negative;	/* number of negative dentries */
+	int64_t reserved;	/* reserved for future */
+} stress_fs_dentry_stat_t;
+
 extern WARN_UNUSED const char *stress_fs_temp_path_get(void);
 extern WARN_UNUSED int stress_fs_temp_path_check(void);
 extern size_t stress_fs_make_filename(char *fullname, const size_t fullname_len,
@@ -54,12 +66,14 @@ extern ssize_t stress_fs_file_write(const char *path, const char *buf,
 extern ssize_t stress_fs_discard(const char *path);
 extern WARN_UNUSED ssize_t stress_fs_file_read(const char *path, char *buf,
 	const size_t buf_len);
-extern WARN_UNUSED size_t stress_fs_max_file_limit_get(void);
+extern WARN_UNUSED uint64_t stress_fs_max_file_limit_get(void);
+extern void stress_fs_max_fd(const char *opt_name, const char *opt_arg,
+	stress_type_id_t *type_id, void *value);
 extern WARN_UNUSED size_t stress_fs_file_limit_get(void);
 extern WARN_UNUSED int stress_fs_bad_fd_get(void);
 extern WARN_UNUSED bool stress_fs_pipe_check(const int fd);
 extern WARN_UNUSED size_t stress_fs_max_pipe_size_get(void);
-extern WARN_UNUSED bool stress_fs_filename_dotty(const char *name);
+extern WARN_UNUSED bool CONST stress_fs_filename_dotty(const char *name);
 extern void stress_fs_dirent_list_free(struct dirent **dlist, const int n);
 extern WARN_UNUSED int stress_fs_dirent_list_prune(struct dirent **dlist, const int n);
 extern int stress_fs_fdinfo_read(const pid_t pid, const int fd);
@@ -77,4 +91,8 @@ extern void stress_fs_chattr_flags_unset(const char *pathname);
 extern void stress_fs_clean_dir(const char *name, const pid_t pid,
 	const uint32_t instance);
 extern int stress_fs_drop_caches(const int flags);
+extern void stress_fs_io_stats_begin(stress_io_stats_t *io_stats);
+extern void stress_fs_io_stats_end(stress_io_stats_t *io_stats);
+extern void stress_fs_dentry_state_get(stress_fs_dentry_stat_t *dentry_stat);
+
 #endif

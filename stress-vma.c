@@ -124,9 +124,8 @@ static void stress_vma_page_name(const void *addr, size_t page_size)
 
 	if (stress_mwc1()) {
 		char name[80];
-
-		size_t i;
 		const size_t len = 10 + stress_mwc8modn(sizeof(name) - 11);
+		size_t i;
 
 		for (i = 0; i < len; i++) {
 			const size_t idx = (size_t)stress_mwc8modn(sizeof(charset) - 1);
@@ -150,9 +149,11 @@ static void *stress_mmapaddr_get_addr(stress_args_t *args)
 {
 	const uintptr_t mask = ~(((uintptr_t)args->page_size) - 1);
 	void *addr = NULL;
+	char *text_start;
+	char *text_end;
+	char *heap_end;
 	uintptr_t ui_addr;
 	size_t i;
-	char *text_start, *text_end, *heap_end;
 	const size_t page_size = args->page_size;
 	size_t mmap_size = page_size * STRESS_VMA_PAGES;
 
@@ -706,7 +707,8 @@ static void stress_vma_loop(
 	stress_args_t *args,
 	stress_vma_context_t *ctxt)
 {
-	size_t i, n;
+	size_t i;
+	size_t n;
 
 	VOID_RET(int, stress_signal_handler(args->name, SIGSEGV, stress_vm_handle_sigsegv, NULL));
 	VOID_RET(int, stress_signal_handler(args->name, SIGBUS, stress_vm_handle_sigbus, NULL));
@@ -753,6 +755,7 @@ static void stress_vma_loop(
 				if (pthreads_ret[i] == 0) {
 					VOID_RET(int, pthread_kill(pthreads[i], SIGBUS));
 					VOID_RET(int, pthread_cancel(pthreads[i]));
+					VOID_RET(int, pthread_join(pthreads[i], NULL));
 				}
 			}
 
@@ -768,14 +771,15 @@ static void stress_vma_loop(
 
 static int stress_vma_child(stress_args_t *args, void *void_ctxt)
 {
-	size_t i;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	stress_vma_context_t *ctxt = (stress_vma_context_t *)void_ctxt;
+	size_t i;
 	int ret;
 
 	s_pids = stress_sync_s_pids_mmap(STRESS_VMA_PROCS);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %d PIDs, skipping stressor\n", args->name, STRESS_VMA_PROCS);
+		pr_inf_skip("%s: mmap %d PIDs failed, skipping stressor\n", args->name, STRESS_VMA_PROCS);
 		return EXIT_NO_RESOURCE;
 	}
 
@@ -820,15 +824,16 @@ static int stress_vma_child(stress_args_t *args, void *void_ctxt)
  */
 static int stress_vma(stress_args_t *args)
 {
-	int ret;
-	size_t i;
-	double t1, duration;
 	stress_vma_context_t ctxt;
+	size_t i;
+	int ret;
+	double t1;
+	double duration;
 
 	stress_vma_page = mmap(NULL, args->page_size, PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (stress_vma_page == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap 1 page (%zu bytes) , errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap 1 page (%zu bytes) failed, errno=%d (%s), skipping stressor\n",
 			args->name, args->page_size, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -836,7 +841,7 @@ static int stress_vma(stress_args_t *args)
 	stress_vma_metrics = (stress_vma_metrics_t *)
 		stress_mmap_anon_shared(sizeof(*stress_vma_metrics), PROT_READ | PROT_WRITE);
 	if (stress_vma_metrics == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap vma shared statistics data, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap vma shared statistics data failed, errno=%d (%s), skipping stressor\n",
 			args->name, errno, strerror(errno));
 		(void)munmap(stress_vma_page, args->page_size);
 		return EXIT_NO_RESOURCE;
@@ -866,11 +871,35 @@ static int stress_vma(stress_args_t *args)
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("mlock"),
+	STRESS_EX_SYSCALL("munlock"),
+#if defined(HAVE_MADVISE)
+	STRESS_EX_SYSCALL("madvise"),
+#endif
+#if defined(HAVE_MINCORE)
+	STRESS_EX_SYSCALL("mincore"),
+#endif
+	STRESS_EX_SYSCALL("mprotect"),
+	STRESS_EX_SYSCALL("msync"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_vma_info = {
 	.stressor = stress_vma,
 	.classifier = CLASS_VM,
 	.help = help,
-	.max_metrics_items = STRESS_VMA_MAX
+	.max_metrics_items = STRESS_VMA_MAX,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_vma_info = {

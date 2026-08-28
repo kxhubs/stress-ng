@@ -24,8 +24,8 @@
 #include "core-numa.h"
 #include "core-out-of-memory.h"
 
-#define DEFAULT_MREMAP_BYTES	(256 * MB)
-#define MIN_MREMAP_BYTES	(4 * KB)
+#define DEFAULT_MREMAP_BYTES	(256 * STRESS_MB)
+#define MIN_MREMAP_BYTES	(4 * STRESS_KB)
 #define MAX_MREMAP_BYTES	(MAX_MEM_LIMIT)
 
 static const stress_help_t help[] = {
@@ -92,7 +92,8 @@ static int try_remap(
 	double *count)
 {
 	uint8_t *newbuf;
-	int retry, flags = 0;
+	int retry;
+	int flags = 0;
 	static int metrics_counter = 0;
 #if defined(MREMAP_MAYMOVE)
 	const int maymove = MREMAP_MAYMOVE;
@@ -115,7 +116,7 @@ static int try_remap(
 #endif
 		if (UNLIKELY(!stress_continue_flag())) {
 			(void)stress_munmap_force(*buf, old_sz);
-			*buf = 0;
+			*buf = NULL;
 			return 0;
 		}
 		if (UNLIKELY(metrics_counter == 0))
@@ -197,12 +198,17 @@ static int try_remap(
 
 static int stress_mremap_child(stress_args_t *args, void *context)
 {
-	size_t new_sz, sz, mremap_bytes, mremap_bytes_total = DEFAULT_MREMAP_BYTES;
+	size_t new_sz;
+	size_t sz;
+	size_t mremap_bytes;
+	size_t mremap_bytes_total = DEFAULT_MREMAP_BYTES;
 	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
 	const size_t page_size = args->page_size;
 	bool mremap_mlock = false;
 	bool mremap_numa = false;
-	double duration = 0.0, count = 0.0, rate;
+	double duration = 0.0;
+	double count = 0.0;
+	double rate;
 	int ret = EXIT_SUCCESS;
 #if defined(HAVE_LINUX_MEMPOLICY_H)
 	stress_numa_mask_t *numa_mask = NULL;
@@ -252,7 +258,8 @@ static int stress_mremap_child(stress_args_t *args, void *context)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		uint8_t *buf = NULL, *ptr;
+		uint8_t *buf = NULL;
+		uint8_t *ptr;
 		size_t old_sz;
 
 		if (UNLIKELY(!stress_continue_flag()))
@@ -361,10 +368,7 @@ deinit:
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
 
 #if defined(HAVE_LINUX_MEMPOLICY_H)
-	if (numa_mask)
-		stress_numa_mask_free(numa_mask);
-	if (numa_nodes)
-		stress_numa_mask_free(numa_nodes);
+	stress_numa_mask_nodes_free(numa_mask, numa_nodes);
 #endif
 
 	return ret;
@@ -379,12 +383,25 @@ static int stress_mremap(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_mremap_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("memory-stalls"),
+
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("mmap"),
+	STRESS_EX_SYSCALL("mremap"),
+	STRESS_EX_SYSCALL("munmap"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mremap_info = {
 	.stressor = stress_mremap,
 	.classifier = CLASS_VM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_mremap_info = {

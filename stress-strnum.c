@@ -307,7 +307,7 @@ static bool OPTIMIZE3 stress_strnum_sscanf_llu(stress_args_t *args, const stress
 static bool OPTIMIZE3 stress_strnum_strtof(stress_args_t *args, const stress_strnum_method_t *method)
 {
 	float val;
-	const float precision = 1.0E-5;
+	const float precision = 1.0E-5f;
 
 	val = strtof(stress_strnum_float_str, NULL);
 	if (UNLIKELY(shim_fabsf(val - stress_strnum_float) > precision)) {
@@ -364,7 +364,7 @@ static bool OPTIMIZE3 stress_strnum_snprintf_i(stress_args_t *args, const stress
 			args->name, stress_strnum_i);
 		return false;
 	}
-	if (UNLIKELY(strcmp(str, stress_strnum_i_str))) {
+	if (UNLIKELY(shim_strcmp(str, stress_strnum_i_str))) {
 		pr_fail("%s: snprintf(str, sizeof(str), \"%%d\", %d) failed, got '%s', expected '%s'\n",
 			args->name, stress_strnum_i, str, stress_strnum_i_str);
 		return false;
@@ -385,7 +385,7 @@ static bool OPTIMIZE3 stress_strnum_snprintf_li(stress_args_t *args, const stres
 			args->name, stress_strnum_li);
 		return false;
 	}
-	if (UNLIKELY(strcmp(str, stress_strnum_li_str))) {
+	if (UNLIKELY(shim_strcmp(str, stress_strnum_li_str))) {
 		pr_fail("%s: snprintf(str, sizeof(str), \"%%ld\", %ld) failed, got '%s', expected '%s'\n",
 			args->name, stress_strnum_li, str, stress_strnum_li_str);
 		return false;
@@ -406,7 +406,7 @@ static bool OPTIMIZE3 stress_strnum_snprintf_lli(stress_args_t *args, const stre
 			args->name, stress_strnum_lli);
 		return false;
 	}
-	if (UNLIKELY(strcmp(str, stress_strnum_lli_str))) {
+	if (UNLIKELY(shim_strcmp(str, stress_strnum_lli_str))) {
 		pr_fail("%s: snprintf(str, sizeof(str), \"%%lld\", %lld) failed, got '%s', expected '%s'\n",
 			args->name, stress_strnum_lli, str, stress_strnum_lli_str);
 		return false;
@@ -417,7 +417,7 @@ static bool OPTIMIZE3 stress_strnum_snprintf_lli(stress_args_t *args, const stre
 static bool OPTIMIZE3 stress_strnum_sscanf_f(stress_args_t *args, const stress_strnum_method_t *method)
 {
 	float val;
-	const float precision = 1.0E-4;
+	const float precision = 1.0E-4f;
 	int ret;
 
 	(void)method;
@@ -487,7 +487,7 @@ static inline ALWAYS_INLINE OPTIMIZE3 size_t stress_strnum_trunc_posn(const char
 {
 	const char *ptr;
 
-	ptr = strchr(str, '.');
+	ptr = shim_strchr(str, '.');
 	if (LIKELY(ptr != NULL)) {
 		return (ptr - str) + dec_pl + 1;
 	}
@@ -506,7 +506,7 @@ static bool OPTIMIZE3 stress_strnum_strfromf(stress_args_t *args, const stress_s
 	(void)strfromf(str, sizeof(str), "%.7f", stress_strnum_float);
 	posn = stress_strnum_trunc_posn(str, 4);
 	if (posn) {
-		if (strncmp(str, stress_strnum_float_str, posn)) {
+		if (shim_strncmp(str, stress_strnum_float_str, posn)) {
 			pr_fail("%s: strfromf(str, sizeof(str), \"%%.7f\", %.7f) failed, got %s, expecting %s\n",
 				args->name, (double)stress_strnum_float, str, stress_strnum_float_str);
 			return false;
@@ -526,7 +526,7 @@ static bool OPTIMIZE3 stress_strnum_strfromd(stress_args_t *args, const stress_s
 
 	(void)strfromd(str, sizeof(str), "%.7g", stress_strnum_double);
 	posn = stress_strnum_trunc_posn(str, 6);
-	if (strncmp(str, stress_strnum_double_str, posn)) {
+	if (shim_strncmp(str, stress_strnum_double_str, posn)) {
 		pr_fail("%s: strfromd(str, sizeof(str), \"%%.7g\", %.7g) failed, got %s, expecting %s\n",
 			args->name, stress_strnum_double, str, stress_strnum_double_str);
 		return false;
@@ -545,7 +545,7 @@ static bool OPTIMIZE3 stress_strnum_strfroml(stress_args_t *args, const stress_s
 
 	(void)strfroml(str, sizeof(str), "%.7f", stress_strnum_long_double);
 	posn = stress_strnum_trunc_posn(str, 6);
-	if (strncmp(str, stress_strnum_long_double_str, posn)) {
+	if (shim_strncmp(str, stress_strnum_long_double_str, posn)) {
 		pr_fail("%s: strfroml(str, sizeof(str), \"%%.7f\", %.7Lf) failed, got %s, expecting %s\n",
 			args->name, stress_strnum_long_double, str, stress_strnum_long_double_str);
 		return false;
@@ -653,7 +653,6 @@ static int stress_strnum(stress_args_t *args)
 		stress_strnum_metrics[i].count = 0.0;
 	}
 
-
 	i = 0;
 	stress_strnum_set_values();
 
@@ -691,8 +690,25 @@ static const char *stress_strnum_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_strnum_method, "strnum-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)stress_strnum_method },
+	{ OPT_strnum_method, "strnum-method", TYPE_ID_SIZE_T_METHOD, 0, 1, stress_strnum_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("string"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_strnum_info = {
@@ -701,5 +717,6 @@ const stressor_info_t stress_strnum_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_strnum_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_strnum_methods),
+	.exercises = exercises,
 };

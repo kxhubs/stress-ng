@@ -52,11 +52,8 @@ static pid_t stress_tee_spawn(
 		return -1;
 	}
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		(void)close(fds[0]);
 		(void)close(fds[1]);
 		if (UNLIKELY(!stress_continue(args)))
@@ -223,20 +220,25 @@ static int exercise_tee(
  */
 static int stress_tee(stress_args_t *args)
 {
-	ssize_t len, slen;
-	int fd, pipe_in[2], pipe_out[2];
+	ssize_t len;
+	ssize_t slen;
+	int fd;
+	int pipe_in[2];
+	int pipe_out[2];
 	pid_t pids[2];
 	int ret = EXIT_FAILURE;
 	const int release = stress_kernel_release_get();
 	int metrics_count = 0;
-	double duration = 0.0, bytes = 0.0, rate;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 
 	if (stress_signal_handler(args->name, SIGPIPE, stress_signal_stop_flag_handler, NULL) < 0)
 		return EXIT_NO_RESOURCE;
 
 	fd = open("/dev/null", O_WRONLY);
 	if (fd < 0) {
-		pr_err("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_err("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -322,7 +324,7 @@ do_splice:
 
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec tee rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 tidy_child2:
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -339,11 +341,21 @@ tidy_fd:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("tee"),
+	STRESS_EX_SYSCALL("splice"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_tee_info = {
 	.stressor = stress_tee,
 	.classifier = CLASS_PIPE_IO | CLASS_OS | CLASS_SCHEDULER,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_tee_info = {

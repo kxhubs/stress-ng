@@ -212,7 +212,8 @@ static int OPTIMIZE3 stress_netlink_taskstats_monitor(
 {
 	do {
 		stress_nlmsg_t msg ALIGN64;
-		ssize_t msg_len, len;
+		ssize_t msg_len;
+		ssize_t len;
 		int ret;
 		pid_t pid_data = pid;
 		struct nlattr *na;
@@ -260,7 +261,8 @@ static int OPTIMIZE3 stress_netlink_taskstats_monitor(
  */
 static int stress_netlink_task(stress_args_t *args)
 {
-	int ret, sock = -1;
+	int ret;
+	int sock = -1;
 	ssize_t len;
 	struct sockaddr_nl addr;
 	struct nlattr *na;
@@ -352,12 +354,22 @@ static int stress_netlink_task(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("recvfrom"),
+	STRESS_EX_SYSCALL("sendto"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_netlink_task_info = {
 	.stressor = stress_netlink_task,
 	.supported = stress_netlink_task_supported,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_netlink_task_info = {

@@ -85,7 +85,7 @@ static const int all_setfl_flags =
  *	sanity check fcntl() return for errors
  */
 static void check_return(
-	stress_args_t *args,
+	const stress_args_t *args,
 	const int ret,
 	const char *cmd,
 	int *rc)
@@ -152,7 +152,8 @@ static void do_fcntl(
 #if defined(F_SETFD) &&		\
     defined(O_CLOEXEC)
 		if (old_flags > -1) {
-			int new_flags, ret;
+			int new_flags;
+			int ret;
 
 			new_flags = old_flags | O_CLOEXEC;
 			ret = fcntl(fd, F_SETFD, new_flags);
@@ -182,10 +183,11 @@ static void do_fcntl(
 #if defined(F_SETFL) &&		\
     defined(O_APPEND)
 		if (old_flags > -1) {
-			int new_flags, ret;
+			int new_flags;
+			int ret;
 
 			/* Exercise all permutations of SETFL flags */
-			if ((setfl_flag_count > 0) && (setfl_flag_perms)) {
+			if ((setfl_flag_count > 0) && setfl_flag_perms) {
 				static size_t idx;
 
 				VOID_RET(int, fcntl(fd, F_SETFL, setfl_flag_perms[idx]));
@@ -821,9 +823,13 @@ ofd_lock_abort:	{ /* Nowt */ }
 static int stress_fcntl(stress_args_t *args)
 {
 	const pid_t ppid = getppid();
-	int fd, rc = EXIT_FAILURE, retries = 0, path_fd;
+	int fd;
+	int rc = EXIT_FAILURE;
+	int retries = 0;
+	int path_fd;
 	const int bad_fd = stress_fs_bad_fd_get();
-	char filename[PATH_MAX], pathname[PATH_MAX];
+	char filename[PATH_MAX];
+	char pathname[PATH_MAX];
 
 	setfl_flag_count = stress_flag_permutation(all_setfl_flags, &setfl_flag_perms);
 
@@ -833,7 +839,7 @@ static int stress_fcntl(stress_args_t *args)
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name, ppid, 0);
 	if (mkdir(pathname, S_IRWXU) < 0) {
 		if (errno != EEXIST) {
-			pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
+			pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 				args->name, pathname, errno, strerror(errno));
 			return stress_exit_status(errno);
 		}
@@ -852,6 +858,7 @@ static int stress_fcntl(stress_args_t *args)
 #endif
 
 	do {
+		retries++;
 		errno = 0;
 		/*
 		 *  Try and open the file, it may be impossible
@@ -875,16 +882,16 @@ static int stress_fcntl(stress_args_t *args)
 				rc = EXIT_SUCCESS;
 				goto tidy;
 			}
-			pr_fail("%s: creat %s failed, errno=%d (%s)\n",
+			pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			goto tidy;
 		} else {
 			break;
 		}
-	} while (stress_continue_flag() && ++retries < 100);
+	} while (stress_continue_flag() && (retries <= 100));
 
 	if ((fd < 0) || (retries >= 100)) {
-		pr_err("%s: creat: file %s took %d "
+		pr_err("%s: creat '%s' took %d "
 			"retries to create (instance %" PRIu32 ")\n",
 			args->name, filename, retries, args->instance);
 		goto tidy;
@@ -912,9 +919,15 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fcntl_info = {
 	.stressor = stress_fcntl,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

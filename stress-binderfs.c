@@ -71,33 +71,36 @@ static int stress_binderfs_supported(const char *name)
     defined(HAVE_FSMOUNT) &&		\
     defined(HAVE_MOVE_MOUNT) &&		\
     defined(HAVE_SYS_MOUNT_H)
-	int fd, fd_mnt;
+	{
+		int fd;
+		int fd_mnt;
 
-	fd = fsopen("binder", FSOPEN_CLOEXEC);
-	if (fd < 0)
-		goto unsupported;
-	if (fsconfig(fd, FSCONFIG_SET_STRING, "source", "binder", 0) < 0) {
-		(void)close(fd);
-		goto unsupported;
-	}
-	if (fsconfig(fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0) < 0) {
-		(void)close(fd);
-		goto unsupported;
-	}
-	fd_mnt = fsmount(fd, FSMOUNT_CLOEXEC, 0);
-	if (fd_mnt < 0) {
-		(void)close(fd);
-		goto unsupported;
-	}
-	if (move_mount(fd_mnt, "", AT_FDCWD, path, MOVE_MOUNT_F_EMPTY_PATH) < 0) {
+		fd = fsopen("binder", FSOPEN_CLOEXEC);
+		if (fd < 0)
+			goto unsupported;
+		if (fsconfig(fd, FSCONFIG_SET_STRING, "source", "binder", 0) < 0) {
+			(void)close(fd);
+			goto unsupported;
+		}
+		if (fsconfig(fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0) < 0) {
+			(void)close(fd);
+			goto unsupported;
+		}
+		fd_mnt = fsmount(fd, FSMOUNT_CLOEXEC, 0);
+		if (fd_mnt < 0) {
+			(void)close(fd);
+			goto unsupported;
+		}
+		if (move_mount(fd_mnt, "", AT_FDCWD, path, MOVE_MOUNT_F_EMPTY_PATH) < 0) {
+			(void)close(fd_mnt);
+			(void)close(fd);
+			goto unsupported;
+		}
 		(void)close(fd_mnt);
 		(void)close(fd);
-		goto unsupported;
+		(void)umount(path);
+		(void)rmdir(path);
 	}
-	(void)close(fd_mnt);
-	(void)close(fd);
-	(void)umount(path);
-	(void)rmdir(path);
 	return 0;
 #else
 	if (mount("binder", path, "binder", 0, 0) < 0)
@@ -133,7 +136,8 @@ static int stress_binderfs_umount(
 
 	t1 = stress_time_now();
 	for (;;) {
-		double t, t2;
+		double t;
+		double t2;
 		int ret;
 
 		t = stress_time_now();
@@ -173,11 +177,14 @@ static int stress_binderfs_umount(
  */
 static int stress_binderfs(stress_args_t *args)
 {
-	int rc, ret;
+	int rc;
+	int ret;
 	char pathname[PATH_MAX];
 	char filename[PATH_MAX + 16];
-	double mount_duration = 0.0, umount_duration = 0.0;
-	double mount_count = 0.0, umount_count = 0.0;
+	double mount_duration = 0.0;
+	double umount_duration = 0.0;
+	double mount_count = 0.0;
+	double umount_count = 0.0;
 	double rate;
 	static const char skip[] = "skipping stressor";
 
@@ -202,7 +209,8 @@ static int stress_binderfs(stress_args_t *args)
     defined(HAVE_FSMOUNT) &&		\
     defined(HAVE_MOVE_MOUNT) &&		\
     defined(HAVE_SYS_MOUNT_H)
-		int fd_mnt, saved_errno;
+		int fd_mnt;
+		int saved_errno;
 #endif
 
 		t = stress_time_now();
@@ -213,20 +221,20 @@ static int stress_binderfs(stress_args_t *args)
     defined(HAVE_SYS_MOUNT_H)
 		fd = fsopen("binder", FSOPEN_CLOEXEC);
 		if (fd < 0) {
-			pr_inf_skip("%s: fsopen failed on binderfs at %s, errno=%d (%s), %s\n",
+			pr_inf_skip("%s: fsopen failed on binderfs on '%s', errno=%d (%s), %s\n",
 				args->name, pathname, errno, strerror(errno), skip);
 			rc = EXIT_NO_RESOURCE;
 			goto clean;
 		}
 		if (fsconfig(fd, FSCONFIG_SET_STRING, "source", "binder", 0) < 0) {
-			pr_inf_skip("%s: fsconfig failed on binderfs at %s, errno=%d (%s), %s\n",
+			pr_inf_skip("%s: fsconfig failed on binderfs on '%s', errno=%d (%s), %s\n",
 				args->name, pathname, errno, strerror(errno), skip);
 			rc = EXIT_NO_RESOURCE;
 			(void)close(fd);
 			goto clean;
 		}
 		if (fsconfig(fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0) < 0) {
-			pr_inf_skip("%s: fsconfig failed on binderfs at %s, errno=%d (%s), %s\n",
+			pr_inf_skip("%s: fsconfig failed on binderfs on '%s', errno=%d (%s), %s\n",
 				args->name, pathname, errno, strerror(errno), skip);
 			rc = EXIT_NO_RESOURCE;
 			(void)close(fd);
@@ -234,7 +242,7 @@ static int stress_binderfs(stress_args_t *args)
 		}
 		fd_mnt = fsmount(fd, FSMOUNT_CLOEXEC, 0);
 		if (fd_mnt < 0) {
-			pr_inf_skip("%s: fsmount failed on binderfs at %s, errno=%d (%s), %s\n",
+			pr_inf_skip("%s: fsmount failed on binderfs on '%s', errno=%d (%s), %s\n",
 				args->name, pathname, errno, strerror(errno), skip);
 			rc = EXIT_NO_RESOURCE;
 			(void)close(fd);
@@ -264,13 +272,13 @@ static int stress_binderfs(stress_args_t *args)
 				   (errno == ENOMEM) ||
 				   (errno == EPERM)) {
 				/* ..ran out of resources, skip */
-				pr_inf_skip("%s: mount failed on binderfs at %s, errno=%d (%s), %s\n",
+				pr_inf_skip("%s: mount failed on binderfs on '%s', errno=%d (%s), %s\n",
 					args->name, pathname, errno, strerror(errno), skip);
 				rc = EXIT_NO_RESOURCE;
 				goto clean;
 			} else {
 				/* ..failed! */
-				pr_fail("%s: mount failed on binderfs at %s, errno=%d (%s)\n",
+				pr_fail("%s: mount failed on binderfs on '%s', errno=%d (%s)\n",
 					args->name, pathname, errno, strerror(errno));
 				rc = EXIT_FAILURE;
 				goto clean;
@@ -330,12 +338,30 @@ clean:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("ioctl"),
+#if defined(HAVE_FSOPEN) &&		\
+    defined(HAVE_FSCONFIG) &&		\
+    defined(HAVE_FSMOUNT) &&		\
+    defined(HAVE_MOVE_MOUNT) &&		\
+    defined(HAVE_SYS_MOUNT_H)
+	STRESS_EX_SYSCALL("fsconfig"),
+	STRESS_EX_SYSCALL("fsmount"),
+	STRESS_EX_SYSCALL("fsopen"),
+#else
+	STRESS_EX_SYSCALL("mount"),
+#endif
+	STRESS_EX_SYSCALL("umount"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_binderfs_info = {
 	.stressor = stress_binderfs,
 	.supported = stress_binderfs_supported,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_binderfs_info = {

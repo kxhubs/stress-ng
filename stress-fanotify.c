@@ -20,6 +20,7 @@
 #include "stress-ng.h"
 #include "core-builtin.h"
 #include "core-capabilities.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-mounts.h"
 #include "core-signal.h"
@@ -352,7 +353,9 @@ static int test_fanotify_mark(char *mounts[])
  */
 static int fanotify_event_init(char *mounts[], const unsigned int flags)
 {
-	int fan_fd, count = 0, i;
+	int fan_fd;
+	int count = 0;
+	int i;
 
 	fan_fd = fanotify_init(flags, 0);
 	if (fan_fd < 0)
@@ -500,9 +503,12 @@ static void stress_fanotify_read_events(
  */
 static int stress_fanotify(stress_args_t *args)
 {
-	char pathname[PATH_MAX - 16], filename[PATH_MAX], filename2[PATH_MAX];
+	char pathname[PATH_MAX - 16];
+	char filename[PATH_MAX];
+	char filename2[PATH_MAX];
 	pid_t pid;
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	stress_fanotify_account_t account;
 
 	if (stress_signal_sigchld_handler(args) < 0)
@@ -555,7 +561,7 @@ static int stress_fanotify(stress_args_t *args)
 			/* Force FAN_CLOSE_NOWRITE */
 			fd = creat(filename, S_IRUSR | S_IWUSR);
 			if (fd < 0) {
-				pr_fail("%s: creat %s failed, errno=%d (%s)\n",
+				pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 					args->name, filename, errno, strerror(errno));
 				_exit(EXIT_FAILURE);
 			}
@@ -564,7 +570,7 @@ static int stress_fanotify(stress_args_t *args)
 			/* Force FAN_CLOSE_WRITE */
 			fd = open(filename, O_WRONLY, S_IRUSR | S_IWUSR);
 			if (fd < 0) {
-				pr_fail("%s: open %s O_WRONLY failed, errno=%d (%s)\n",
+				pr_fail("%s: open '%s' O_WRONLY failed, errno=%d (%s)\n",
 					args->name, filename, errno, strerror(errno));
 				_exit(EXIT_FAILURE);
 			}
@@ -574,7 +580,7 @@ static int stress_fanotify(stress_args_t *args)
 			/* Force FAN_ACCESS */
 			fd = open(filename, O_RDONLY, S_IRUSR | S_IWUSR);
 			if (fd < 0) {
-				pr_fail("%s: open %s O_RDONLY failed, errno=%d (%s)\n",
+				pr_fail("%s: open '%s' O_RDONLY failed, errno=%d (%s)\n",
 					args->name, filename, errno, strerror(errno));
 				_exit(EXIT_FAILURE);
 			}
@@ -700,14 +706,14 @@ static int stress_fanotify(stress_args_t *args)
 
 #if defined(FIONREAD)
 			{
-				int isz;
-
 				/*
 				 *  Force kernel to determine number
 				 *  of bytes that are ready to be read
 				 *  for some extra stress
 				 */
-				VOID_RET(int, ioctl(fan_fd1, FIONREAD, &isz));
+				if (stress_ioctl_get_check(fan_fd1, FIONREAD, sizeof(int)) < 0)
+					pr_fail("%s: ioctl FIONREAD failed, not getting flags reliably\n",
+						args->name);
 			}
 #endif
 			if (FD_ISSET(fan_fd1, &rfds))
@@ -768,12 +774,24 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("filemap-page-cache"),
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("writeback-dirty-folio"),
+
+	STRESS_EX_SYSCALL("fanotify_init"),
+	STRESS_EX_SYSCALL("fanotify_mark"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fanotify_info = {
 	.stressor = stress_fanotify,
 	.supported = stress_fanotify_supported,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fanotify_info = {

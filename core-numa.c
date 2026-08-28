@@ -34,9 +34,11 @@ static const char option[] = "option --mbind";
 long int stress_numa_count_mem_nodes(long int *max_node)
 {
 	FILE *fp;
-	long int node_id = 0, n = 0;
+	long int node_id = 0;
+	long int n = 0;
 	char buffer[8192];
-	const char *str = NULL, *ptr;
+	const char *str = NULL;
+	const char *ptr;
 
 	*max_node = 0;
 
@@ -45,7 +47,7 @@ long int stress_numa_count_mem_nodes(long int *max_node)
 		return -1;
 
 	while (fgets(buffer, sizeof(buffer), fp)) {
-		if (!strncmp(buffer, "Mems_allowed:", 13)) {
+		if (!shim_strncmp(buffer, "Mems_allowed:", 13)) {
 			str = buffer + 13;
 			break;
 		}
@@ -99,7 +101,8 @@ long int stress_numa_mask_nodes_get(stress_numa_mask_t *numa_mask)
 	FILE *fp;
 	long int node_id = 0;
 	char buffer[8192];
-	const char *str = NULL, *ptr;
+	const char *str = NULL;
+	const char *ptr;
 	long int n = 0;
 
 	(void)shim_memset(numa_mask->mask, 0, numa_mask->mask_size);
@@ -109,7 +112,7 @@ long int stress_numa_mask_nodes_get(stress_numa_mask_t *numa_mask)
 		return -1;
 
 	while (fgets(buffer, sizeof(buffer), fp)) {
-		if (!strncmp(buffer, "Mems_allowed:", 13)) {
+		if (!shim_strncmp(buffer, "Mems_allowed:", 13)) {
 			str = buffer + 13;
 			break;
 		}
@@ -202,10 +205,10 @@ stress_numa_mask_t *stress_numa_mask_alloc(void)
 	}
 
 	/* number of longs based on maximum number of nodes */
-	numa_mask->numa_elements = (numa_mask->max_nodes + NUMA_LONG_BITS - 1) / NUMA_LONG_BITS;
+	numa_mask->numa_elements = (numa_mask->max_nodes + STRESS_NUMA_LONG_BITS - 1) / STRESS_NUMA_LONG_BITS;
 	numa_mask->numa_elements = numa_mask->numa_elements ? numa_mask->numa_elements : 1;
 	/* size of mask in bytes */
-	numa_mask->mask_size = (size_t)(NUMA_LONG_BITS * numa_mask->numa_elements) / BITS_PER_BYTE;
+	numa_mask->mask_size = (size_t)(STRESS_NUMA_LONG_BITS * numa_mask->numa_elements) / STRESS_BITS_PER_BYTE;
 	/* allocated mask */
 	numa_mask->mask = (unsigned long int *)calloc(numa_mask->mask_size, 1);
 	if (UNLIKELY(!numa_mask->mask)) {
@@ -225,6 +228,18 @@ void stress_numa_mask_free(stress_numa_mask_t *numa_mask)
 		return;
 	free(numa_mask->mask);
 	free(numa_mask);
+}
+
+/*
+ *  stress_numa_mask_nodes_free()
+ *  	free numa mask and numa nodes
+ */
+void stress_numa_mask_nodes_free(
+	stress_numa_mask_t *numa_mask,
+	stress_numa_mask_t *numa_nodes)
+{
+	stress_numa_mask_free(numa_mask);
+	stress_numa_mask_free(numa_nodes);
 }
 
 #if defined(__NR_get_mempolicy) &&      \
@@ -268,9 +283,17 @@ void stress_numa_randomize_pages(
 	const size_t buffer_size,
 	const size_t page_size)
 {
-	uint8_t *ptr, *prev_ptr, *ptr_end;
-	long int node, prev_node;
-	size_t buffer_pages, chunks, size, chunk_size, parts, max_chunks;
+	uint8_t *ptr;
+	uint8_t *prev_ptr;
+	uint8_t *ptr_end;
+	long int node;
+	long int prev_node;
+	size_t buffer_pages;
+	size_t chunks;
+	size_t size;
+	size_t chunk_size;
+	size_t parts;
+	size_t max_chunks;
 
 	if (UNLIKELY(page_size == 0))
 		return;
@@ -393,16 +416,23 @@ static long int stress_parse_node(const char *const str)
  *
  * Returns: 0 - OK
  */
-int stress_set_mbind(const char *arg)
+int stress_set_mbind(void)
 {
-	char *str, *ptr, *token;
+	char *str;
+	char *ptr;
+	char *token;
+	char *mbind;
+	char *saveptr = NULL;
 	long int max_node;
 	unsigned long int *nodemask;
 	const size_t nodemask_bits = sizeof(*nodemask) * 8;
 	size_t nodemask_sz;
 
+	if (!stress_setting_get("mbind", &mbind))
+		return 0;
+
 	if (stress_numa_count_mem_nodes(&max_node) < 1) {
-		(void)fprintf(stderr, "no NUMA nodes found, ignoring --mbind setting '%s'\n", arg);
+		(void)fprintf(stderr, "no NUMA nodes found, ignoring --mbind setting '%s'\n", mbind);
 		return 0;
 	}
 
@@ -413,16 +443,16 @@ int stress_set_mbind(const char *arg)
 		_exit(EXIT_FAILURE);
 	}
 
-	str = stress_const_optdup(arg);
+	str = stress_const_optdup(mbind);
 	if (!str) {
-		(void)fprintf(stderr, "out of memory duplicating argument '%s'\n", arg);
+		(void)fprintf(stderr, "out of memory duplicating argument '%s'\n", mbind);
 		free(nodemask);
 		_exit(EXIT_FAILURE);
 	}
 
-	for (ptr = str; (token = strtok(ptr, ",")) != NULL; ptr = NULL) {
+	for (ptr = str; (token = shim_strtok_r(ptr, ",", &saveptr)) != NULL; ptr = NULL) {
 		unsigned long int i, lo, hi;
-		const char *tmpptr = strstr(token, "-");
+		const char *tmpptr = shim_strstr(token, "-");
 
 		hi = lo = stress_parse_node(token);
 		if (tmpptr) {
@@ -540,9 +570,12 @@ long int CONST stress_numa_nodes(void)
 	return 1;
 }
 
-int stress_set_mbind(const char *arg)
+int stress_set_mbind(void)
 {
-	(void)arg;
+	char *mbind;
+
+	if (!stress_setting_get("mbind", &mbind))
+		return 0;
 
 	(void)fprintf(stderr, "%s: setting NUMA memory policy binding not supported\n", option);
 	_exit(EXIT_FAILURE);

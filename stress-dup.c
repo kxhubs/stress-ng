@@ -59,7 +59,8 @@ typedef struct {
 
 static int stress_dup2_race_clone(void *arg)
 {
-	int fd, fd_dup;
+	int fd;
+	int fd_dup;
 	info_t *info = (info_t *)arg;
 
 	/* Should never be null, but weird things may happen  */
@@ -100,7 +101,8 @@ static int static_dup2_child(info_t *info)
 {
 	struct sigaction action;
 	struct itimerval timer;
-	pid_t child_tid = -1, parent_tid = -1;
+	pid_t child_tid = -1;
+	pid_t parent_tid = -1;
 	char *stack_top = (char *)stress_stack_top((void *)info->stack, sizeof(info->stack));
 
 	info->fd_pipe = -1;
@@ -215,7 +217,9 @@ static int stress_dup(stress_args_t *args)
 	size_t max_fd = stress_fs_file_limit_get();
 	bool do_dup3 = true;
 	const int bad_fd = stress_fs_bad_fd_get();
-	double dup_duration = 0.0, dup_count = 0.0, rate;
+	double dup_duration = 0.0;
+	double dup_count = 0.0;
+	double rate;
 #if defined(STRESS_DUP2_RACE)
 	info_t *info;
 
@@ -238,7 +242,7 @@ static int stress_dup(stress_args_t *args)
 
 	fds[0] = open("/dev/zero", O_RDONLY);
 	if (fds[0] < 0) {
-		pr_dbg("%s: open failed on /dev/zero, errno=%d (%s)\n",
+		pr_dbg("%s: open '/dev/zero' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_fds;
@@ -423,7 +427,7 @@ tidy_mmap:
 		(void)munmap((void *)info, sizeof(*info));
 	}
 #endif
-	rate = (dup_count > 0.0) ? (double)dup_duration / dup_count : 0.0;
+	rate = (dup_count > 0.0) ? dup_duration / dup_count : 0.0;
 	stress_metrics_set(args, "nanosecs per dup call",
 		rate * STRESS_DBL_NANOSECOND, STRESS_METRIC_HARMONIC_MEAN);
 	stress_metrics_set(args, "dup calls",
@@ -432,9 +436,23 @@ tidy_mmap:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("dup"),
+	STRESS_EX_SYSCALL("dup2"),
+#if defined(HAVE_DUP3)
+	STRESS_EX_SYSCALL("dup3"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dup_info = {
 	.stressor = stress_dup,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

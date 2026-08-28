@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-builtin.h"
 #include "core-out-of-memory.h"
 #include "core-pthread.h"
 #include "core-signal.h"
@@ -94,7 +95,7 @@ static void stress_get_gpu_freq_mhz(double *gpu_freq)
 	{
 		char buf[64];
 		char filename[128];
-		snprintf(filename, sizeof(filename), "/sys/class/drm/card%d/gt_cur_freq_mhz", gpu_card);
+		(void)snprintf(filename, sizeof(filename), "/sys/class/drm/card%d/gt_cur_freq_mhz", gpu_card);
 
 		if (stress_fs_file_read(filename, buf, sizeof(buf)) > 0) {
 			if (sscanf(buf, "%lf", gpu_freq) == 1)
@@ -108,7 +109,7 @@ static void stress_get_gpu_freq_mhz(double *gpu_freq)
 
 static void stress_gpu_trim_newline(char *str)
 {
-	char *ptr = strrchr(str, '\n');
+	char *ptr = shim_strrchr(str, '\n');
 
 	if (ptr)
 		*ptr = '\0';
@@ -408,7 +409,8 @@ static int egl_init(
 	const uint32_t size_x,
 	const uint32_t size_y)
 {
-	int ret, fd;
+	int ret;
+	int fd;
 	EGLConfig config;
 	EGLContext context;
 	EGLint majorVersion;
@@ -545,7 +547,8 @@ static int stress_gpu_card(const char *gpu_devnode)
 static int stress_gpu_child(stress_args_t *args, void *context)
 {
 	int frag_n = 0;
-	int ret = EXIT_SUCCESS, fd;
+	int ret = EXIT_SUCCESS;
+	int fd;
 	uint32_t size_x = 256;
 	uint32_t size_y = 256;
 	GLsizei texsize = 4096;
@@ -646,12 +649,28 @@ static int stress_gpu(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_gpu_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("page-faults-major"),
+	STRESS_EX_FEATURE("power-uncore"),
+
+	STRESS_EX_LIBRARY("egl"),
+	STRESS_EX_LIBRARY("gbm"),
+	STRESS_EX_LIBRARY("glesv2"),
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_gpu_info = {
 	.stressor = stress_gpu,
 	.classifier = CLASS_GPU,
 	.opts = opts,
 	.supported = stress_gpu_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_gpu_info = {

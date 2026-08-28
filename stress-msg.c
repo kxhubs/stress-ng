@@ -374,12 +374,16 @@ resend:
 static int stress_msg(stress_args_t *args)
 {
 	pid_t pid;
-	int msgq_id, rc = EXIT_SUCCESS, parent_cpu;
+	int msgq_id;
+	int rc = EXIT_SUCCESS;
+	int parent_cpu;
 	int32_t msg_types = 0;
 	const size_t max_ids = stress_max_ids(args);
 	int *msgq_ids;
 	stress_msg_t ALIGN64 msg;
-	size_t j, n, msg_bytes = sizeof(msg.u.value);
+	size_t j;
+	size_t n;
+	size_t msg_bytes = sizeof(msg.u.value);
 
 	(void)stress_setting_get("msg-types", &msg_types);
 	if (!stress_setting_get("msg-bytes", &msg_bytes)) {
@@ -391,7 +395,7 @@ static int stress_msg(stress_args_t *args)
 
 	msgq_ids = (int *)calloc(max_ids, sizeof(*msgq_ids));
 	if (!msgq_ids) {
-		pr_inf_skip("%s: failed to allocate %zu item msgq id array%s, "
+		pr_inf_skip("%s: allocate %zu item msgq id array failed%s, "
 			"skipping stressor\n", args->name, max_ids,
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -429,12 +433,10 @@ static int stress_msg(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto cleanup;
 		pr_fail("%s: fork failed, errno=%d (%s)\n",
@@ -473,12 +475,24 @@ cleanup:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("ipc"),
+
+	STRESS_EX_SYSCALL("msgctl"),
+	STRESS_EX_SYSCALL("msgget"),
+	STRESS_EX_SYSCALL("msgsnd"),
+	STRESS_EX_SYSCALL("msgrcv"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_msg_info = {
 	.stressor = stress_msg,
 	.classifier = CLASS_SCHEDULER | CLASS_OS | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_msg_info = {

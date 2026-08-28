@@ -65,9 +65,10 @@ static const stress_crypto_type_info_t crypto_type_info[] = {
 };
 
 static const stress_help_t help[] = {
-	{ NULL,	"af-alg N",	"start N workers that stress AF_ALG socket domain" },
-	{ NULL,	"af-alg-dump",	"dump internal list from /proc/crypto to stdout" },
-	{ NULL,	"af-alg-ops N",	"stop after N af-alg bogo operations" },
+	{ NULL,	"af-alg N",         "start N workers that stress AF_ALG socket domain" },
+	{ NULL,	"af-alg-dump",      "dump internal list from /proc/crypto to stdout" },
+	{ NULL,	"af-alg-ops N",     "stop after N af-alg bogo operations" },
+	{ NULL, "af-alg-type type", "crypto type [ all | ahash | shash | skcipher | rng | aead ]" },
 	{ NULL, NULL,		NULL }
 };
 
@@ -78,12 +79,14 @@ static const char *stress_af_alg_types(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_af_alg_dump, "af-alg-dump", TYPE_ID_BOOL, 0, 1, NULL },
-	{ OPT_af_alg_type, "af-alg-type",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_af_alg_types },
+	{ OPT_af_alg_type, "af-alg-type",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_af_alg_types },
 	END_OPT,
 };
 
 #if defined(HAVE_LINUX_IF_ALG_H) &&	\
     defined(HAVE_LINUX_SOCKET_H) &&	\
+    defined(HAVE_SIGLONGJMP) &&		\
+    defined(HAVE_IOVEC) &&		\
     defined(AF_ALG)
 
 static volatile bool do_jmp = true;
@@ -158,7 +161,7 @@ static void MLOCKED_TEXT stress_af_alg_alarm_handler(int signum)
 static stress_crypto_type_t name_to_type(const char *buffer, const size_t buffer_len)
 {
 	const char *end = buffer + shim_strnlen(buffer, buffer_len);
-	const char *ptr = strchr(buffer, ':');
+	const char *ptr = shim_strchr(buffer, ':');
 	size_t i;
 
 	if (UNLIKELY(!ptr))
@@ -168,9 +171,9 @@ static stress_crypto_type_t name_to_type(const char *buffer, const size_t buffer
 	if (ptr >= end)
 		return CRYPTO_UNKNOWN;
 	for (i = 0; i < SIZEOF_ARRAY(crypto_type_info); i++) {
-		const size_t n = strlen(crypto_type_info[i].name);
+		const size_t n = shim_strlen(crypto_type_info[i].name);
 
-		if (!strncmp(crypto_type_info[i].name, ptr, n))
+		if (!shim_strncmp(crypto_type_info[i].name, ptr, n))
 			return crypto_type_info[i].crypto_type;
 	}
 	return CRYPTO_UNKNOWN;
@@ -213,7 +216,8 @@ static int stress_af_alg_hash(
 	const int sockfd,
 	stress_crypto_info_t *info)
 {
-	int fd, rc;
+	int fd;
+	int rc;
 	size_t j;
 	const size_t digest_size = (size_t)info->digest_size;
 	struct sockaddr_alg sa;
@@ -308,7 +312,7 @@ retry_bind:
 #endif
 	}
 
-	fd = accept(sockfd, NULL, 0);
+	fd = accept(sockfd, NULL, NULL);
 	if (UNLIKELY(fd < 0)) {
 		if (errno == EINTR) {
 			rc = EXIT_SUCCESS;
@@ -323,7 +327,8 @@ retry_bind:
 	stress_rndbuf(input, DATA_LEN);
 
 	for (j = 32; j < DATA_LEN; j += 32) {
-		double t, delta;
+		double t;
+		double delta;
 		ssize_t ret;
 
 		if (UNLIKELY(!stress_continue(args)))
@@ -391,14 +396,15 @@ static int stress_af_alg_cipher(
 	const int sockfd,
 	stress_crypto_info_t *info)
 {
-	int fd, rc;
+	int fd;
+	int rc;
 	ssize_t j;
 	struct sockaddr_alg sa;
 	const ssize_t iv_size = info->iv_size;
 	const size_t cbuf_size = CMSG_SPACE(sizeof(__u32)) +
 				  CMSG_SPACE(4) + CMSG_SPACE(iv_size);
 	char name[64];
-	char *salg_name;
+	const char *salg_name;
 	const char *salg_type = "skcipher";
 	int retries = MAX_AF_ALG_RETRIES_BIND;
 	char input[DATA_LEN + ALLOC_SLOP] ALIGN64;
@@ -508,7 +514,7 @@ retry_bind:
 	goto err;
 #endif
 
-	fd = accept(sockfd, NULL, 0);
+	fd = accept(sockfd, NULL, NULL);
 	if (fd < 0) {
 		pr_fail("%s: %s (%s): accept failed, errno=%d (%s)\n",
 			args->name, info->name, info->type, errno, strerror(errno));
@@ -695,7 +701,8 @@ static int stress_af_alg_aead(
 	const int sockfd,
 	stress_crypto_info_t *info)
 {
-	int fd, rc;
+	int fd;
+	int rc;
 	ssize_t j;
 	struct sockaddr_alg sa;
 	const socklen_t max_key_size = 16;
@@ -706,7 +713,8 @@ static int stress_af_alg_aead(
 	int retries = MAX_AF_ALG_RETRIES_BIND;
 	char input[DATA_LEN + ALLOC_SLOP] ALIGN64;
 	char output[DATA_LEN + tag_size + ALLOC_SLOP] ALIGN64;
-	char *cbuf, *key = NULL;
+	char *cbuf;
+	char *key = NULL;
 
 	cbuf = (char *)malloc(cbuf_size);
 	if (UNLIKELY(!cbuf))
@@ -790,7 +798,7 @@ retry_bind:
 	}
 	free(key);
 
-	fd = accept(sockfd, NULL, 0);
+	fd = accept(sockfd, NULL, NULL);
 	if (fd < 0) {
 		pr_fail("%s: %s (%s): accept failed, errno=%d (%s)\n",
 			args->name, info->name, info->type, errno, strerror(errno));
@@ -978,7 +986,8 @@ static int stress_af_alg_rng(
 	const int sockfd,
 	stress_crypto_info_t *info)
 {
-	int fd, rc;
+	int fd;
+	int rc;
 	ssize_t j;
 	struct sockaddr_alg sa;
 	int retries = MAX_AF_ALG_RETRIES_BIND;
@@ -1038,7 +1047,7 @@ retry_bind:
 		goto err;
 	}
 
-	fd = accept(sockfd, NULL, 0);
+	fd = accept(sockfd, NULL, NULL);
 	if (UNLIKELY(fd < 0)) {
 		pr_fail("%s: %s (%s): accept failed, errno=%d (%s)\n",
 			args->name, info->name, info->type,
@@ -1048,7 +1057,8 @@ retry_bind:
 	}
 
 	for (j = 0; j < 16; j++) {
-		double delta, t;
+		double delta;
+		double t;
 
 		if (UNLIKELY(!stress_continue(args)))
 			break;
@@ -1084,7 +1094,7 @@ err:
 
 static void stress_af_alg_count_crypto(size_t *count, size_t *internal)
 {
-	stress_crypto_info_t *ci;
+	const stress_crypto_info_t *ci;
 
 	*count = 0;
 	*internal = 0;
@@ -1107,13 +1117,13 @@ static int CONST stress_af_alg_cmp_crypto(const void *p1, const void *p2)
 	const stress_crypto_info_t * const *ci1 = (const stress_crypto_info_t * const *)p1;
 	const stress_crypto_info_t * const *ci2 = (const stress_crypto_info_t * const *)p2;
 
-	n = strcmp((*ci1)->type, (*ci2)->type);
+	n = shim_strcmp((*ci1)->type, (*ci2)->type);
 	if (n < 0)
 		return -1;
 	if (n > 0)
 		return 1;
 
-	n = strcmp((*ci1)->name, (*ci2)->name);
+	n = shim_strcmp((*ci1)->name, (*ci2)->name);
 	if (n < 0)
 		return -1;
 	if (n > 0)
@@ -1129,7 +1139,9 @@ static void stress_af_alg_sort_crypto(void)
 {
 	stress_crypto_info_t **array, *ci;
 
-	size_t i, n, internal;
+	size_t i;
+	size_t n;
+	size_t internal;
 
 	stress_af_alg_count_crypto(&n, &internal);
 	if (n == 0)
@@ -1195,10 +1207,12 @@ static void stress_af_alg_dump_crypto_list(void)
 static int stress_af_alg(stress_args_t *args)
 {
 	int sockfd = -1;
-	NOCLOBBER int rc = EXIT_FAILURE;
+	CLOBBERED int rc = EXIT_FAILURE;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 	int retries = MAX_AF_ALG_RETRIES;
-	size_t proc_count, count, internal;
+	size_t proc_count;
+	size_t count;
+	size_t internal;
 	bool af_alg_dump = false;
 	stress_crypto_info_t *info;
 	size_t af_alf_type_index = 0;	/* all */
@@ -1367,8 +1381,8 @@ deinit:
  */
 static char *dup_field(char *buffer)
 {
-	const char *ptr = strchr(buffer, ':');
-	char *eol = strchr(buffer, '\n');
+	const char *ptr = shim_strchr(buffer, ':');
+	char *eol = shim_strchr(buffer, '\n');
 
 	if (!ptr)
 		return NULL;
@@ -1384,7 +1398,7 @@ static char *dup_field(char *buffer)
  */
 static int CONST int_field(const char *buffer)
 {
-	const char *ptr = strchr(buffer, ':');
+	const char *ptr = shim_strchr(buffer, ':');
 
 	if (!ptr)
 		return -1;
@@ -1398,13 +1412,13 @@ static int CONST int_field(const char *buffer)
  */
 static bool CONST bool_field(const char *buffer)
 {
-	const char *ptr = strchr(buffer, ':');
+	const char *ptr = shim_strchr(buffer, ':');
 
 	if (!ptr)
 		return false;
-	if (!strncmp("yes", ptr + 2, 3))
+	if (!shim_strncmp("yes", ptr + 2, 3))
 		return true;
-	if (!strncmp("no", ptr + 2, 2))
+	if (!shim_strncmp("no", ptr + 2, 2))
 		return false;
 	return false;
 }
@@ -1413,9 +1427,22 @@ static bool CONST bool_field(const char *buffer)
  *  stress_af_alg_add_crypto()
  *	add crypto algorithm to list if it is unique
  */
-static bool stress_af_alg_add_crypto(const stress_crypto_info_t *info)
+static bool stress_af_alg_add_crypto(
+	const int kernel_version,
+	const stress_crypto_info_t *info)
 {
 	stress_crypto_info_t *ci;
+
+	/*
+	 * Don't exercise AEAD pre-Linux 4.9 because the
+	 * AEAD recv sizes changed with kernel commit
+	 * 0c1e16cd1ec41987cc6671a2bff46ac958c41eb5 -
+	 * supporting this in this stressor for these older
+	 * kernels is not worth the effort.
+	 */
+	if ((info->crypto_type == CRYPTO_AEAD) &&
+	    (kernel_version < 40900))
+		return false;
 
 	/* Don't add info with empty text fields */
 	if ((info->name == NULL) || (info->type == NULL))
@@ -1425,16 +1452,16 @@ static bool stress_af_alg_add_crypto(const stress_crypto_info_t *info)
 	 * Deprecated in Linux 5.9
 	 * see commit 9ace6771831017ce75a2bdf03c284b686dd39dba
          */
-	if (strcmp(info->name, "ecb(arc4)") == 0)
+	if (shim_strcmp(info->name, "ecb(arc4)") == 0)
 		return false;
 	/*
 	 * Don't support non-mainline tk transformations that some
 	 * kernels use, see
 	 * https://lore.kernel.org/lkml/1594591536-531-1-git-send-email-iuliana.prodan@nxp.com/t/#Z2e.:..:1594591536-531-3-git-send-email-iuliana.prodan::40nxp.com:1drivers:crypto:caam:caamalg.c
 	 */
-	if (strcmp(info->name, "tk(cbc(aes))") == 0)
+	if (shim_strcmp(info->name, "tk(cbc(aes))") == 0)
 		return false;
-	if (strcmp(info->name, "tk(ecb(aes))") == 0)
+	if (shim_strcmp(info->name, "tk(ecb(aes))") == 0)
 		return false;
 
 	/* Discard invalid data */
@@ -1447,8 +1474,8 @@ static bool stress_af_alg_add_crypto(const stress_crypto_info_t *info)
 
 	/* Scan for duplications */
 	for (ci = crypto_info_list; ci; ci = ci->next) {
-		if ((strcmp(ci->name, info->name) == 0) &&
-		    (strcmp(ci->type, info->type) == 0) &&
+		if ((shim_strcmp(ci->name, info->name) == 0) &&
+		    (shim_strcmp(ci->type, info->type) == 0) &&
 		    (ci->block_size == info->block_size) &&
 		    (ci->max_key_size == info->max_key_size) &&
 		    (ci->max_auth_size == info->max_auth_size) &&
@@ -1478,11 +1505,12 @@ static bool stress_af_alg_add_crypto(const stress_crypto_info_t *info)
  */
 static void stress_af_alg_add_crypto_defconfigs(void)
 {
+	const int kernel_version = stress_kernel_release_get();
 	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(crypto_info_defconfigs); i++) {
 		crypto_info_defconfigs[i].source = SOURCE_DEFCONFIG;
-		stress_af_alg_add_crypto(&crypto_info_defconfigs[i]);
+		stress_af_alg_add_crypto(kernel_version, &crypto_info_defconfigs[i]);
 	}
 }
 
@@ -1507,6 +1535,7 @@ static void stress_af_alg_init(const uint32_t instances)
 	FILE *fp;
 	char buffer[1024];
 	stress_crypto_info_t info;
+	const int kernel_version = stress_kernel_release_get();
 
 	(void)instances;
 
@@ -1519,35 +1548,35 @@ static void stress_af_alg_init(const uint32_t instances)
 	(void)shim_memset(&info, 0, sizeof(info));
 
 	while (fgets(buffer, sizeof(buffer) - 1, fp)) {
-		if (!strncmp(buffer, "name", 4)) {
+		if (!shim_strncmp(buffer, "name", 4)) {
 			if (info.name)
 				free(info.name);
 			info.name = dup_field(buffer);
 		}
-		else if (!strncmp(buffer, "type", 4)) {
+		else if (!shim_strncmp(buffer, "type", 4)) {
 			info.crypto_type = name_to_type(buffer, sizeof(buffer));
 			if (info.type)
 				free(info.type);
 			info.type = dup_field(buffer);
 		}
-		else if (!strncmp(buffer, "blocksize", 9))
+		else if (!shim_strncmp(buffer, "blocksize", 9))
 			info.block_size = (int8_t)int_field(buffer);
-		else if (!strncmp(buffer, "max keysize", 11))
+		else if (!shim_strncmp(buffer, "max keysize", 11))
 			info.max_key_size = (int8_t)int_field(buffer);
-		else if (!strncmp(buffer, "maxauthsize", 11))
+		else if (!shim_strncmp(buffer, "maxauthsize", 11))
 			info.max_auth_size = (int8_t)int_field(buffer);
-		else if (!strncmp(buffer, "ivsize", 6))
+		else if (!shim_strncmp(buffer, "ivsize", 6))
 			info.iv_size = (int8_t)int_field(buffer);
-		else if (!strncmp(buffer, "digestsize", 10))
+		else if (!shim_strncmp(buffer, "digestsize", 10))
 			info.digest_size = (int8_t)int_field(buffer);
-		else if (!strncmp(buffer, "internal", 8))
+		else if (!shim_strncmp(buffer, "internal", 8))
 			info.internal = bool_field(buffer);
-		else if (!strncmp(buffer, "selftest", 8))
+		else if (!shim_strncmp(buffer, "selftest", 8))
 			info.selftest = bool_field(buffer);
 		else if (buffer[0] == '\n') {
 			if (info.crypto_type != CRYPTO_UNKNOWN) {
 				info.source = SOURCE_PROC_CRYPTO;
-				if (!stress_af_alg_add_crypto(&info)) {
+				if (!stress_af_alg_add_crypto(kernel_version, &info)) {
 					free(info.name);
 					free(info.type);
 				}
@@ -1581,6 +1610,28 @@ static void stress_af_alg_deinit(void)
 	crypto_info_list = NULL;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("cipher"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("crypto"),
+	STRESS_EX_FEATURE("hash"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("integer-division"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("recv"),
+	STRESS_EX_SYSCALL("send"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_af_alg_info = {
 	.stressor = stress_af_alg,
 	.init = stress_af_alg_init,
@@ -1590,6 +1641,7 @@ const stressor_info_t stress_af_alg_info = {
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
 	.max_metrics_items = 100,
+	.exercises = exercises,
 };
 
 #else
@@ -1599,6 +1651,6 @@ const stressor_info_t stress_af_alg_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.unimplemented_reason = "built without linux/if_alg.h"
+	.unimplemented_reason = "built without siglongjmp() or linux/if_alg.hi or struct iovec"
 };
 #endif

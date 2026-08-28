@@ -43,7 +43,7 @@ static const char *stress_yield_sched(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_yield_procs, "yield-procs", TYPE_ID_UINT32, MIN_YIELD_PROCS, MAX_YIELD_PROCS, NULL },
-	{ OPT_yield_sched, "yield-sched", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_yield_sched },
+	{ OPT_yield_sched, "yield-sched", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_yield_sched },
 	END_OPT,
 };
 
@@ -69,7 +69,10 @@ static void stress_yield_sched_policy(stress_args_t *args, const size_t yield_sc
 {
 	struct sched_param param;
 	int ret = 0;
-	int max_prio, min_prio, rng_prio, policy;
+	int max_prio;
+	int min_prio;
+	int rng_prio;
+	int policy;
 	const char *policy_name;
 
 	if (UNLIKELY(yield_sched >= stress_sched_types_length))
@@ -202,13 +205,17 @@ static int stress_yield(stress_args_t *args)
 	uint64_t max_ops_per_yielder;
 	int32_t cpus = stress_cpus_configured_get();
 	const uint32_t instances = args->instances;
-	uint32_t yielders = 2, yield_procs = 0;
-	double count, duration, ns;
+	uint32_t yielders = 2;
+	uint32_t yield_procs = 0;
+	double count;
+	double duration;
+	double ns;
 #if defined(HAVE_SCHED_GETAFFINITY)
 	cpu_set_t mask;
 #endif
 	stress_pid_t *s_pids;
-	size_t i, yield_sched = SIZE_MAX;
+	size_t i;
+	size_t yield_sched = SIZE_MAX;
 
 	if (!stress_setting_get("yield-procs", &yield_procs)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -258,12 +265,11 @@ static int stress_yield(stress_args_t *args)
 	} else {
 		yielders = yield_procs;
 	}
-	max_ops_per_yielder = (yielders > 0) ? args->bogo.max_ops / yielders : 0.0;
+	max_ops_per_yielder = (yielders > 0) ? args->bogo.max_ops / yielders : 0;
 
 	s_pids = (stress_pid_t *)calloc(yielders, sizeof(*s_pids));
 	if (!s_pids) {
-		pr_inf_skip("%s: failed to allocate %" PRIu32
-			" pids%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %" PRIu32 " pids failed%s, skipping stressor\n",
 			args->name, yielders, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -274,7 +280,7 @@ static int stress_yield(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (metrics == MAP_FAILED) {
-		pr_err("%s: failed to mmap %zu bytes%s, errno=%d (%s)\n",
+		pr_err("%s: mmap %zu bytes failed%s, errno=%d (%s)\n",
 			args->name, metrics_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		free(s_pids);
@@ -349,12 +355,21 @@ static int stress_yield(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("rcu-utilization"),
+
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+	STRESS_EX_SYSCALL("sched_yield"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_yield_info = {
 	.stressor = stress_yield,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };
 #else
 const stressor_info_t stress_yield_info = {

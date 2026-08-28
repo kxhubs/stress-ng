@@ -90,14 +90,14 @@ static int stress_klog(stress_args_t *args)
 			pr_inf_skip("%s: zero sized syslog buffer, skipping stressor.\n", args->name);
 		return EXIT_NO_RESOURCE;
 	}
-	if (len > (ssize_t)(4 * MB)) {
+	if (len > (ssize_t)(4 * STRESS_MB)) {
 		if (stress_instance_zero(args))
 			pr_inf("%s: truncating syslog buffer to 4MB\n", args->name);
-		len = 4 * MB;
+		len = 4 * STRESS_MB;
 	}
 	buffer = (char *)malloc((size_t)len);
 	if (!buffer) {
-		pr_err("%s: cannot allocate %zu byte syslog buffer%s\n",
+		pr_err("%s: allocate %zu byte syslog buffer failed%s\n",
 			args->name, (size_t)len, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -179,12 +179,22 @@ static int stress_klog(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("syslog"),
+	STRESS_EX_SYSCALL("klogctl"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_klog_info = {
 	.stressor = stress_klog,
 	.classifier = CLASS_OS,
 	.help = help,
 	.verify = VERIFY_ALWAYS,
-	.supported = stress_klog_supported
+	.supported = stress_klog_supported,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_klog_info = {

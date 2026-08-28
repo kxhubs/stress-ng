@@ -39,6 +39,28 @@ static const stress_help_t help[] = {
 	{ NULL,	NULL,		  NULL }
 };
 
+typedef struct stress_intmath_data {
+#if defined(HAVE_INT128_T)
+	__int128_t result128[2];
+#endif
+#if defined(HAVE_INT_FAST64_T)
+	int_fast64_t resultfast64[2];
+#endif
+#if defined(HAVE_INT_FAST32_T)
+	int_fast32_t resultfast32[2];
+#endif
+#if defined(HAVE_INT_FAST16_T)
+	int_fast16_t resultfast16[2];
+#endif
+#if defined(HAVE_INT_FAST8_T)
+	int_fast8_t resultfast8[2];
+#endif
+	int64_t result64[2];
+	int32_t result32[2];
+	int16_t result16[2];
+	int8_t result8[2];
+} stress_intmath_data_t;
+
 typedef struct {
 #if defined(HAVE_INT128_T)
 	__int128_t init[4];
@@ -50,111 +72,11 @@ typedef struct {
 #else
 	int64_t initfast[4];
 #endif
-	struct {
-#if defined(HAVE_INT128_T)
-		__int128_t result128[2];
-#endif
-#if defined(HAVE_INT_FAST64_T)
-		int_fast64_t resultfast64[2];
-#endif
-#if defined(HAVE_INT_FAST32_T)
-		int_fast32_t resultfast32[2];
-#endif
-#if defined(HAVE_INT_FAST16_T)
-		int_fast16_t resultfast16[2];
-#endif
-#if defined(HAVE_INT_FAST8_T)
-		int_fast8_t resultfast8[2];
-#endif
-		int64_t result64[2];
-		int32_t result32[2];
-		int16_t result16[2];
-		int8_t result8[2];
-	} add ALIGN64;
-	struct {
-#if defined(HAVE_INT128_T)
-		__int128_t result128[2];
-#endif
-#if defined(HAVE_INT_FAST64_T)
-		int_fast64_t resultfast64[2];
-#endif
-#if defined(HAVE_INT_FAST32_T)
-		int_fast32_t resultfast32[2];
-#endif
-#if defined(HAVE_INT_FAST16_T)
-		int_fast16_t resultfast16[2];
-#endif
-#if defined(HAVE_INT_FAST8_T)
-		int_fast8_t resultfast8[2];
-#endif
-		int64_t result64[2];
-		int32_t result32[2];
-		int16_t result16[2];
-		int8_t result8[2];
-	} sub ALIGN64;
-	struct {
-#if defined(HAVE_INT128_T)
-		__int128_t result128[2];
-#endif
-#if defined(HAVE_INT_FAST64_T)
-		int_fast64_t resultfast64[2];
-#endif
-#if defined(HAVE_INT_FAST32_T)
-		int_fast32_t resultfast32[2];
-#endif
-#if defined(HAVE_INT_FAST16_T)
-		int_fast16_t resultfast16[2];
-#endif
-#if defined(HAVE_INT_FAST8_T)
-		int_fast8_t resultfast8[2];
-#endif
-		int64_t result64[2];
-		int32_t result32[2];
-		int16_t result16[2];
-		int8_t result8[2];
-	} mul ALIGN64;
-	struct {
-#if defined(HAVE_INT128_T)
-		__int128_t result128[2];
-#endif
-#if defined(HAVE_INT_FAST64_T)
-		int_fast64_t resultfast64[2];
-#endif
-#if defined(HAVE_INT_FAST32_T)
-		int_fast32_t resultfast32[2];
-#endif
-#if defined(HAVE_INT_FAST16_T)
-		int_fast16_t resultfast16[2];
-#endif
-#if defined(HAVE_INT_FAST8_T)
-		int_fast8_t resultfast8[2];
-#endif
-		int64_t result64[2];
-		int32_t result32[2];
-		int16_t result16[2];
-		int8_t result8[2];
-	} div ALIGN64;
-	struct {
-#if defined(HAVE_INT128_T)
-		__int128_t result128[2];
-#endif
-#if defined(HAVE_INT_FAST64_T)
-		int_fast64_t resultfast64[2];
-#endif
-#if defined(HAVE_INT_FAST32_T)
-		int_fast32_t resultfast32[2];
-#endif
-#if defined(HAVE_INT_FAST16_T)
-		int_fast16_t resultfast16[2];
-#endif
-#if defined(HAVE_INT_FAST8_T)
-		int_fast8_t resultfast8[2];
-#endif
-		int64_t result64[2];
-		int32_t result32[2];
-		int16_t result16[2];
-		int8_t result8[2];
-	} mod ALIGN64;
+	stress_intmath_data_t add ALIGN64;
+	stress_intmath_data_t sub ALIGN64;
+	stress_intmath_data_t mul ALIGN64;
+	stress_intmath_data_t div ALIGN64;
+	stress_intmath_data_t mod ALIGN64;
 } stress_intmath_vals_t;
 
 typedef bool (*intmath_func_t)(stress_intmath_vals_t *val, const int idx, const bool verify, double *duration);
@@ -175,8 +97,14 @@ static bool OPTIMIZE3 clones stress_intmath_add_ ## n(		\
 	unsigned int i;						\
 	double t;						\
 								\
-	register type r0, r1, r2, r3;				\
-	register type i0, i1, i2, i3;				\
+	register type r0;					\
+	register type r1;					\
+	register type r2;					\
+	register type r3;					\
+	register type i0;					\
+	register type i1;					\
+	register type i2;					\
+	register type i3;					\
 								\
 	r0 = (type)vals->init_array[0];				\
 	r1 = (type)vals->init_array[1];				\
@@ -220,8 +148,14 @@ static bool OPTIMIZE3 clones stress_intmath_sub_ ## n(		\
 	unsigned int i;						\
 	double t;						\
 								\
-	register type r0, r1, r2, r3;				\
-	register type i0, i1, i2, i3;				\
+	register type r0;					\
+	register type r1;					\
+	register type r2;					\
+	register type r3;					\
+	register type i0;					\
+	register type i1;					\
+	register type i2;					\
+	register type i3;					\
 								\
 	r0 = (type)vals->init_array[0];				\
 	r1 = (type)vals->init_array[1];				\
@@ -265,8 +199,14 @@ static bool OPTIMIZE3 clones stress_intmath_mul_ ## n(		\
 	type i;							\
 	double t;						\
 								\
-	register type r0, r1, r2, r3;				\
-	register type i0, i1, i2, i3;				\
+	register type r0;					\
+	register type r1;					\
+	register type r2;					\
+	register type r3;					\
+	register type i0;					\
+	register type i1;					\
+	register type i2;					\
+	register type i3;					\
 	register type s0 = 1;					\
 	register type s1 = 1;					\
 	register type s2 = 1;					\
@@ -309,8 +249,14 @@ static bool OPTIMIZE3 clones stress_intmath_div_ ## n(		\
 	type i;							\
 	double t;						\
 								\
-	register type r0, r1, r2, r3;				\
-	register type i0, i1, i2, i3;				\
+	register type r0;					\
+	register type r1;					\
+	register type r2;					\
+	register type r3;					\
+	register type i0;					\
+	register type i1;					\
+	register type i2;					\
+	register type i3;					\
 	register type s0 = 1;					\
 	register type s1 = 1;					\
 	register type s2 = 1;					\
@@ -352,8 +298,14 @@ static bool OPTIMIZE3 clones stress_intmath_mod_ ## n(		\
 	type i;							\
 	double t;						\
 								\
-	register type r0, r1, r2, r3;				\
-	register type i0, i1, i2, i3;				\
+	register type r0;					\
+	register type r1;					\
+	register type r2;					\
+	register type r3;					\
+	register type i0;					\
+	register type i1;					\
+	register type i2;					\
+	register type i3;					\
 	register type s0 = 1;					\
 	register type s1 = 1;					\
 	register type s2 = 1;					\
@@ -734,9 +686,18 @@ static const char *stress_intmath_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_intmath_method, "intmath-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)stress_intmath_method },
+	{ OPT_intmath_method, "intmath-method", TYPE_ID_SIZE_T_METHOD, 0, 1, stress_intmath_method },
 	{ OPT_intmath_fast,   "intmath-fast",   TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("integer-division"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_intmath_info = {
@@ -745,5 +706,6 @@ const stressor_info_t stress_intmath_info = {
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_intmath_methods)
+	.max_metrics_items = SIZEOF_ARRAY(stress_intmath_methods),
+	.exercises = exercises,
 };

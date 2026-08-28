@@ -64,6 +64,7 @@ static sem_t *sem;
 static int sem_global_errno;
 
 static stress_sem_pthread_t sem_pthreads[MAX_SEM_POSIX_PROCS] ALIGN64;
+static stress_pthread_args_t sem_pthread_args[MAX_SEM_POSIX_PROCS] ALIGN64;
 
 static void stress_sem_init(const uint32_t instances)
 {
@@ -108,7 +109,8 @@ static void OPTIMIZE3 *stress_sem_thrash(void *arg)
 	stress_random_small_sleep();
 
 	do {
-		int i, j = -1;
+		int i;
+		int j = -1;
 
 		for (i = 0; LIKELY((i < 1000) && stress_continue_flag()); i++) {
 			int value;
@@ -205,13 +207,13 @@ static int stress_sem(stress_args_t *args)
 {
 	uint64_t semaphore_posix_procs = DEFAULT_SEM_POSIX_PROCS;
 	uint64_t i;
-	bool created = false;
-	bool sem_shared = false;
-	stress_pthread_args_t p_args;
 	double wait_count = 0;
 	double trywait_count = 0;
 	double timedwait_count = 0;
-	double t, duration;
+	double t;
+	double duration;
+	bool created = false;
+	bool sem_shared = false;
 
 	if (!stress_setting_get("sem-procs", &semaphore_posix_procs)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -254,10 +256,12 @@ static int stress_sem(stress_args_t *args)
 		sem_pthreads[i].timedwait_count = 0.0;
 		sem_pthreads[i].wait_count = 0.0;
 
-		p_args.args = args;
-		p_args.data = &sem_pthreads[i];
+		sem_pthread_args[i].args = args;
+		sem_pthread_args[i].data = &sem_pthreads[i];
+		sem_pthread_args[i].pthread_ret = 0;
+
 		sem_pthreads[i].ret = pthread_create(&sem_pthreads[i].pthread, NULL,
-                                stress_sem_thrash, (void *)&p_args);
+                                stress_sem_thrash, (void *)&sem_pthread_args[i]);
 		if ((sem_pthreads[i].ret) && (sem_pthreads[i].ret != EAGAIN)) {
 			pr_fail("%s: pthread create failed, errno=%d (%s)\n",
 				args->name, sem_pthreads[i].ret, strerror(sem_pthreads[i].ret));
@@ -309,6 +313,27 @@ static int stress_sem(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("d-cache-read-miss"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("rcu-utilization"),
+
+	STRESS_EX_SYSCALL("sem_destroy"),
+	STRESS_EX_SYSCALL("sem_getvalue"),
+	STRESS_EX_SYSCALL("sem_init"),
+	STRESS_EX_SYSCALL("sem_post"),
+	STRESS_EX_SYSCALL("sem_timedwait"),
+	STRESS_EX_SYSCALL("sem_trywait"),
+	STRESS_EX_SYSCALL("sem_wait"),
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sem_info = {
 	.stressor = stress_sem,
 	.classifier = CLASS_OS | CLASS_SCHEDULER | CLASS_IPC,
@@ -316,7 +341,8 @@ const stressor_info_t stress_sem_info = {
 	.verify = VERIFY_ALWAYS,
 	.init = stress_sem_init,
 	.deinit = stress_sem_deinit,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sem_info = {

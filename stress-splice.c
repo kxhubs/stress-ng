@@ -22,9 +22,9 @@
 #include "core-madvise.h"
 #include "core-mmap.h"
 
-#define MIN_SPLICE_BYTES	(1 * KB)
-#define MAX_SPLICE_BYTES	(64 * MB)
-#define DEFAULT_SPLICE_BYTES	(64 * KB)
+#define MIN_SPLICE_BYTES	(1 * STRESS_KB)
+#define MAX_SPLICE_BYTES	(64 * STRESS_MB)
+#define DEFAULT_SPLICE_BYTES	(64 * STRESS_KB)
 
 #define SPLICE_BUFFER_LEN	(65536)
 
@@ -138,12 +138,12 @@ static void stress_splice_looped_pipe(
 	if (UNLIKELY(!*use_splice_loop))
 		return;
 
-	ret = splice(fds3[0], 0, fds4[1], 0, 4096, stress_splice_flag());
+	ret = splice(fds3[0], NULL, fds4[1], NULL, 4096, stress_splice_flag());
 	if (UNLIKELY(ret < 0)) {
 		*use_splice_loop = false;
 		return;
 	}
-	ret = splice(fds4[0], 0, fds3[1], 0, 4096, stress_splice_flag());
+	ret = splice(fds4[0], NULL, fds3[1], NULL, 4096, stress_splice_flag());
 	if (UNLIKELY(ret < 0)) {
 		*use_splice_loop = false;
 		return;
@@ -156,15 +156,23 @@ static void stress_splice_looped_pipe(
  */
 static int stress_splice(stress_args_t *args)
 {
-	int fd_in, fd_out, fds1[2], fds2[2], fds3[2], fds4[2];
-	size_t splice_bytes, splice_bytes_total = DEFAULT_SPLICE_BYTES;
+	char *buffer;
+	ssize_t buffer_len;
+	size_t splice_bytes;
+	size_t splice_bytes_total = DEFAULT_SPLICE_BYTES;
+	int fd_in;
+	int fd_out;
+	int fds1[2];
+	int fds2[2];
+	int fds3[2];
+	int fds4[2];
 	int rc = EXIT_FAILURE;
 	int metrics_count = 0;
 	bool use_splice = true;
 	bool use_splice_loop;
-	char *buffer;
-	ssize_t buffer_len;
-	double duration = 0.0, bytes = 0.0, rate;
+	double duration = 0.0;
+	double bytes = 0.0;
+	double rate;
 
 	if (!stress_setting_get("splice-bytes", &splice_bytes_total)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -184,7 +192,7 @@ static int stress_splice(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buffer == MAP_FAILED) {
-		pr_inf("%s: failed to mmap %zu byte write buffer%s, errno=%d (%s)\n",
+		pr_inf("%s: mmap %zu byte write buffer failed%s, errno=%d (%s)\n",
 			args->name, (size_t)buffer_len,
 			stress_memory_free_get(), errno, strerror(errno));
 		goto close_done;
@@ -193,7 +201,7 @@ static int stress_splice(stress_args_t *args)
 	(void)stress_madvise_mergeable(buffer, buffer_len);
 
 	if ((fd_in = open("/dev/zero", O_RDONLY)) < 0) {
-		pr_fail("%s: open /dev/zero failed, errno=%d (%s)\n",
+		pr_fail("%s: open '/dev/zero' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		goto close_unmap;
 	}
@@ -226,7 +234,7 @@ static int stress_splice(stress_args_t *args)
 	}
 
 	if ((fd_out = open("/dev/null", O_WRONLY)) < 0) {
-		pr_fail("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_fail("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		goto close_fds4;
 	}
@@ -255,7 +263,8 @@ static int stress_splice(stress_args_t *args)
 
 	do {
 		ssize_t ret;
-		loff_t off_in, off_out;
+		loff_t off_in;
+		loff_t off_out;
 
 		/*
 		 *  Linux 5.9 dropped the ability to splice from /dev/zero to
@@ -360,7 +369,7 @@ static int stress_splice(stress_args_t *args)
 
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB per sec splice rate",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 
 	(void)close(fd_out);
 close_fds4:
@@ -390,11 +399,21 @@ close_done:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("splice"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_splice_info = {
 	.stressor = stress_splice,
 	.classifier = CLASS_PIPE_IO | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_splice_info = {

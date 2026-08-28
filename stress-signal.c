@@ -83,7 +83,7 @@ static int stress_signal(stress_args_t *args)
 
 		tmp = *pcounter;
 		if (UNLIKELY(shim_signal(SIGCHLD, SIG_IGN) == SIG_ERR)) {
-			pr_fail("%s: cannot install SIGCHLD SIG_IGN handler, errno=%d (%s)\n",
+			pr_fail("%s: install SIGCHLD SIG_IGN handler failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			break;
@@ -95,7 +95,7 @@ static int stress_signal(stress_args_t *args)
 
 		tmp = *pcounter;
 		if (UNLIKELY(shim_signal(SIGCHLD, stress_signal_count_handler) == SIG_ERR)) {
-			pr_fail("%s: cannot install SIGCHLD signal handler, errno=%d (%s)\n",
+			pr_fail("%s: install SIGCHLD signal handler failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			break;
@@ -114,7 +114,7 @@ static int stress_signal(stress_args_t *args)
 
 		tmp = *pcounter;
 		if (UNLIKELY(shim_signal(SIGCHLD, SIG_DFL) == SIG_ERR)) {
-			pr_fail("%s: cannot install SIGCHLD SIG_DFL handler, errno=%d (%s)\n",
+			pr_fail("%s: install SIGCHLD SIG_DFL handler failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			break;
@@ -133,9 +133,19 @@ static int stress_signal(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("signal"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_signal_info = {
 	.stressor = stress_signal,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

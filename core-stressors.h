@@ -27,6 +27,7 @@
 #define STRESSORS(MACRO)	\
 	MACRO(access) 		\
 	MACRO(acl)		\
+	MACRO(acct)		\
 	MACRO(af_alg) 		\
 	MACRO(affinity) 	\
 	MACRO(aio) 		\
@@ -42,6 +43,7 @@
 	MACRO(bind_mount)	\
 	MACRO(bitonicsort)	\
 	MACRO(bitops)		\
+	MACRO(bpf)		\
 	MACRO(branch)		\
 	MACRO(brk)		\
 	MACRO(bsearch)		\
@@ -73,6 +75,7 @@
 	MACRO(dccp)		\
 	MACRO(dekker)		\
 	MACRO(dentry)		\
+	MACRO(dentrycache)	\
 	MACRO(dev)		\
 	MACRO(dev_shm)		\
 	MACRO(dfp)		\
@@ -88,6 +91,7 @@
 	MACRO(enosys)		\
 	MACRO(env)		\
 	MACRO(epoll)		\
+	MACRO(epollmany)	\
 	MACRO(eth_sniff)	\
 	MACRO(eventfd) 		\
 	MACRO(exec)		\
@@ -118,6 +122,7 @@
 	MACRO(fp)		\
 	MACRO(fp_error)		\
 	MACRO(fp_misc)		\
+	MACRO(fp_subnormal)	\
 	MACRO(fpunch)		\
 	MACRO(fractal)		\
 	MACRO(fsize)		\
@@ -126,6 +131,7 @@
 	MACRO(funccall)		\
 	MACRO(funcret)		\
 	MACRO(futex)		\
+	MACRO(gamma)		\
 	MACRO(get)		\
 	MACRO(getdent)		\
 	MACRO(getrandom)	\
@@ -137,6 +143,7 @@
 	MACRO(heapsort)		\
 	MACRO(hrtimers)		\
 	MACRO(hsearch)		\
+	MACRO(hugepage)		\
 	MACRO(hyperbolic)	\
 	MACRO(icache)		\
 	MACRO(icmp_flood)	\
@@ -231,7 +238,9 @@
 	MACRO(oom_pipe)		\
 	MACRO(opcode)		\
 	MACRO(open)		\
+	MACRO(ovpn)		\
 	MACRO(pagemove)		\
+	MACRO(pagescatter)	\
 	MACRO(pageswap)		\
 	MACRO(pci)		\
 	MACRO(personality)	\
@@ -314,6 +323,7 @@
 	MACRO(sigq)		\
 	MACRO(sigrt)		\
 	MACRO(sigsegv)		\
+	MACRO(sigstop)		\
 	MACRO(sigsuspend)	\
 	MACRO(sigtrap)		\
 	MACRO(sigurg)		\
@@ -332,6 +342,7 @@
 	MACRO(softlockup)	\
 	MACRO(sparsematrix)	\
 	MACRO(spawn)		\
+	MACRO(spec_rollback)	\
 	MACRO(spinmem)		\
 	MACRO(splice)		\
 	MACRO(stack)		\

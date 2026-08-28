@@ -78,11 +78,8 @@ static pid_t stress_lease_spawn(
 	pid_t pid;
 	int count = 0;
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		return -1;
 	}
 	if (pid == 0) {
@@ -99,8 +96,8 @@ again:
 			if (fd < 0) {
 				if ((errno != EWOULDBLOCK) &&
                                     (errno != EACCES)) {
-					pr_dbg("%s: open failed (child), errno=%d: (%s)\n",
-						args->name, errno, strerror(errno));
+					pr_dbg("%s: open '%s' failed (child), errno=%d: (%s)\n",
+						args->name, filename, errno, strerror(errno));
 					if (count++ > 3)
 						break;
 				}
@@ -126,15 +123,16 @@ static int stress_try_lease(
 	const int flags,
 	const int lock)
 {
-	int fd, rc = EXIT_SUCCESS;
+	int fd;
+	int rc = EXIT_SUCCESS;
 
 	fd = open(filename, flags);
 	if (fd < 0) {
 		int ret;
 
 		ret = stress_exit_status(errno);
-		pr_err("%s: open failed (parent), errno=%d: (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_err("%s: open '%s' failed (parent), errno=%d: (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		return ret;
 	}
 
@@ -177,10 +175,14 @@ tidy:
 static int stress_lease(stress_args_t *args)
 {
 	char filename[PATH_MAX];
-	int ret, fd;
+	int ret;
+	int fd;
 	stress_pid_t s_pids[MAX_LEASE_BREAKERS];
-	uint64_t i, lease_breakers = DEFAULT_LEASE_BREAKERS;
-	double t1 = 0.0, t2 = 0.0, dt;
+	uint64_t i;
+	uint64_t lease_breakers = DEFAULT_LEASE_BREAKERS;
+	double t1 = 0.0;
+	double t2 = 0.0;
+	double dt;
 
 	if (!stress_setting_get("lease-breakers", &lease_breakers)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -203,8 +205,8 @@ static int stress_lease(stress_args_t *args)
 	fd = creat(filename, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		ret = stress_exit_status(errno);
-		pr_err("%s: creat failed, errno=%d: (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_err("%s: creat '%s' failed, errno=%d: (%s)\n",
+			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return ret;
 	}
@@ -244,22 +246,34 @@ reap:
 	(void)shim_unlink(filename);
 	(void)stress_fs_temp_dir_rm_args(args);
 
-	pr_dbg("%s: %" PRIu64 " lease sigio interrupts caught\n", args->name, lease_sigio);
+	pr_dbg("%s: %" PRIu64 " lease SIGIO interrupts caught\n", args->name, lease_sigio);
 	dt = t2 - t1;
 	if (dt > 0.0) {
-		stress_metrics_set(args, "lease sigio interrupts per sec",
+		stress_metrics_set(args, "lease SIGIO interrupts per sec",
 			(double)lease_sigio / dt, STRESS_METRIC_HARMONIC_MEAN);
 	}
 
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("file-lock"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("open"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_lease_info = {
 	.stressor = stress_lease,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_lease_info = {

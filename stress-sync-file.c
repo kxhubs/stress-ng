@@ -19,9 +19,9 @@
  */
 #include "stress-ng.h"
 
-#define MIN_SYNC_FILE_BYTES	(1 * MB)
+#define MIN_SYNC_FILE_BYTES	(1 * STRESS_MB)
 #define MAX_SYNC_FILE_BYTES	(MAX_FILE_LIMIT)
-#define DEFAULT_SYNC_FILE_BYTES	(1 * GB)
+#define DEFAULT_SYNC_FILE_BYTES	(1 * STRESS_GB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"sync-file N",	     "start N workers exercise sync_file_range" },
@@ -101,11 +101,14 @@ static int stress_sync_allocate(
  */
 static int stress_sync_file(stress_args_t *args)
 {
-	int fd, ret, rc = EXIT_SUCCESS;
-	const int bad_fd = stress_fs_bad_fd_get();
-	off_t sync_file_bytes, sync_file_bytes_total = DEFAULT_SYNC_FILE_BYTES;
 	char filename[PATH_MAX];
 	const char *fs_type;
+	off_t sync_file_bytes;
+	off_t sync_file_bytes_total = DEFAULT_SYNC_FILE_BYTES;
+	int fd;
+	int ret;
+	int rc = EXIT_SUCCESS;
+	const int bad_fd = stress_fs_bad_fd_get();
 
 	if (!stress_setting_get("sync-file-bytes", &sync_file_bytes_total)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -129,13 +132,13 @@ static int stress_sync_file(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		if ((errno == ENFILE) || (errno == ENOMEM) || (errno == ENOSPC)) {
-			pr_inf_skip("%s: cannot create file to sync on, skipping stressor, errno=%d (%s)\n",
-				args->name, errno, strerror(errno));
+			pr_inf_skip("%s: cannot create file '%s' to sync on, skipping stressor, errno=%d (%s)\n",
+				args->name, filename, errno, strerror(errno));
 			return EXIT_NO_RESOURCE;
 		}
 
 		ret = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)stress_fs_temp_dir_rm_args(args);
 		return ret;
@@ -170,7 +173,7 @@ static int stress_sync_file(stress_args_t *args)
 		}
 		for (offset = 0; LIKELY(stress_continue_flag() &&
 		     (offset < (shim_off64_t)sync_file_bytes)); ) {
-			const shim_off64_t sz = (stress_mwc32() & 0x1fc00) + KB;
+			const shim_off64_t sz = (stress_mwc32() & 0x1fc00) + STRESS_KB;
 
 			ret = shim_sync_file_range(fd, offset, sz, mode);
 			if (UNLIKELY(ret < 0)) {
@@ -211,7 +214,7 @@ static int stress_sync_file(stress_args_t *args)
 		}
 		for (offset = 0; LIKELY(stress_continue_flag() &&
 		     (offset < (shim_off64_t)sync_file_bytes)); ) {
-			const shim_off64_t sz = (stress_mwc32() & 0x1fc00) + KB;
+			const shim_off64_t sz = (stress_mwc32() & 0x1fc00) + STRESS_KB;
 
 			ret = shim_sync_file_range(fd, sync_file_bytes - offset, sz, mode);
 			if (UNLIKELY(ret < 0)) {
@@ -237,10 +240,10 @@ static int stress_sync_file(stress_args_t *args)
 			break;
 		}
 		for (i = 0; LIKELY(stress_continue_flag() &&
-		     (i < (shim_off64_t)sync_file_bytes / (shim_off64_t)(128 * KB))); i++) {
-			offset = (shim_off64_t)(stress_mwc64modn((uint64_t)sync_file_bytes) & ~((128 * KB) - 1));
+		     (i < (shim_off64_t)sync_file_bytes / (shim_off64_t)(128 * STRESS_KB))); i++) {
+			offset = (shim_off64_t)(stress_mwc64modn((uint64_t)sync_file_bytes) & ~((128 * STRESS_KB) - 1));
 
-			ret = shim_sync_file_range(fd, offset, 128 * KB, mode);
+			ret = shim_sync_file_range(fd, offset, 128 * STRESS_KB, mode);
 			if (UNLIKELY(ret < 0)) {
 				if (errno == ENOSYS) {
 					pr_inf_skip("%s: skipping stressor, sync_file_range is not implemented\n",
@@ -264,12 +267,26 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("kmem-cache-alloc"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("fallocate"),
+#if defined(HAVE_FDATASYNC)
+	STRESS_EX_SYSCALL("fdatasync"),
+#endif
+	STRESS_EX_SYSCALL("ftruncate"),
+	STRESS_EX_SYSCALL("sync_file_range"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sync_file_info = {
 	.stressor = stress_sync_file,
 	.classifier = CLASS_IO | CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sync_file_info = {

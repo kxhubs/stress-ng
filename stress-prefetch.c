@@ -27,9 +27,9 @@
 #include "core-cpu-cache.h"
 #include "core-put.h"
 
-#define MIN_PREFETCH_L3_SIZE		(4 * KB)
+#define MIN_PREFETCH_L3_SIZE		(4 * STRESS_KB)
 #define MAX_PREFETCH_L3_SIZE		(MAX_MEM_LIMIT)
-#define DEFAULT_PREFETCH_L3_SIZE	(4 * MB)
+#define DEFAULT_PREFETCH_L3_SIZE	(4 * STRESS_MB)
 
 #define STRESS_PREFETCH_OFFSETS		(128)
 #define STRESS_CACHE_LINE_SIZE		(64)
@@ -53,10 +53,10 @@ typedef struct {
 } stress_prefetch_info_t;
 
 typedef struct {
-	char *name;
-	int method;
+	const char *name;
+	const int method;
 	bool (*available)(void);
-	bool check_prefetch_rate;
+	const bool check_prefetch_rate;
 } stress_prefetch_method_t;
 
 #define STRESS_PREFETCH_BUILTIN            (0)
@@ -129,7 +129,7 @@ static inline uint64_t get_prefetch_L3_size(stress_args_t *args)
 	uint64_t cache_size = DEFAULT_PREFETCH_L3_SIZE;
 #if defined(__linux__)
 	stress_cpu_cache_cpus_t *cpu_caches;
-	stress_cpu_cache_t *cache = NULL;
+	const stress_cpu_cache_t *cache = NULL;
 	uint16_t max_cache_level;
 
 	cpu_caches = stress_cpu_cache_details_get();
@@ -238,12 +238,15 @@ static inline void OPTIMIZE3 stress_prefetch_benchmark(
 	const size_t i,
 	const uint64_t checksum_sane,
 	uint64_t *RESTRICT l3_data,
-	uint64_t *RESTRICT l3_data_end,
+	const uint64_t *RESTRICT l3_data_end,
 	uint64_t *total_count,
 	const bool verify,
 	bool *success)
 {
-	double t1, t2, t3, t4;
+	double t1;
+	double t2;
+	double t3;
+	double t4;
 	const size_t l3_data_size = (uintptr_t)l3_data_end - (uintptr_t)l3_data;
 	volatile uint64_t *ptr;
 	uint64_t *pre_ptr;
@@ -389,12 +392,19 @@ static uint64_t stress_prefetch_data_set(uint64_t *l3_data, const uint64_t *l3_d
  */
 static int stress_prefetch(stress_args_t *args)
 {
-	uint64_t *l3_data, *l3_data_end, total_count = 0, checksum_sane;
-	size_t l3_data_size = 0, l3_data_mmap_size;
-	stress_prefetch_info_t prefetch_info[STRESS_PREFETCH_OFFSETS];
-	size_t i, best;
+	uint64_t *l3_data;
+	const uint64_t *l3_data_end;
+	uint64_t total_count = 0;
+	uint64_t checksum_sane;
+	size_t l3_data_size = 0;
+	size_t l3_data_mmap_size;
+	size_t i;
+	size_t best;
 	size_t prefetch_method = STRESS_PREFETCH_BUILTIN;
-	double best_rate, ns, non_prefetch_rate;
+	stress_prefetch_info_t prefetch_info[STRESS_PREFETCH_OFFSETS];
+	double best_rate;
+	double ns;
+	double non_prefetch_rate;
 	bool success = true;
 	bool check_prefetch_rate;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -425,7 +435,7 @@ static int stress_prefetch(stress_args_t *args)
 #endif
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (l3_data == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap %zu bytes%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), "
 			"skipping stressor\n",
 			args->name, l3_data_mmap_size,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -478,7 +488,7 @@ static int stress_prefetch(stress_args_t *args)
 		}
 	}
 
-	non_prefetch_rate = prefetch_info[0].rate / (double)GB;
+	non_prefetch_rate = prefetch_info[0].rate / (double)STRESS_GB;
 	stress_metrics_set(args, "GB per sec non-prefetch read rate",
 		non_prefetch_rate, STRESS_METRIC_HARMONIC_MEAN);
 
@@ -488,10 +498,10 @@ static int stress_prefetch(stress_args_t *args)
 		ns = 0.0;
 
 	pr_dbg("%s: best prefetch read rate @ %.2f GB per sec at offset %zu (~%.2f nanosecs)\n",
-		args->name, best_rate / (double)GB,
+		args->name, best_rate / (double)STRESS_GB,
 		prefetch_info[best].offset, ns);
 
-	best_rate /= (double)GB;
+	best_rate /= (double)STRESS_GB;
 	stress_metrics_set(args, "GB per sec best read rate",
 		best_rate, STRESS_METRIC_HARMONIC_MEAN);
 
@@ -517,8 +527,21 @@ static const char *stress_prefetch_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_prefetch_l3_size,	"prefetch-l3-size", TYPE_ID_SIZE_T_BYTES_VM, MIN_PREFETCH_L3_SIZE, MAX_PREFETCH_L3_SIZE, NULL },
-	{ OPT_prefetch_method,	"prefetch-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_prefetch_method },
+	{ OPT_prefetch_method,	"prefetch-method",  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_prefetch_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("d-cache-prefetch"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("memory-bound"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("memory-stream"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_prefetch_info = {
@@ -526,5 +549,6 @@ const stressor_info_t stress_prefetch_info = {
 	.classifier = CLASS_CPU | CLASS_CPU_CACHE | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

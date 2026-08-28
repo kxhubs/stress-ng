@@ -35,7 +35,7 @@ static const stress_help_t help[] = {
 };
 
 static const char *s_args_name = "";
-static char *s_method_name = "";
+static const char *s_method_name = "";
 
 typedef void (*stress_memcpy_func)(uint8_t *str1, uint8_t *str2, uint8_t *str3);
 
@@ -298,7 +298,10 @@ static const stress_memcpy_method_info_t stress_memcpy_methods[] = {
  */
 static int stress_memcpy(stress_args_t *args)
 {
-	uint8_t *buf, *str1, *str2, *str3;
+	uint8_t *buf;
+	uint8_t *str1;
+	uint8_t *str2;
+	uint8_t *str3;
 	size_t memcpy_method = 0;
 	stress_memcpy_func func;
 
@@ -354,8 +357,22 @@ static const char *stress_memcpy_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_memcpy_method, "memcpy-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_memcpy_method },
+	{ OPT_memcpy_method, "memcpy-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_memcpy_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache-l1-write"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-copy"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_memcpy_info = {
@@ -363,5 +380,6 @@ const stressor_info_t stress_memcpy_info = {
 	.classifier = CLASS_CPU_CACHE | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

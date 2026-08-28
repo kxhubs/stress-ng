@@ -96,7 +96,8 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
 	for (i = 0; i < DFP_ELEMENTS; i++) {				\
 		dfp_data[i].field.r[idx] = dfp_data[i].field.r_init;	\
@@ -136,7 +137,8 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
 	for (i = 0; i < DFP_ELEMENTS; i++) {				\
 		dfp_data[i].field.r[idx] = dfp_data[i].field.r_init;	\
@@ -176,7 +178,8 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
 	for (i = 0; i < DFP_ELEMENTS; i++) {				\
 		dfp_data[i].field.r[idx] = dfp_data[i].field.r_init;	\
@@ -216,7 +219,8 @@ static double TARGET_CLONES OPTIMIZE3 name(				\
 {									\
 	register int i;							\
 	const int loops = LOOPS_PER_CALL >> 1;				\
-	double t1, t2;							\
+	double t1;							\
+	double t2;							\
 									\
 	for (i = 0; i < DFP_ELEMENTS; i++) {				\
 		dfp_data[i].field.r[idx] = dfp_data[i].field.r_init;	\
@@ -437,7 +441,8 @@ static double stress_dfp_all(
 
 static int stress_dfp(stress_args_t *args)
 {
-	size_t i, mmap_size;
+	size_t i;
+	size_t mmap_size;
 	dfp_data_t *dfp_data;
 	size_t dfp_method = 0;	/* "all" */
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -565,6 +570,7 @@ static int stress_dfp(stress_args_t *args)
 	for (i = 1; i < STRESS_NUM_DFP_FUNCS; i++) {
 		const double count = stress_dfp_metrics[i].count;
 		const double duration = stress_dfp_metrics[i].duration;
+
 		if ((duration > 0.0) && (count > 0.0)) {
 			char msg[64];
 			const double rate = count / duration;
@@ -592,13 +598,27 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("fp-decimal"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dfp_info = {
 	.stressor = stress_dfp,
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(stress_dfp_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(stress_dfp_funcs),
+	.exercises = exercises
 };
 #else
 
@@ -610,7 +630,7 @@ static const char *stress_dfp_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_dfp_method, "dfp-method", TYPE_ID_SIZE_T_METHOD, 0, 1, (void *)stress_dfp_method },
+	{ OPT_dfp_method, "dfp-method", TYPE_ID_SIZE_T_METHOD, 0, 1, stress_dfp_method },
 	END_OPT,
 };
 

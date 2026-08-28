@@ -38,9 +38,9 @@
 #define HAVE_TIMER_FUNCS
 #endif
 
-#define MIN_LOCKBUS_BYTES	(64 * KB)
+#define MIN_LOCKBUS_BYTES	(64 * STRESS_KB)
 #define MAX_LOCKBUS_BYTES	(MAX_MEM_LIMIT)
-#define DEFAULT_LOCKBUS_BYTES	(16 * MB)
+#define DEFAULT_LOCKBUS_BYTES	(16 * STRESS_MB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"lockbus N",	 	"start N workers locking a memory increment" },
@@ -219,18 +219,21 @@ static int stress_lockbus(stress_args_t *args)
 {
 	uint32_t *local_buffer;
 	double t, rate;
-	NOCLOBBER double duration, count;
-	NOCLOBBER int rc = EXIT_SUCCESS;
-	uint32_t *misaligned_ptr1, *misaligned_ptr2;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
+	uint32_t *misaligned_ptr1;
+	uint32_t *misaligned_ptr2;
 #if defined(HAVE_TIMER_FUNCS)
 	timer_t timerid;
-	NOCLOBBER int timer_ret = -1;
+	CLOBBERED int timer_ret = -1;
 #endif
 #if defined(HAVE_NUMA_LOCKBUS)
-	NOCLOBBER stress_numa_mask_t *numa_mask;
+	stress_numa_mask_t * CLOBBERED numa_mask;
 #endif
 #if defined(STRESS_ARCH_X86)
-	uint32_t *splitlock_ptr1, *splitlock_ptr2;
+	uint32_t *splitlock_ptr1;
+	uint32_t *splitlock_ptr2;
 	bool lockbus_nosplit = false;
 
 	do_sigill = false;
@@ -241,7 +244,7 @@ static int stress_lockbus(stress_args_t *args)
 #endif
 
 	if (shared_buffer == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu shared bytes%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu shared bytes failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, (size_t)lockbus_buffer_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -250,7 +253,7 @@ static int stress_lockbus(stress_args_t *args)
 	local_buffer = (uint32_t *)stress_mmap_populate(NULL, lockbus_buffer_size,
 			PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (local_buffer == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), skipping stressor\n",
 			args->name, (size_t)lockbus_buffer_size,
 			stress_memory_free_get(), errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
@@ -382,8 +385,6 @@ misaligned_done:
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
-	duration = 0;
-	count = 0;
 	do {
 		uint32_t *ptr0 = stress_mwc1() ?
 			local_buffer + (stress_mwc32modn(lockbus_buffer_size - CHUNK_SIZE) >> 2) :
@@ -457,13 +458,30 @@ unmap_local_buffer:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bus-lock"),
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("memory-bus"),
+#if !defined(STRESS_ARCH_M68K)
+	STRESS_EX_FEATURE("memory-misaligned"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_lockbus_info = {
 	.stressor = stress_lockbus,
 	.classifier = CLASS_CPU_CACHE | CLASS_MEMORY,
 	.opts = opts,
 	.help = help,
 	.init = stress_lockbus_init,
-	.deinit = stress_lockbus_deinit
+	.deinit = stress_lockbus_deinit,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_lockbus_info = {
@@ -471,6 +489,6 @@ const stressor_info_t stress_lockbus_info = {
 	.classifier = CLASS_CPU_CACHE | CLASS_MEMORY,
 	.opts = opts,
 	.help = help,
-	.unimplemented_reason = "built without gcc __atomic* lock builtins or siglongjmp support"
+	.unimplemented_reason = "built without gcc __atomic* lock builtins or siglongjmp() support"
 };
 #endif

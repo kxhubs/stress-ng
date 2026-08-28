@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-capabilities.h"
+#include "core-builtin.h"
 #include "core-killpid.h"
 #include "core-mmap.h"
 
@@ -160,17 +161,20 @@ static pid_t stress_access_spawn(
 	stress_pid_t **s_pids_head,
 	stress_pid_t *s_pid)
 {
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0) {
 		pr_inf_skip("%s: fork failed %d (%s), skipping concurrent access stressing\n",
 			args->name, errno, strerror(errno));
+		s_pid->pid = pid;
 		return -1;
-	} else if (s_pid->pid == 0) {
+	} else if (pid == 0) {
 		/* Concurrent stressor */
 		size_t j = 0;
 
-		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		s_pid->pid = getpid();
+		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		stress_sync_start_wait_s_pid(s_pid);
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
@@ -231,9 +235,10 @@ static pid_t stress_access_spawn(
 		} while (stress_continue(args));
 		_exit(0);
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 static void stress_access_reap(stress_pid_t *s_pid)
@@ -250,7 +255,10 @@ static void stress_access_reap(stress_pid_t *s_pid)
  */
 static int stress_access(stress_args_t *args)
 {
-	int fd1 = -1, fd2 = -1, ret, rc = EXIT_FAILURE;
+	int fd1 = -1;
+	int fd2 = -1;
+	int ret;
+	int rc = EXIT_FAILURE;
 	char filename1[PATH_MAX];
 	char filename2[PATH_MAX];
 	const mode_t all_mask = 0700;
@@ -259,10 +267,12 @@ static int stress_access(stress_args_t *args)
 #endif
 	const bool is_root = stress_capabilities_check(SHIM_CAP_IS_ROOT);
 	const char *fs_type;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	uint32_t rnd32 = stress_mwc32();
 	/* 3 metrics, index 0 for parent, 1 for child, 2 for total */
-	size_t i, metrics_size = sizeof(*metrics) * 3;
+	size_t i;
+	size_t metrics_size = sizeof(*metrics) * 3;
 	double rate;
 	bool report_chmod_error = true;
 	static const char * const ignore_chmod_fs[] = {
@@ -293,13 +303,13 @@ static int stress_access(stress_args_t *args)
 	(void)umask(0700);
 	if ((fd1 = creat(filename1, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: creat on %s failed, errno=%d (%s)\n",
+		pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 			args->name, filename1, errno, strerror(errno));
 		goto tidy;
 	}
 	if ((fd2 = creat(filename2, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: creat on %s failed, errno=%d (%s)\n",
+		pr_fail("%s: creat '%s' failed, errno=%d (%s)\n",
 			args->name, filename2, errno, strerror(errno));
 		goto tidy;
 	}
@@ -311,7 +321,7 @@ static int stress_access(stress_args_t *args)
 	 * so silently ignore error reports on these
 	 */
 	for (i = 0; i < SIZEOF_ARRAY(ignore_chmod_fs); i++) {
-		if (strcmp(fs_type, ignore_chmod_fs[i]) == 0) {
+		if (shim_strcmp(fs_type, ignore_chmod_fs[i]) == 0) {
 			report_chmod_error = false;
 			break;
 		}
@@ -527,6 +537,19 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("access"),
+	STRESS_EX_SYSCALL("chmod"),
+	STRESS_EX_SYSCALL("fchmod"),
+#if defined(HAVE_FACCESSAT)
+	STRESS_EX_SYSCALL("faccessat"),
+#endif
+#if defined(HAVE_FACCESSAT2)
+	STRESS_EX_SYSCALL("faccessat2"),
+#endif
+	STRESS_EX_END,
+};
+
 static const stress_help_t help[] = {
 	{ NULL,	"access N",	"start N workers that stress file access permissions" },
 	{ NULL,	"access-ops N",	"stop after N file access bogo operations" },
@@ -537,5 +560,6 @@ const stressor_info_t stress_access_info = {
 	.stressor = stress_access,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

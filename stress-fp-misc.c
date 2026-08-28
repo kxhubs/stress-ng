@@ -22,8 +22,8 @@
 #include <math.h>
 
 static const stress_help_t help[] = {
-	{ NULL,	"fp_misc N",	 "start N workers performing miscellaneous floating point operations" },
-	{ NULL,	"fp_misc-ops N", "stop after N floating point miscellaneous bogo operations" },
+	{ NULL,	"fp-misc N",	 "start N workers performing miscellaneous floating point operations" },
+	{ NULL,	"fp-misc-ops N", "stop after N floating point miscellaneous bogo operations" },
 	{ NULL,	NULL,		 NULL }
 };
 
@@ -286,12 +286,12 @@ static bool OPTIMIZE3 stress_fp_misc_fpclassify_float(stress_args_t *args)
 	}
 	if ((ret = fpclassify(fp_float_inf)) != FP_INFINITE) {
 		pr_fail("%s: fpclassify(%f) is not FP_INFINITE, got %s instead\n",
-			args->name, (double)fp_float_x, stress_fp_misc_fpclassify_str(ret));
+			args->name, (double)fp_float_inf, stress_fp_misc_fpclassify_str(ret));
 		return false;
 	}
 	if ((ret = fpclassify(fp_float_zero)) != FP_ZERO) {
 		pr_fail("%s: fpclassify(%f) is not FP_ZERO, got %s instead\n",
-			args->name, (double)fp_float_x, stress_fp_misc_fpclassify_str(ret));
+			args->name, (double)fp_float_zero, stress_fp_misc_fpclassify_str(ret));
 		return false;
 	}
 	return true;
@@ -1327,11 +1327,26 @@ fp_fail:
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("m"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fp_misc_info = {
 	.stressor = stress_fp_misc,
 	.classifier = CLASS_CPU | CLASS_FP | CLASS_COMPUTE,
 	.verify = VERIFY_ALWAYS,
 	.max_metrics_items = SIZEOF_ARRAY(stress_fp_misc_methods),
 	.supported = stress_fp_misc_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

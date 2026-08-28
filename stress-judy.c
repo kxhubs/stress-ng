@@ -23,9 +23,9 @@
 #include <Judy.h>
 #endif
 
-#define MIN_JUDY_SIZE		(1 * KB)
-#define MAX_JUDY_SIZE		(4 * MB)
-#define DEFAULT_JUDY_SIZE	(256 * KB)
+#define MIN_JUDY_SIZE		(1 * STRESS_KB)
+#define MAX_JUDY_SIZE		(4 * STRESS_MB)
+#define DEFAULT_JUDY_SIZE	(256 * STRESS_KB)
 
 #define JUDY_OP_INSERT		(0)
 #define JUDY_OP_FIND		(1)
@@ -63,7 +63,8 @@ static int OPTIMIZE3 stress_judy(stress_args_t *args)
 {
 	uint64_t judy_size = DEFAULT_JUDY_SIZE;
 	size_t n;
-	register Word_t i, j;
+	register Word_t i;
+	register Word_t j;
 	double duration[JUDY_OP_MAX], count[JUDY_OP_MAX];
 	size_t k;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
@@ -105,8 +106,8 @@ static int OPTIMIZE3 stress_judy(stress_args_t *args)
 
 			JLI(pvalue, PJLArray, idx)
 			if (UNLIKELY((pvalue == NULL) || (pvalue == PJERR))) {
-				pr_err("%s: cannot allocate new "
-					"judy node%s\n", args->name,
+				pr_err("%s: allocate new "
+					"judy node failed%s\n", args->name,
 					stress_memory_free_get());
 				for (j = 0; j < n; j++) {
 					idx = gen_index(j);
@@ -178,12 +179,24 @@ abort:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("memory-cmp"),
+
+	STRESS_EX_LIBRARY("judy"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_judy_info = {
 	.stressor = stress_judy,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_judy_info = {

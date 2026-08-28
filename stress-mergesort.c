@@ -25,9 +25,9 @@
 #include "core-sort.h"
 #include "core-target-clones.h"
 
-#define MIN_MERGESORT_SIZE	(1 * KB)
-#define MAX_MERGESORT_SIZE	(4 * MB)
-#define DEFAULT_MERGESORT_SIZE	(256 * KB)
+#define MIN_MERGESORT_SIZE	(1 * STRESS_KB)
+#define MAX_MERGESORT_SIZE	(4 * STRESS_MB)
+#define DEFAULT_MERGESORT_SIZE	(256 * STRESS_KB)
 
 static const stress_help_t help[] = {
 	{ NULL,	"mergesort N",		"start N workers merge sorting 32 bit random integers" },
@@ -57,7 +57,7 @@ static inline void ALWAYS_INLINE mergesort_copy4(uint8_t *RESTRICT p1, uint8_t *
 {
 	register const uint32_t *u32end = (uint32_t *)shim_assume_aligned((p1 + size), 4);
 	register uint32_t *u32p1 = (uint32_t *)shim_assume_aligned(p1, 4);
-	register uint32_t *u32p2 = (uint32_t *)shim_assume_aligned(p2, 4);
+	register const uint32_t *u32p2 = (uint32_t *)shim_assume_aligned(p2, 4);
 
 	while (LIKELY(u32p1 < u32end))
 		*(u32p1++) = *(u32p2++);
@@ -67,7 +67,7 @@ static inline void ALWAYS_INLINE mergesort_copy(uint8_t *RESTRICT p1, uint8_t *R
 {
 	register const uint8_t *u8end = (uint8_t *)(p1 + size);
 	register uint8_t *u8p1 = (uint8_t *)p1;
-	register uint8_t *u8p2 = (uint8_t *)p2;
+	register const uint8_t *u8p2 = (uint8_t *)p2;
 
 	while (LIKELY(u8p1 < u8end))
 		*(u8p1++) = *(u8p2++);
@@ -84,9 +84,15 @@ static inline void mergesort_partition4(
 	const size_t right,
 	int (*compar)(const void *, const void *))
 {
-	size_t mid, lhs_size, rhs_size, lhs_len, rhs_len;
+	size_t mid;
+	size_t lhs_size;
+	size_t rhs_size;
+	size_t lhs_len;
+	size_t rhs_len;
 	register ssize_t n;
-	register uint8_t *rhs, *lhs_end, *rhs_end;
+	register uint8_t *rhs;
+	register const uint8_t *lhs_end;
+	register const uint8_t *rhs_end;
 
 	mid = left + ((right - left) >> 1);
 	if (left < mid)
@@ -142,9 +148,15 @@ static inline void mergesort_partition(
 	const size_t size,
 	int (*compar)(const void *, const void *))
 {
-	size_t mid, lhs_size, rhs_size, lhs_len, rhs_len;
+	size_t mid;
+	size_t lhs_size;
+	size_t rhs_size;
+	size_t lhs_len;
+	size_t rhs_len;
 	register ssize_t n;
-	register uint8_t *rhs, *lhs_end, *rhs_end;
+	register uint8_t *rhs;
+	register const uint8_t *lhs_end;
+	register const uint8_t *rhs_end;
 
 	mid = left + ((right - left) >> 1);
 	if (left < mid)
@@ -236,7 +248,7 @@ static const char *stress_mergesort_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_mergesort_size,   "mergesort-size",   TYPE_ID_UINT64, MIN_MERGESORT_SIZE, MAX_MERGESORT_SIZE, NULL },
-	{ OPT_mergesort_method, "mergesort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_mergesort_method },
+	{ OPT_mergesort_method, "mergesort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_mergesort_method },
 	END_OPT,
 };
 
@@ -260,11 +272,17 @@ static void MLOCKED_TEXT stress_mergesort_handler(int signum)
 static int stress_mergesort(stress_args_t *args)
 {
 	uint64_t mergesort_size = DEFAULT_MERGESORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, i, mergesort_method = 0, data_size;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t i;
+	size_t mergesort_method = 0;
+	size_t data_size;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	double rate;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
 	mergesort_func_t mergesort_func;
 #if !defined(__OpenBSD__) &&	\
     !defined(__NetBSD__) &&	\
@@ -294,7 +312,7 @@ static int stress_mergesort(stress_args_t *args)
 			MAP_ANONYMOUS | MAP_PRIVATE,
 			-1, 0);
 	if (data == MAP_FAILED) {
-		pr_inf_skip("%s: mmap failed allocating %zu integers%s, "
+		pr_inf_skip("%s: mmap %zu integers failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, n, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -442,10 +460,24 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("speculation-mispredict"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_LIBRARY("bsd"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mergesort_info = {
 	.stressor = stress_mergesort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

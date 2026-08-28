@@ -23,9 +23,9 @@
 #include "core-sort.h"
 #include "core-pragma.h"
 
-#define MIN_BUBBLESORT_SIZE	(1 * KB)
-#define MAX_BUBBLESORT_SIZE	(4 * MB)
-#define DEFAULT_BUBBLESORT_SIZE	(16384)
+#define MIN_BUBBLESORT_SIZE	(1 * STRESS_KB)
+#define MAX_BUBBLESORT_SIZE	(4 * STRESS_MB)
+#define DEFAULT_BUBBLESORT_SIZE	(16 * STRESS_KB)
 
 #if defined(HAVE_SIGLONGJMP)
 static volatile bool do_jmp = true;
@@ -65,11 +65,12 @@ static int bubblesort_fast(
 	swap_func = stress_sort_swap_func(size);
 
 	do {
-		register size_t i, n = 0;
 		register uintptr_t p1 = (uintptr_t)base;
 		register uintptr_t p2 = size + (uintptr_t)base;
+		register size_t n = 0;
+		register size_t i;
 
-PRAGMA_UNROLL_N(4)
+PRAGMA_UNROLL
 		for (i = 1; i < nmemb; i++) {
 			if (compar((void *)p1, (void *)p2) > 0) {
 				swap_func((void *)p1, (void *)p2, size);
@@ -90,7 +91,7 @@ static int bubblesort_naive(
 	size_t size,
 	int (*compar)(const void *, const void *))
 {
-	bool swapped;
+	register bool swapped;
 	stress_sort_swap_func_t swap_func;
 
 	if (UNLIKELY(nmemb <= 1))
@@ -103,9 +104,9 @@ static int bubblesort_naive(
 	swap_func = stress_sort_swap_func(size);
 
 	do {
-		register size_t i;
 		register uintptr_t p1 = (uintptr_t)base;
 		register uintptr_t p2 = size + (uintptr_t)base;
+		register size_t i;
 
 		swapped = false;
 PRAGMA_UNROLL_N(4)
@@ -135,7 +136,7 @@ static const char *stress_bubblesort_method(const size_t i)
 
 static const stress_opt_t opts[] = {
 	{ OPT_bubblesort_size,   "bubblesort-size",   TYPE_ID_UINT64, MIN_BUBBLESORT_SIZE, MAX_BUBBLESORT_SIZE, NULL },
-	{ OPT_bubblesort_method, "bubblesort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_bubblesort_method },
+	{ OPT_bubblesort_method, "bubblesort-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_bubblesort_method },
 	END_OPT,
 };
 
@@ -157,11 +158,17 @@ static void MLOCKED_TEXT stress_bubblesort_handler(int signum)
 static int stress_bubblesort(stress_args_t *args)
 {
 	uint64_t bubblesort_size = DEFAULT_BUBBLESORT_SIZE;
-	int32_t *data, *ptr;
-	size_t n, i, data_size, bubblesort_method = 0;
+	int32_t *data;
+	const int32_t *ptr;
+	size_t n;
+	size_t i;
+	size_t data_size;
+	size_t bubblesort_method = 0;
 	double rate;
-	NOCLOBBER int rc = EXIT_SUCCESS;
-	NOCLOBBER double duration = 0.0, count = 0.0, sorted = 0.0;
+	CLOBBERED int rc = EXIT_SUCCESS;
+	CLOBBERED double duration = 0.0;
+	CLOBBERED double count = 0.0;
+	CLOBBERED double sorted = 0.0;
 	bubblesort_func_t bubblesort_func;
 #if defined(HAVE_SIGLONGJMP)
 	struct sigaction old_action;
@@ -326,10 +333,25 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("i-tlb-read-miss"),
+	STRESS_EX_FEATURE("memory-cmp"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_bubblesort_info = {
 	.stressor = stress_bubblesort,
 	.classifier = CLASS_CPU_CACHE | CLASS_CPU | CLASS_MEMORY | CLASS_SORT | CLASS_HOT,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -234,12 +234,18 @@ static int do_chmod(
 static int stress_chmod(stress_args_t *args)
 {
 	const pid_t ppid = getppid();
-	int fd = -1, rc = EXIT_FAILURE, retries = 0, dfd = -1;
+	int fd = -1;
+	int rc = EXIT_FAILURE;
+	int retries = 0;
+	int dfd = -1;
 	size_t i;
 	const int bad_fd = stress_fs_bad_fd_get();
 	mode_t all_mask = 0;
-	char filename[PATH_MAX], pathname[PATH_MAX], longpath[PATH_MAX + 16];
-	char tmp[PATH_MAX], *filebase;
+	char filename[PATH_MAX];
+	char pathname[PATH_MAX];
+	char longpath[PATH_MAX + 16];
+	char tmp[PATH_MAX];
+	const char *filebase;
 	int *mode_perms = NULL;
 	size_t mode_count;
 
@@ -252,14 +258,12 @@ static int stress_chmod(stress_args_t *args)
 	 *  Allow for multiple workers to chmod the *same* file
 	 */
 	stress_fs_temp_dir(pathname, sizeof(pathname), args->name, ppid, 0);
-	if (mkdir(pathname, S_IRWXU) < 0) {
-		if (errno != EEXIST) {
-			rc = stress_exit_status(errno);
-			pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
-				args->name, pathname, errno, strerror(errno));
-			free(mode_perms);
-			return rc;
-		}
+	if ((mkdir(pathname, S_IRWXU) < 0) && (errno != EEXIST)) {
+		rc = stress_exit_status(errno);
+		pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
+			args->name, pathname, errno, strerror(errno));
+		free(mode_perms);
+		return rc;
 	}
 #if defined(O_DIRECTORY)
 	dfd = open(pathname, O_DIRECTORY | O_RDONLY);
@@ -278,7 +282,7 @@ static int stress_chmod(stress_args_t *args)
 	if (stress_instance_zero(args)) {
 		if ((fd = creat(filename, S_IRUSR | S_IWUSR)) < 0) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: create %s failed, errno=%d (%s)\n",
+			pr_fail("%s: create '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			goto tidy;
 		}
@@ -301,7 +305,7 @@ static int stress_chmod(stress_args_t *args)
 			}
 			/* Too many retries? */
 			if (++retries >= 10000) {
-				pr_err("%s: chmod: file %s took %d "
+				pr_err("%s: chmod '%s' took %d "
 					"retries to open and gave up "
 					"(instance %" PRIu32 ")%s\n",
 					args->name, filename, retries, args->instance,
@@ -335,7 +339,7 @@ static int stress_chmod(stress_args_t *args)
 					rc = EXIT_SUCCESS;
 					goto tidy;
 				}
-				pr_fail("%s: chmod %s failed, errno=%d (%s)%s\n",
+				pr_fail("%s: chmod '%s' failed, errno=%d (%s)%s\n",
 					args->name, filename, errno, strerror(errno),
 					stress_fs_type_get(filename));
 			}
@@ -365,9 +369,25 @@ tidy:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("chmod"),
+	STRESS_EX_SYSCALL("fchmod"),
+#if defined(HAVE_FCHMODAT)
+	STRESS_EX_SYSCALL("fchmodat"),
+#endif
+#if defined(HAVE_FCHMODAT2)
+	STRESS_EX_SYSCALL("fchmodat2"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_chmod_info = {
 	.stressor = stress_chmod,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

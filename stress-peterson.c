@@ -74,7 +74,8 @@ static void MLOCKED_TEXT NORETURN stress_peterson_sigill_handler(int signum)
 
 static int stress_peterson_supported(const char *name)
 {
-	static struct sigaction act, oldact;
+	static struct sigaction act;
+	static struct sigaction oldact;
 	int ret;
 
 	(void)shim_memset(&act, 0, sizeof(act));
@@ -108,7 +109,8 @@ static int stress_peterson_supported(const char *name)
 
 static int stress_peterson_p0(stress_args_t *args)
 {
-	int check0, check1;
+	int check0;
+	int check1;
 	double t;
 
 	t = stress_time_now();
@@ -157,7 +159,8 @@ static int stress_peterson_p0(stress_args_t *args)
 
 static int stress_peterson_p1(stress_args_t *args)
 {
-	int check0, check1;
+	int check0;
+	int check1;
 	double t;
 
 	t = stress_time_now();
@@ -213,14 +216,17 @@ static int stress_peterson(stress_args_t *args)
 {
 	const size_t sz = STRESS_MAXIMUM(args->page_size, sizeof(*peterson));
 	pid_t pid;
-	double duration, count, rate;
-	int parent_cpu, rc = EXIT_SUCCESS;
+	double duration;
+	double count;
+	double rate;
+	int parent_cpu;
+	int rc = EXIT_SUCCESS;
 
 	peterson = (peterson_t *)stress_mmap_populate(NULL, sz,
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (peterson == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap %zu bytes for peterson shared struct%s, "
+		pr_inf_skip("%s: mmap %zu bytes for peterson shared struct failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sz, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -241,7 +247,7 @@ static int stress_peterson(stress_args_t *args)
 	parent_cpu = stress_cpu_get();
 	pid = fork();
 	if (pid < 0) {
-		pr_inf_skip("%s: cannot create child process, skipping stressor\n", args->name);
+		pr_inf_skip("%s: create child process failed, skipping stressor\n", args->name);
 		return EXIT_NO_RESOURCE;
 	} else if (pid == 0) {
 		/* Child */
@@ -282,12 +288,25 @@ static int stress_peterson(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-instructions"),
+	STRESS_EX_FEATURE("d-cache-l1-read"),
+	STRESS_EX_FEATURE("d-cache-ll-read"),
+	STRESS_EX_FEATURE("d-tlb-write-miss"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_peterson_info = {
 	.stressor = stress_peterson,
 	.classifier = CLASS_CPU_CACHE | CLASS_IPC,
 	.verify = VERIFY_ALWAYS,
 	.supported = stress_peterson_supported,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else

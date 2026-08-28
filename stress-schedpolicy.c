@@ -46,6 +46,14 @@ static const stress_opt_t opts[] = {
      !defined(__HAIKU__) &&						\
      !defined(__serenity__)
 
+#if (defined(SCHED_DEADLINE) || 	\
+     defined(SCHED_BATCH) || 		\
+     defined(SCHED_OTHER)) &&		\
+     (defined(HAVE_SCHED_GETATTR) ||	\
+      defined(HAVE_SCHED_SETATTR))
+#define USE_CLAMP
+#endif
+
 static int stress_schedpolicy(stress_args_t *args)
 {
 	size_t policy_index = (size_t)args->instance % stress_sched_types_length;
@@ -76,7 +84,8 @@ static int stress_schedpolicy(stress_args_t *args)
 	int n = 0;
 #endif
 	size_t i;
-	double t_start, duration;
+	double t_start;
+	double duration;
 	const pid_t pid = getpid();
 	uint64_t *counters;
 #if defined(HAVE_SCHED_SETAFFINITY) && \
@@ -93,7 +102,7 @@ static int stress_schedpolicy(stress_args_t *args)
 
 	counters = (uint64_t *)calloc(stress_sched_types_length, sizeof(*counters));
 	if (!counters) {
-		pr_inf_skip("%s: cannot allocate %zu 64 bit counters, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu 64 bit counters failed, skipping stressor\n",
 			args->name, stress_sched_types_length);
 		return EXIT_NO_RESOURCE;
 	}
@@ -144,8 +153,16 @@ static int stress_schedpolicy(stress_args_t *args)
 #endif
 		struct sched_param param;
 		int ret = 0;
-		int max_prio, min_prio, rng_prio;
+		int max_prio;
+		int min_prio;
+		int rng_prio;
 		const char *new_policy_name;
+		const char *syscall_name = "unknown";
+#if defined(USE_CLAMP)
+		static bool use_clamp = true;
+
+		(void)use_clamp;
+#endif
 
 		/*
 		 *  find a new randomized policy that is not the same
@@ -177,8 +194,6 @@ static int stress_schedpolicy(stress_args_t *args)
 			param.sched_priority = 0;
 #if defined(SCHED_OTHER)
 			(void)sched_setscheduler(pid, SCHED_OTHER, &param);
-#else
-			(void)sched_setscheduler(pid, new_policy, &param);
 #endif
 
 			(void)shim_memset(&attr, 0, sizeof(attr));
@@ -200,14 +215,16 @@ static int stress_schedpolicy(stress_args_t *args)
 			if (stress_mwc1())
 				attr.sched_flags |= SCHED_FLAG_RECLAIM;
 #endif
-#if defined(SCHED_FLAG_UTIL_CLAMP_MIN)
-			if (stress_mwc1()) {
+#if defined(SCHED_FLAG_UTIL_CLAMP_MIN) &&	\
+    defined(USE_CLAMP)
+			if (use_clamp && stress_mwc1()) {
 				attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN;
 				attr.sched_util_min = 1;
 			}
 #endif
-#if defined(SCHED_FLAG_UTIL_CLAMP_MAX)
-			if (stress_mwc1()) {
+#if defined(SCHED_FLAG_UTIL_CLAMP_MAX) &&	\
+    defined(USE_CLAMP)
+			if (use_clamp && stress_mwc1()) {
 				attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MAX;
 				attr.sched_util_max = 2 + (stress_mwc8() & 0x3f);
 			}
@@ -222,7 +239,16 @@ static int stress_schedpolicy(stress_args_t *args)
 			if (attr.sched_period < 1100)
 				attr.sched_period = 1100;
 
+			syscall_name = "sched_setattr";
+			errno = 0;
 			ret = shim_sched_setattr(pid, &attr, 0);
+			if ((ret < 0) && (errno == EOPNOTSUPP)) {
+#if defined(USE_CLAMP)
+				/* Disable clamping for next time */
+				use_clamp = false;
+#endif
+				goto next_policy;
+			}
 			break;
 #endif
 
@@ -251,24 +277,34 @@ static int stress_schedpolicy(stress_args_t *args)
 				attr.sched_policy = new_policy;
 				attr.sched_nice = stress_mwc8modn(40) - 19;
 				attr.sched_flags = 0;
-#if defined(SCHED_FLAG_UTIL_CLAMP_MIN)
-				if (stress_mwc1()) {
+#if defined(SCHED_FLAG_UTIL_CLAMP_MIN) &&	\
+    defined(USE_CLAMP)
+				if (use_clamp && stress_mwc1()) {
 					attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN;
 					attr.sched_util_min = 1;
 				}
 #endif
-#if defined(SCHED_FLAG_UTIL_CLAMP_MAX)
-				if (stress_mwc1()) {
+#if defined(SCHED_FLAG_UTIL_CLAMP_MAX) &&	\
+    defined(USE_CLAMP)
+				if (use_clamp && stress_mwc1()) {
 					attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MAX;
 					attr.sched_util_max = 2 + (stress_mwc8() & 0x3f);
 				}
 #endif
 				errno = 0;
 				ret = shim_sched_setattr(pid, &attr, 0);
+				if ((ret < 0) && (errno == EOPNOTSUPP)) {
+#if defined(USE_CLAMP)
+					/* Disable clamping for next time */
+					use_clamp = false;
+#endif
+					goto next_policy;
+				}
 				break;
 			}
 #endif
 			param.sched_priority = 0;
+			syscall_name = "sched_setscheduler";
 			errno = 0;
 			ret = sched_setscheduler(pid, new_policy, &param);
 			break;
@@ -305,11 +341,12 @@ case_sched_fifo:
 				break;
 			}
 			param.sched_priority = (int)stress_mwc32modn(rng_prio) + min_prio;
+			syscall_name = "sched_setscheduler";
+			errno = 0;
 			ret = sched_setscheduler(pid, new_policy, &param);
 			break;
 		default:
-			/* Should never get here */
-			break;
+			goto next_policy;
 		}
 		if (ret < 0) {
 			/*
@@ -323,10 +360,9 @@ case_sched_fifo:
 				     (errno != ENOSYS) &&
 				     (errno != E2BIG) &&
 				     (errno != EBUSY))) {
-				pr_fail("%s: sched_setscheduler "
-					"failed, errno=%d (%s) "
+				pr_fail("%s: %s failed, errno=%d (%s) "
 					"for scheduler policy %s\n",
-					args->name, errno, strerror(errno),
+					args->name, syscall_name, errno, strerror(errno),
 					new_policy_name);
 				rc = EXIT_FAILURE;
 				break;
@@ -507,7 +543,7 @@ case_sched_fifo:
 		attr.size = sizeof(attr);
 		ret = shim_sched_setattr(pid, &attr, 0);
 		if (UNLIKELY(ret < 0)) {
-			if (errno != ENOSYS) {
+			if ((errno != EOPNOTSUPP) && (errno != ENOSYS)) {
 				pr_fail("%s: sched_setattr failed, errno=%d (%s)\n",
 					args->name, errno, strerror(errno));
 				rc = EXIT_FAILURE;
@@ -528,10 +564,11 @@ case_sched_fifo:
 #else
 		UNEXPECTED
 #endif
+		stress_bogo_inc(args);
+next_policy:
 		policy_index++;
 		if (UNLIKELY(policy_index >= stress_sched_types_length))
 			policy_index = 0;
-		stress_bogo_inc(args);
 	} while (stress_continue(args));
 
 	duration = stress_time_now() - t_start;
@@ -558,12 +595,37 @@ case_sched_fifo:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(HAVE_SCHED_GETATTR)
+	STRESS_EX_SYSCALL("sched_getattr"),
+#endif
+#if defined(HAVE_SCHED_SETATTR)
+	STRESS_EX_SYSCALL("sched_setattr"),
+#endif
+#if defined(HAVE_SCHED_SETAFFINITY)
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+#endif
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+#if defined(SCHED_RR) ||	\
+    defined(SCHED_FIFO)
+	STRESS_EX_SYSCALL("sched_get_priority_min"),
+	STRESS_EX_SYSCALL("sched_get_priority_max"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_schedpolicy_info = {
 	.stressor = stress_schedpolicy,
 	.classifier = CLASS_INTERRUPT | CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_schedpolicy_info = {

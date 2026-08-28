@@ -71,10 +71,8 @@ static int stress_sigpipe(stress_args_t *args)
 
 		/* cause SIGPIPE if pipe closed */
 		ret = write(pipefds[1], &data, sizeof(data));
-		if (LIKELY(ret < 0)) {
-			if (errno == EPIPE)
-				epipe_count++;
-		}
+		if (LIKELY(ret < 0) && (errno == EPIPE))
+			epipe_count++;
 	} while (stress_continue(args));
 
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
@@ -95,9 +93,24 @@ static int stress_sigpipe(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+	STRESS_EX_FEATURE("system-time"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigpipe_info = {
 	.stressor = stress_sigpipe,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

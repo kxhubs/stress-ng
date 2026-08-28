@@ -107,7 +107,8 @@ static void NORETURN stress_exit_group_child(stress_args_t *args)
 {
 	int ret;
 	sigset_t set;
-	size_t i, j;
+	size_t i;
+	size_t j;
 
 	keep_running_flag = true;
 
@@ -208,11 +209,8 @@ static int stress_exit_group(stress_args_t *args)
 			return EXIT_FAILURE;
 		}
 
-again:
-		pid = fork();
+		pid = stress_retry_fork(args, 0);
 		if (pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			(void)pthread_mutex_destroy(&mutex);
 			break;
 		} else if (pid == 0) {
@@ -246,11 +244,34 @@ again:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+#if defined(__NR_exit_group) && \
+    defined(HAVE_SYSCALL)
+	STRESS_EX_SYSCALL("exit_group"),
+#else
+	STRESS_EX_SYSCALL("exit"),
+#endif
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("waitpid"),
+
+#if defined(HAVE_LIB_PTHREAD)
+	STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_exit_group_info = {
 	.stressor = stress_exit_group,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_exit_group_info = {

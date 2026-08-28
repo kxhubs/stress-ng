@@ -201,13 +201,13 @@ static int stress_dir_rename(
 
 		stress_fs_make_filename(old_filename, sizeof(old_filename), path, de->d_name);
 		if (rename(old_filename, new_filename) < 0) {
-			pr_fail("%s: rename %s to %s failed, errno=%d (%s)\n",
+			pr_fail("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 				args->name, old_filename, new_filename,
 				errno, strerror(errno));
 			break;
 		}
 		if (rename(new_filename, old_filename) < 0) {
-			pr_fail("%s: rename %s to %s failed, errno=%d (%s)\n",
+			pr_fail("%s: rename '%s' to '%s' failed, errno=%d (%s)\n",
 				args->name, new_filename, old_filename,
 				errno, strerror(errno));
 			break;
@@ -267,6 +267,27 @@ static int stress_mkdir(const int dir_fd, const char *path, const int mode)
 	(void)dir_fd;
 
 	return ret;
+}
+
+/*
+ *  stress_invalid_dentries()
+ *	exercise access to files that do not exist
+ *	(aka 'negative dentry')
+ */
+static inline void stress_invalid_dentries(const char *path)
+{
+	char filename[PATH_MAX + 32];
+	size_t len;
+	char i;
+
+	(void)shim_strscpy(filename, path, sizeof(filename));
+	(void)shim_strlcat(filename, "/", sizeof(filename));
+	len = shim_strnlen(filename, sizeof(filename));
+	(void)stress_rndstr(filename + len, 16);
+	for (i = 'a'; i <= 'z'; i++) {
+		filename[len] = i;
+		(void)access(filename, F_OK);
+	}
 }
 
 /*
@@ -354,12 +375,12 @@ static int stress_dir_touch(
 
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_fail("%s: cannot create file %s, errno=%d (%s)\n",
+		pr_fail("%s: cannot create file '%s', errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return -1;
 	}
 	if (write(fd, "data", 4) < 0) {
-		pr_inf("%s: failed to write to file %s, errno=%d (%s)\n",
+		pr_inf("%s: failed to write to file '%s', errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)close(fd);
 		return -1;
@@ -380,13 +401,16 @@ static int stress_dir_readdir(
 	DIR *dir;
 	char dirpath[PATH_MAX + 64];
 	char filename[PATH_MAX + 70];
-	int rc = 0, i, got_mask, all_mask;
+	int rc = 0;
+	int i;
+	int got_mask;
+	int all_mask;
 	const struct dirent *de;
 
 	(void)snprintf(dirpath, sizeof(dirpath), "%s/test-%" PRIdMAX "-%" PRIu32, pathname,
 		(intmax_t)getpid(), stress_mwc32());
 	if (mkdir(dirpath, S_IRUSR | S_IWUSR | S_IXUSR) < 0) {
-		pr_fail("%s: cannot mkdir %s, errno=%d (%s)\n",
+		pr_fail("%s: cannot mkdir '%s', errno=%d (%s)\n",
 			args->name, dirpath, errno, strerror(errno));
 		rc = -1;
 		goto err_rmdir;
@@ -397,7 +421,7 @@ static int stress_dir_readdir(
 	 */
 	dir = opendir(dirpath);
 	if (!dir) {
-		pr_fail("%s: cannot opendir %s, errno=%d (%s)\n",
+		pr_fail("%s: cannot opendir '%s', errno=%d (%s)\n",
 			args->name, dirpath, errno, strerror(errno));
 		rc = -1;
 		goto err_rmdir;
@@ -484,11 +508,14 @@ static int stress_dir(stress_args_t *args)
 	}
 
 	do {
-		uint64_t i, n = dir_dirs;
+		uint64_t i;
+		uint64_t n = dir_dirs;
 
 		stress_dir_mmap(dir_fd, args->page_size);
 		stress_dir_flock(dir_fd);
 		stress_dir_truncate(pathname, dir_fd);
+
+		stress_invalid_dentries(pathname);
 
 		for (i = 0; LIKELY(stress_continue(args) && (i < n)); i++) {
 			char path[PATH_MAX];
@@ -501,7 +528,7 @@ static int stress_dir(stress_args_t *args)
 				if ((errno != ENOSPC) &&
 				    (errno != ENOMEM) &&
 				    (errno != EMLINK)) {
-					pr_fail("%s: mkdir %s failed, errno=%d (%s)\n",
+					pr_fail("%s: mkdir '%s' failed, errno=%d (%s)\n",
 						args->name, path, errno, strerror(errno));
 					ret = EXIT_FAILURE;
 					break;
@@ -540,12 +567,7 @@ static int stress_dir(stress_args_t *args)
 	} while (stress_continue(args));
 
 	/* exercise invalid path */
-	{
-		int rmret;
-
-		rmret = shim_rmdir("");
-		(void)rmret;
-	}
+	VOID_RET(int, shim_rmdir(""));
 
 #if defined(O_DIRECTORY)
 	if (dir_fd >= 0)
@@ -565,10 +587,31 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("directory"),
+	STRESS_EX_FEATURE("io-wait"),
+
+#if defined(HAVE_FLOCK) &&	\
+    defined(LOCK_EX) &&		\
+    defined(LOCK_UN) &&		\
+    defined(O_DIRECTORY)
+	STRESS_EX_SYSCALL("flock"),
+#endif
+	STRESS_EX_SYSCALL("mkdir"),
+#if defined(HAVE_MKDIRAT)
+	STRESS_EX_SYSCALL("mkdirat"),
+#endif
+	STRESS_EX_SYSCALL("rename"),
+	STRESS_EX_SYSCALL("rmdir"),
+	STRESS_EX_SYSCALL("unlink"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dir_info = {
 	.stressor = stress_dir,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

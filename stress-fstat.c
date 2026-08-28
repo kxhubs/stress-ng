@@ -79,7 +79,7 @@ static bool PURE do_not_stat(const char *filename)
 	size_t i;
 
 	for (i = 0; i < SIZEOF_ARRAY(blocklist); i++) {
-		if (!strncmp(filename, blocklist[i], strlen(blocklist[i])))
+		if (!shim_strncmp(filename, blocklist[i], shim_strlen(blocklist[i])))
 			return true;
 	}
 	return false;
@@ -105,14 +105,16 @@ static int stress_fstat_check_buf(const struct stat *buf, const struct stat *buf
 
 static int stress_fstat_helper(const stress_fstat_context_t *ctxt)
 {
-	struct stat buf, buf_orig;
+	struct stat buf;
+	struct stat buf_orig;
 #if defined(AT_EMPTY_PATH) &&	\
     defined(AT_SYMLINK_NOFOLLOW)
 	shim_statx_t bufx;
 #endif
 	stress_stat_info_t *si = ctxt->si;
 	stress_args_t *args = ctxt->args;
-	int ret, rc = EXIT_SUCCESS;
+	int ret;
+	int rc = EXIT_SUCCESS;
 
 	(void)shim_memset(&buf_orig, 0xff, sizeof(buf_orig));
 	(void)shim_memset(&buf, 0xff, sizeof(buf));
@@ -288,16 +290,16 @@ static int stress_fstat(stress_args_t *args)
 	stress_stat_info_t *si;
 	static stress_stat_info_t *stat_info;
 	const struct dirent *d;
-	NOCLOBBER int ret = EXIT_FAILURE;
+	CLOBBERED int ret = EXIT_FAILURE;
 	bool stat_some;
 	const uid_t euid = geteuid();
 	DIR *dp;
-	char *fstat_dir = "/dev";
+	const char *fstat_dir = "/dev";
 
 	(void)stress_setting_get("fstat-dir", &fstat_dir);
 
 	if ((dp = opendir(fstat_dir)) == NULL) {
-		pr_err("%s: opendir on %s failed, errno=%d: (%s)\n",
+		pr_err("%s: opendir '%s' failed, errno=%d: (%s)\n",
 			args->name, fstat_dir, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -379,10 +381,29 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fstat"),
+	STRESS_EX_SYSCALL("lstat"),
+	STRESS_EX_SYSCALL("stat"),
+#if defined(HAVE_STATX)
+	STRESS_EX_SYSCALL("statx"),
+#endif
+
+#if defined(HAVE_LIB_PTHREAD)
+        STRESS_EX_LIBRARY("pthread"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fstat_info = {
 	.stressor = stress_fstat,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

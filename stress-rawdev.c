@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-ioctl.h"
 #include "core-mmap.h"
 #include "core-vmstat.h"
 
@@ -37,7 +38,7 @@ static const stress_help_t help[] = {
 };
 
 #define	MIN_BLKSZ	((int)512)
-#define	MAX_BLKSZ	((int)(128 * KB))
+#define	MAX_BLKSZ	((int)(128 * STRESS_KB))
 
 #if defined(HAVE_SYS_SYSMACROS_H) &&	\
     defined(BLKGETSIZE) && 		\
@@ -349,14 +350,14 @@ static const char *stress_rawdev_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_rawdev_method, "rawdev-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_rawdev_method },
+	{ OPT_rawdev_method, "rawdev-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_rawdev_method },
 	END_OPT,
 };
 
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_rawdev_method, "rawdev-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_rawdev_method, "rawdev-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	END_OPT,
 };
 
@@ -368,18 +369,24 @@ static const stress_opt_t opts[] = {
 
 static int stress_rawdev(stress_args_t *args)
 {
-	int ret, fd, rc = EXIT_SUCCESS;
-	char *devpath, *buffer;
+	int ret;
+	int fd;
+	int rc = EXIT_SUCCESS;
+	char *devpath;
+	char *buffer;
 	const char *path = stress_fs_temp_path_get();
-	size_t blks, blksz = 0, mmapsz;
-	size_t i, rawdev_method = 0;
+	size_t blks;
+	size_t blksz = 0;
+	size_t mmapsz;
+	size_t i;
+	size_t rawdev_method = 0;
 	const size_t page_size = args->page_size;
 	stress_rawdev_func func;
 	stress_metrics_t *metrics;
 
 	metrics = (stress_metrics_t *)calloc(SIZEOF_ARRAY(rawdev_methods), sizeof(*metrics));
 	if (!metrics) {
-		pr_inf_skip("%s: cannot allocate %zu byte metrics table%s, "
+		pr_inf_skip("%s: allocate %zu byte metrics table failed%s, "
 			"skipping stressor\n",
 			args->name, SIZEOF_ARRAY(rawdev_methods),
 			stress_memory_free_get());
@@ -407,8 +414,8 @@ static int stress_rawdev(stress_args_t *args)
 
 	fd = open(devpath, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
-		pr_inf("%s: cannot open raw block device, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_inf("%s: cannot open raw block device '%s', errno=%d (%s)\n",
+			args->name, devpath, errno, strerror(errno));
 		free(metrics);
 		return EXIT_NO_RESOURCE;
 	}
@@ -419,6 +426,9 @@ static int stress_rawdev(stress_args_t *args)
 		(void)close(fd);
 		free(metrics);
 		return EXIT_NO_RESOURCE;
+	} else {
+		if (stress_ioctl_get_check(fd, BLKGETSIZE, sizeof(size_t)) < 0)
+			pr_fail("%s: ioctl BLKGETSIZE failed, not getting value reliably\n", args->name);
 	}
 	ret = ioctl(fd, BLKSSZGET, &blksz);
 	if (ret < 0) {
@@ -427,6 +437,9 @@ static int stress_rawdev(stress_args_t *args)
 		(void)close(fd);
 		free(metrics);
 		return EXIT_NO_RESOURCE;
+	} else {
+		if (stress_ioctl_get_check(fd, BLKSSZGET, sizeof(size_t)) < 0)
+			pr_fail("%s: ioctl BLKSSZGET failed, not getting value reliably\n", args->name);
 	}
 	/* Truncate if blksize looks too big */
 	if (blksz > MAX_BLKSZ)
@@ -439,7 +452,7 @@ static int stress_rawdev(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buffer == MAP_FAILED) {
-		pr_inf("%s: failed to mmap buffer of %zu bytes\n",
+		pr_inf("%s: mmap buffer of %zu bytes failed\n",
 			args->name, mmapsz);
 		(void)close(fd);
 		free(metrics);
@@ -450,8 +463,8 @@ static int stress_rawdev(stress_args_t *args)
 	(void)close(fd);
 	fd = open(devpath, O_RDONLY | O_DIRECT);
 	if (fd < 0) {
-		pr_inf("%s: cannot open raw block device, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_inf("%s: cannot open raw block device '%s', errno=%d (%s)\n",
+			args->name, devpath, errno, strerror(errno));
 		(void)munmap((void *)buffer, mmapsz);
 		free(metrics);
 		return EXIT_NO_RESOURCE;
@@ -479,7 +492,7 @@ static int stress_rawdev(stress_args_t *args)
 
 		if (duration > 0.0) {
 			char str[50];
-			const double rate = (metrics[i].count / duration) / (double)MB;
+			const double rate = (metrics[i].count / duration) / (double)STRESS_MB;
 
 			(void)snprintf(str, sizeof(str), "MB per sec read rate (%s)", rawdev_methods[i].name);
 			stress_metrics_set(args, str,
@@ -494,13 +507,22 @@ static int stress_rawdev(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("pread"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rawdev_info = {
 	.stressor = stress_rawdev,
 	.supported = stress_rawdev_supported,
 	.classifier = CLASS_IO,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rawdev_info = {

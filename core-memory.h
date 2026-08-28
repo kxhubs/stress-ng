@@ -21,18 +21,23 @@
 
 #include "stress-ng.h"
 
+typedef struct stress_memory_info {
+	size_t freemem;
+	size_t totalmem;
+	size_t freeswap;
+	size_t totalswap;
+	size_t shmall;
+} stress_memory_info_t;
+
 extern size_t stress_memory_page_size_get(void);
-extern int stress_memory_info_get(size_t *freemem, size_t *totalmem,
-        size_t *freeswap, size_t *totalswap);
-extern void stress_memory_limits_get(size_t *shmall, size_t *freemem,
-	size_t *totalmem, size_t *freeswap, size_t *totalswap);
+extern int stress_memory_info_get(stress_memory_info_t *info);
 extern WARN_UNUSED char *stress_memory_free_get(void);
 extern void stress_memory_ksm_merge(const int flag);
 extern WARN_UNUSED bool stress_memory_low_check(const size_t requested);
 extern WARN_UNUSED uint64_t stress_memory_phys_size_get(void);
 extern void stress_memory_usage_get(stress_args_t *args,
 	const size_t vm_per_instance, const size_t vm_total);
-extern WARN_UNUSED void *stress_memory_address_align(const void *addr, const size_t alignment);
+extern CONST WARN_UNUSED void *stress_memory_address_align(const void *addr, const size_t alignment);
 extern void stress_memory_anon_name_set(const void *addr, const size_t size,
 	const char *name);
 extern int stress_memory_swap_off(const char *path);

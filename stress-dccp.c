@@ -20,6 +20,7 @@
 #include "stress-ng.h"
 #include "core-affinity.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-net.h"
 #include "core-signal.h"
@@ -84,7 +85,7 @@ static const stress_opt_t opts[] = {
 	{ OPT_dccp_domain, "dccp-domain", TYPE_ID_INT_DOMAIN,    0, 0, &dccp_domain_mask },
 	{ OPT_dccp_if,     "dccp-if",     TYPE_ID_STR,           0, 0, NULL },
 	{ OPT_dccp_msgs,   "dccp-msgs",   TYPE_ID_SIZE_T,        MIN_DCCP_MSGS, MAX_DCCP_MSGS, NULL },
-	{ OPT_dccp_opts,   "dccp-opts",	  TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_dccp_options },
+	{ OPT_dccp_opts,   "dccp-opts",	  TYPE_ID_SIZE_T_METHOD, 0, 0, stress_dccp_options },
 	{ OPT_dccp_port,   "dccp-port",   TYPE_ID_INT_PORT,      MIN_PORT, MAX_PORT, NULL },
 	END_OPT,
 };
@@ -103,8 +104,9 @@ static int stress_dccp_client(
 	const int dccp_domain,
 	const char *dccp_if)
 {
-	struct sockaddr *addr;
+	struct sockaddr_storage addr;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	stress_parent_died_alarm();
 
 	do {
@@ -128,14 +130,13 @@ retry:
 				args->name, errno, strerror(errno));
 			return EXIT_FAILURE;
 		}
-
 		if (stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 					       dccp_domain, dccp_port, dccp_if,
 					       &addr, &addr_len, NET_ADDR_ANY) < 0) {
 			(void)close(fd);
 			return EXIT_FAILURE;
 		}
-		if (connect(fd, addr, addr_len) < 0) {
+		if (connect(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 			int err = errno;
 
 			(void)close(fd);
@@ -171,7 +172,7 @@ retry:
     defined(HAVE_SYS_UN_H) &&	\
     defined(HAVE_SOCKADDR_UN)
 	if (dccp_domain == AF_UNIX) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -192,13 +193,18 @@ static int stress_dccp_server(
 	const int dccp_opts)
 {
 	char buf[DCCP_BUF];
-	int fd, so_reuseaddr = 1, rc = EXIT_SUCCESS;
+	int fd;
+	int so_reuseaddr = 1;
+	int rc = EXIT_SUCCESS;
 	socklen_t addr_len = 0;
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	uint64_t msgs = 0;
-	double t1 = 0.0, t2 = 0.0, dt;
+	double t1 = 0.0;
+	double t2 = 0.0;
+	double dt;
 	size_t dccp_msgs = DEFAULT_DCCP_MSGS;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (!stress_setting_get("dccp-msgs", &dccp_msgs)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
 			dccp_msgs = MAX_DCCP_MSGS;
@@ -234,14 +240,13 @@ static int stress_dccp_server(
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-
 	if (stress_net_sockaddr_if_set(args->name, args->instance, mypid,
 				       dccp_domain, dccp_port, dccp_if,
 				       &addr, &addr_len, NET_ADDR_ANY) < 0) {
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-	if (bind(fd, addr, addr_len) < 0) {
+	if (bind(fd, (struct sockaddr *)&addr, addr_len) < 0) {
 		rc = stress_exit_status(errno);
 		pr_fail("%s: bind failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
@@ -263,13 +268,17 @@ static int stress_dccp_server(
 
 		sfd = accept(fd, (struct sockaddr *)NULL, NULL);
 		if (sfd >= 0) {
-			size_t i, j, k;
+			size_t i;
+			size_t k;
 			struct sockaddr saddr;
 			socklen_t len;
 			int sndbuf;
+#if defined(HAVE_IOVEC)
 			struct msghdr msg;
 			struct iovec vec[sizeof(buf) / 16];
-#if defined(HAVE_SENDMMSG)
+#endif
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMMSG)
 			struct mmsghdr msgvec[MSGVEC_SIZE];
 #endif
 			len = sizeof(saddr);
@@ -309,8 +318,11 @@ again:
 					stress_bogo_inc(args);
 				} while (LIKELY(stress_continue(args) && (k < dccp_msgs)));
 				break;
+#if defined(HAVE_IOVEC)
 			case DCCP_OPT_SENDMSG:
 				do {
+					size_t j;
+
 					for (j = 0, i = 16; i < sizeof(buf); i += 16, j++, k++) {
 						vec[j].iov_base = buf;
 						vec[j].iov_len = i;
@@ -328,9 +340,13 @@ again:
 					stress_bogo_inc(args);
 				} while (LIKELY(stress_continue(args) && (k < dccp_msgs)));
 				break;
-#if defined(HAVE_SENDMMSG)
+#endif
+#if defined(HAVE_IOVEC) &&	\
+    defined(HAVE_SENDMMSG)
 			case DCCP_OPT_SENDMMSG:
 				do {
+					size_t j;
+
 					for (j = 0, i = 16; i < sizeof(buf); i += 16, j++, k++) {
 						vec[j].iov_base = buf;
 						vec[j].iov_len = i;
@@ -366,6 +382,8 @@ again:
 				int pending;
 
 				(void)ioctl(sfd, SIOCOUTQ, &pending);
+				if (stress_ioctl_get_check(sfd, SIOCOUTQ, sizeof(int)) < 0)
+					pr_fail("%s: ioctl SIOCOUTQ failed, not getting value reliably\n", args->name);
 			}
 #endif
 			(void)close(sfd);
@@ -376,15 +394,8 @@ die_close:
 	(void)close(fd);
 die:
 	t2 = stress_time_now();
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SYS_UN_H) &&	\
-    defined(HAVE_SOCKADDR_UN)
-	if (addr && (dccp_domain == AF_UNIX)) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
 
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#endif
+	stress_net_af_unix_unlink(dccp_domain, &addr);
 	pr_dbg("%s: %" PRIu64 " messages sent\n", args->name, msgs);
 
 	dt = t2 - t1;
@@ -401,11 +412,14 @@ die:
  */
 static int stress_dccp(stress_args_t *args)
 {
-	pid_t pid, mypid = getpid();
+	pid_t pid;
+       	const pid_t mypid = getpid();
 	int dccp_port = DEFAULT_DCCP_PORT;
 	int dccp_domain = AF_INET;
 	int dccp_opts = DCCP_OPT_SEND;
-	int rc = EXIT_SUCCESS, reserved_port, parent_cpu;
+	int rc = EXIT_SUCCESS;
+	int reserved_port;
+	int parent_cpu;
 	char *dccp_if = NULL;
 
 	if (stress_signal_sigchld_handler(args) < 0)
@@ -444,12 +458,10 @@ static int stress_dccp(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
 		pr_dbg("%s: fork failed, errno=%d (%s)\n",
@@ -474,12 +486,27 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("connect"),
+	STRESS_EX_SYSCALL("getpeername"),
+	STRESS_EX_SYSCALL("getsockname"),
+	STRESS_EX_SYSCALL("getsockopt"),
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("shutdown"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_dccp_info = {
 	.stressor = stress_dccp,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises
 };
 #else
 const stressor_info_t stress_dccp_info = {

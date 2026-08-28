@@ -465,7 +465,8 @@ static gid_t syscall_gid;			/* current gid */
 static uid_t syscall_uid;			/* current uid */
 static pid_t syscall_pid;			/* current pid */
 static pid_t syscall_sid;			/* current sid */
-static uint64_t t1, t2;				/* t1 = start time, t2 = end time of test */
+static uint64_t t1;				/* start time */
+static uint64_t t2;				/* end time of test */
 static size_t syscall_page_size;		/* size of 1 page in bytes */
 static size_t syscall_2_pages_size;		/* size of 2 pages in bytes */
 static char syscall_cwd[PATH_MAX];		/* current working directory */
@@ -474,8 +475,10 @@ static int syscall_errno;			/* errno from syscall */
 static mode_t syscall_umask_mask;		/* current umask */
 static syscall_shared_info_t *syscall_shared_info = NULL;
 static char *syscall_exec_prog;			/* stress-ng exec path */
+#if defined(HAVE_SIGLONGJMP)
 static sigjmp_buf jmp_env;			/* jmp_buf for sigsegv handler */
-static volatile bool do_jmp = false;		/* use jmp_buf if do_jmo is true */
+static volatile bool do_jmp = false;		/* use jmp_env if do_jmp is true */
+#endif
 
 #if (defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H)) && \
     (defined(HAVE_FGETXATTR) ||		\
@@ -543,7 +546,8 @@ static uint64_t syscall_time_now(void)
 #if defined(HAVE_CLOCK_GETTIME)
 	static struct timespec base_ts = { 0, 0 };
 	struct timespec ts;
-	int64_t sec, ns;
+	int64_t sec;
+	int64_t ns;
 
 	syscall_errno = errno;
 	if (UNLIKELY(clock_gettime(CLOCK_MONOTONIC, &ts) < 0))
@@ -558,7 +562,8 @@ static uint64_t syscall_time_now(void)
 #else
 	static struct timeval base_tv = { 0, 0 };
 	struct timeval tv;
-	int64_t sec, ns;
+	int64_t sec;
+	int64_t ns;
 
         if (gettimeofday(&tv, NULL) < 0)
 		return 0;
@@ -657,7 +662,8 @@ static int syscall_socket_measure(const int measure)
 	if (pid < 0) {
 		return -1;
 	} else if (pid == 0) {
-		int sfd, ret;
+		int sfd;
+		int ret;
 		ssize_t sret;
 
 		sfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -738,7 +744,10 @@ close_sfd_child:
 		(void)close(sfd);
 		_exit(0);
 	} else {
-		int sfd, fd, ret, status;
+		int sfd;
+		int fd;
+		int ret;
+		int status;
 		ssize_t sret;
 
 		sfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -868,6 +877,7 @@ reap_child:
 }
 #endif
 
+#if defined(HAVE_SIGLONGJMP)
 static void MLOCKED_TEXT syscall_sigsegv_handler(int signum)
 {
 	const int saved_errno = errno;
@@ -878,6 +888,7 @@ static void MLOCKED_TEXT syscall_sigsegv_handler(int signum)
 
 	stress_signal_siglongjmp_flag(signum, jmp_env, 1, &do_jmp);
 }
+#endif
 
 static void MLOCKED_TEXT syscall_sigusr1_handler(int signum)
 {
@@ -1350,7 +1361,8 @@ static int syscall_clone3(void)
 #define HAVE_SYSCALL_CLOSE
 static int syscall_close(void)
 {
-	int ret, fd = dup(syscall_fd);
+	int ret;
+	int fd = dup(syscall_fd);
 
 	if (fd < 0)
 		return -1;
@@ -1424,7 +1436,8 @@ static int syscall_dup(void)
 #define HAVE_SYSCALL_DUP2
 static int syscall_dup2(void)
 {
-	int fd, newfd = stress_mwc8() + 32;
+	int fd;
+	int newfd = stress_mwc8() + 32;
 
 	t1 = syscall_time_now();
 	fd = dup2(syscall_fd, newfd);
@@ -1493,7 +1506,9 @@ static int syscall_epoll_create1(void)
 #define HAVE_SYSCALL_EPOLL_CTL
 static int syscall_epoll_ctl(void)
 {
-	int fd, fds[2], ret;
+	int fd;
+	int fds[2];
+	int ret;
 	struct epoll_event event;
 
 	fd = epoll_create(1);
@@ -1525,7 +1540,9 @@ static int syscall_epoll_ctl(void)
 #define HAVE_SYSCALL_EPOLL_PWAIT
 static int syscall_epoll_pwait(void)
 {
-	int fd, fds[2], ret;
+	int fd;
+	int fds[2];
+	int ret;
 	struct epoll_event event;
 	sigset_t sigmask;
 
@@ -1565,7 +1582,9 @@ close_fds:
 #define HAVE_SYSCALL_EPOLL_WAIT
 static int syscall_epoll_wait(void)
 {
-	int fd, fds[2], ret;
+	int fd;
+	int fds[2];
+	int ret;
 	struct epoll_event event;
 	sigset_t sigmask;
 
@@ -1617,7 +1636,8 @@ static int syscall_eventfd(void)
 
 static void syscall_execve_silence_stdio(void)
 {
-	int fd_in, fd_out;
+	int fd_in;
+	int fd_out;
 
 	fd_in = open("/dev/zero", O_RDONLY);
 	if (fd_in < 0) {
@@ -1820,7 +1840,8 @@ static int syscall_fanotify_init(void)
 #define HAVE_SYSCALL_FANOTIFY_MARK
 static int syscall_fanotify_mark(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 
 	fd = fanotify_init(0, 0);
 	if (fd < 0)
@@ -1839,7 +1860,8 @@ static int syscall_fanotify_mark(void)
 #define HAVE_SYSCALL_FCHDIR
 static int syscall_fchdir(void)
 {
-	int ret, fd;
+	int ret;
+	int fd;
 
 	fd = openat(AT_FDCWD, ".", O_RDONLY | O_DIRECTORY);
 	if (fd < 0)
@@ -2169,7 +2191,8 @@ static int syscall_futimesat(void)
 #define HAVE_SYSCALL_GETCPU
 static int syscall_getcpu(void)
 {
-	unsigned int cpu, node;
+	unsigned int cpu;
+	unsigned int node;
 	long int ret;
 
 	t1 = syscall_time_now();
@@ -2183,7 +2206,7 @@ static int syscall_getcpu(void)
 static int syscall_getcwd(void)
 {
 	char path[PATH_MAX];
-	char *ptr;
+	const char *ptr;
 
 	t1 = syscall_time_now();
 	ptr =  getcwd(path, sizeof(path));
@@ -2198,7 +2221,8 @@ static int syscall_getcwd(void)
 #define HAVE_SYSCALL_GETDENTS
 static int syscall_getdents(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 	struct shim_linux_dirent *buf;
 	const size_t ndents = 32;
 
@@ -2289,7 +2313,6 @@ static int syscall_getgroups(void)
 static int syscall_getitimer(void)
 {
 	static size_t i = 0;
-
 	struct itimerval val;
 	int ret;
 	const shim_itimer_which_t itimer = itimers[i];
@@ -2314,7 +2337,8 @@ static int syscall_get_mempolicy(void)
 {
 	unsigned long int node_mask[NUMA_LONG_BITS];
 	unsigned long int max_nodes = 1;
-	int ret, mode;
+	int ret;
+	int mode;
 	void *buf;
 
 	buf = mmap(NULL, syscall_page_size, PROT_READ | PROT_WRITE,
@@ -2395,7 +2419,9 @@ static int syscall_getrandom(void)
 #define HAVE_SYSCALL_GETRESGID
 static int syscall_getresgid(void)
 {
-	uid_t ruid, euid, sgid;
+	uid_t ruid;
+	uid_t euid;
+	uid_t sgid;
 	int ret;
 
 	t1 = syscall_time_now();
@@ -2409,7 +2435,9 @@ static int syscall_getresgid(void)
 #define HAVE_SYSCALL_GETRESUID
 static int syscall_getresuid(void)
 {
-	uid_t ruid, euid, suid;
+	uid_t ruid;
+	uid_t euid;
+	uid_t suid;
 	int ret;
 
 	t1 = syscall_time_now();
@@ -2508,7 +2536,9 @@ static int syscall_getsockname(void)
 #define HAVE_SYSCALL_GETSOCKOPT
 static int syscall_getsockopt(void)
 {
-	int sfd, rcvbuf, ret;
+	int sfd;
+	int rcvbuf;
+	int ret;
 	socklen_t len = sizeof(rcvbuf);
 
 	sfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -2597,7 +2627,8 @@ static int syscall_getxattr(void)
 #define HAVE_SYSCALL_INOTIFY_ADD_WATCH
 static int syscall_inotify_add_watch(void)
 {
-	int fd, wd;
+	int fd;
+	int wd;
 	const int flags = IN_ACCESS | IN_MODIFY | IN_OPEN;
 
 	fd = inotify_init();
@@ -2655,7 +2686,9 @@ static int syscall_inotify_init1(void)
 #define HAVE_SYSCALL_INOTIFY_RM_WATCH
 static int syscall_inotify_rm_watch(void)
 {
-	int fd, wd, ret;
+	int fd;
+	int wd;
+	int ret;
 	const int flags = IN_ACCESS | IN_MODIFY | IN_OPEN;
 
 	fd = inotify_init();
@@ -2686,12 +2719,13 @@ static int syscall_inotify_rm_watch(void)
 static int syscall_io_cancel(void)
 {
 	int ret;
-	io_context_t ctx = 0;
+	io_context_t ctx;
 	struct iocb cb[1];
 	struct iocb *cbs[1];
 	struct io_event event;
 	uint32_t buffer[128];
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	if (ret < 0)
 		return -1;
@@ -2730,8 +2764,9 @@ static int syscall_io_cancel(void)
 static int syscall_io_destroy(void)
 {
 	int ret;
-	io_context_t ctx = 0;
+	io_context_t ctx;
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	if (ret < 0)
 		return -1;
@@ -2752,10 +2787,11 @@ static int syscall_io_destroy(void)
 static int syscall_io_getevents(void)
 {
 	int ret;
-	io_context_t ctx = 0;
+	io_context_t ctx;
 	struct io_event events;
 	struct timespec timeout;
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	if (ret < 0)
 		return -1;
@@ -2779,10 +2815,11 @@ static int syscall_io_getevents(void)
 static int syscall_io_pgetevents(void)
 {
 	int ret;
-	io_context_t ctx = 0;
+	io_context_t ctx;
 	struct io_event events;
 	struct timespec timeout;
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	if (ret < 0)
 		return -1;
@@ -2837,8 +2874,9 @@ static int syscall_ioprio_set(void)
 static int syscall_io_setup(void)
 {
 	int ret;
-	io_context_t ctx = 0;
+	io_context_t ctx;
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	t1 = syscall_time_now();
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	t2 = syscall_time_now();
@@ -2858,12 +2896,14 @@ static int syscall_io_setup(void)
 #define HAVE_SYSCALL_IO_SUBMIT
 static int syscall_io_submit(void)
 {
-	int ret, i;
-	io_context_t ctx = 0;
+	int ret;
+	int i;
+	io_context_t ctx;
 	struct iocb cb[1];
 	struct iocb *cbs[1];
 	uint32_t buffer[128];
 
+	(void)shim_memset(&ctx, 0, sizeof(ctx));
 	ret = (int)syscall(__NR_io_setup, 1, &ctx);
 	if (ret < 0)
 		return -1;
@@ -3306,7 +3346,8 @@ static int syscall_madvise(void)
 #endif
 static int syscall_map_shadow_stack(void)
 {
-	void *stack, *addr;
+	void *stack;
+	void *addr;
 	const size_t stack_size = 0x20000;
 
 	addr = NULL;
@@ -3597,7 +3638,6 @@ static int syscall_mlockall(void)
 static int syscall_mmap(void)
 {
 	static int i = 0;
-
 	void *ptr = (void *)MAP_FAILED;
 
 	i++;
@@ -3706,7 +3746,6 @@ static int syscall_mprotect(void)
 {
 	static size_t i = 0;
 	int ret;
-
 	static const int prot[] = {
 #if defined(PROT_NONE)
 		PROT_NONE,
@@ -3876,7 +3915,8 @@ static int syscall_mq_open(void)
 static int syscall_mq_setattr(void)
 {
 	char mq_name[64];
-	struct mq_attr attr, old_attr;
+	struct mq_attr attr;
+	struct mq_attr old_attr;
 	mqd_t mq;
 	int ret;
 
@@ -4025,7 +4065,8 @@ static int syscall_mq_unlink(void)
 #define HAVE_SYSCALL_MREMAP
 static int syscall_mremap(void)
 {
-	void *new_addr, *old_addr;
+	void *new_addr;
+	void *old_addr;
 	const size_t old_size = syscall_page_size;
 	const size_t new_size = old_size << 1;
 
@@ -4207,7 +4248,8 @@ static int syscall_munmap(void)
 static int syscall_name_to_handle_at(void)
 {
 	int ret, mount_id;
-	struct file_handle *fhp, *tmp;
+	struct file_handle *fhp;
+	struct file_handle *tmp;
 
 	fhp = (struct file_handle *)malloc(sizeof(*fhp));
 	if (!fhp)
@@ -4237,7 +4279,8 @@ static int syscall_name_to_handle_at(void)
 #define HAVE_SYSCALL_NANOSLEEP
 static int syscall_nanosleep(void)
 {
-	struct timespec req, rem;
+	struct timespec req;
+	struct timespec rem;
 	int ret;
 
 	(void)shim_memset((void *)&rem, 0, sizeof(rem));
@@ -4309,8 +4352,12 @@ static int syscall_openat(void)
 #define HAVE_SYSCALL_OPEN_BY_HANDLE_AT
 static int syscall_open_by_handle_at(void)
 {
-	int ret, mount_id, mount_fd, fd;
-	struct file_handle *fhp, *tmp;
+	int ret;
+	int mount_id;
+	int mount_fd;
+	int fd;
+	struct file_handle *fhp;
+	struct file_handle *tmp;
 	FILE *fp;
 	char buffer[5000];
 	char path[PATH_MAX + 1];
@@ -4441,7 +4488,8 @@ static int syscall_pidfd_open(void)
 #define HAVE_SYSCALL_PIDFD_SEND_SIGNAL
 static int syscall_pidfd_send_signal(void)
 {
-	int pidfd, ret;
+	int pidfd;
+	int ret;
 
 	pidfd = shim_pidfd_open(syscall_pid, 0);
 	if (pidfd < 0)
@@ -4457,7 +4505,8 @@ static int syscall_pidfd_send_signal(void)
 #define HAVE_SYSCALL_PIPE
 static int syscall_pipe(void)
 {
-	int fds[2], ret;
+	int fds[2];
+	int ret;
 
 	t1 = syscall_time_now();
 	ret = pipe(fds);
@@ -4474,7 +4523,8 @@ static int syscall_pipe(void)
 #define HAVE_SYSCALL_PIPE2
 static int syscall_pipe2(void)
 {
-	int fds[2], ret;
+	int fds[2];
+	int ret;
 
 	t1 = syscall_time_now();
 	ret = pipe2(fds, O_DIRECT);
@@ -4527,7 +4577,8 @@ static int syscall_pkey_free(void)
 #define HAVE_SYSCALL_PKEY_GET
 static int syscall_pkey_get(void)
 {
-	int pkey, rights;
+	int pkey;
+	int rights;
 
 	pkey = shim_pkey_alloc(0, 0);
 	if (pkey < 0)
@@ -4564,7 +4615,9 @@ static int syscall_pkey_mprotect(void)
 #define HAVE_SYSCALL_PKEY_SET
 static int syscall_pkey_set(void)
 {
-	int pkey, rights, ret;
+	int pkey;
+	int rights;
+	int ret;
 
 	pkey = shim_pkey_alloc(0, 0);
 	if (pkey < 0)
@@ -4660,7 +4713,6 @@ static int syscall_prctl(void)
 {
 	int ret = -1;
 	static size_t i = 0;
-
 	static const int cmds[] = {
 #if defined(PR_GET_CHILD_SUBREAPER)
 		PR_GET_CHILD_SUBREAPER,
@@ -4788,6 +4840,7 @@ static int syscall_pread(void)
 }
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV)
 #define HAVE_SYSCALL_PREADV
 static int syscall_preadv(void)
@@ -4811,6 +4864,7 @@ static int syscall_preadv(void)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PREADV2)
 #define HAVE_SYSCALL_PREADV2
 static int syscall_preadv2(void)
@@ -4861,12 +4915,16 @@ static int syscall_prlimit(void)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PROCESS_VM_READV)
 #define HAVE_SYSCALL_PROCESS_VM_READV
 static int syscall_process_vm_readv(void)
 {
-	struct iovec local[1], remote[1];
-	void *buf, *local_buf, *remote_buf;
+	struct iovec local[1];
+	struct iovec remote[1];
+	void *buf;
+	void *local_buf;
+	void *remote_buf;
 	size_t ret;
 
 	buf = mmap(NULL, syscall_page_size * 2, PROT_READ | PROT_WRITE,
@@ -4892,12 +4950,16 @@ static int syscall_process_vm_readv(void)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PROCESS_VM_WRITEV)
 #define HAVE_SYSCALL_PROCESS_VM_WRITEV
 static int syscall_process_vm_writev(void)
 {
-	struct iovec local[1], remote[1];
-	void *buf, *local_buf, *remote_buf;
+	struct iovec local[1];
+	struct iovec remote[1];
+	void *buf;
+	void *local_buf;
+	void *remote_buf;
 	size_t ret;
 
 	buf = mmap(NULL, syscall_page_size * 2, PROT_READ | PROT_WRITE,
@@ -4926,8 +4988,11 @@ static int syscall_process_vm_writev(void)
 #define HAVE_SYSCALL_PSELECT
 static int syscall_pselect(void)
 {
-	fd_set rd_set, wr_set;
-	int fds[4], nfds = -1, ret;
+	fd_set rd_set;
+	fd_set wr_set;
+	int fds[4];
+	int nfds = -1;
+	int ret;
 	size_t i;
 	struct timespec ts;
 	sigset_t sigmask;
@@ -4976,6 +5041,7 @@ static int syscall_pwrite(void)
 }
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV)
 #define HAVE_SYSCALL_PWRITEV
 static int syscall_pwritev(void)
@@ -5022,7 +5088,8 @@ static int syscall_quotactl(void)
 #define HAVE_SYSCALL_QUOTACTL_FD
 static int syscall_quotactl_fd(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 
 	fd = open("/", O_DIRECTORY | O_RDONLY);
 	if (fd < 0)
@@ -5037,6 +5104,7 @@ static int syscall_quotactl_fd(void)
 #endif
 
 #if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC) &&	\
     defined(HAVE_PWRITEV2)
 #define HAVE_SYSCALL_PWRITEV2
 static int syscall_pwritev2(void)
@@ -5079,7 +5147,8 @@ static int syscall_read(void)
 	return (int)ret;
 }
 
-#if defined(HAVE_SYS_UIO_H)
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC)
 #define HAVE_SYSCALL_READV
 static int syscall_readv(void)
 {
@@ -5344,7 +5413,8 @@ static int syscall_restart_syscall(void)
 static int syscall_riscv_flush_icache(void)
 {
 	int ret;
-	char *start, *end;
+	char *start;
+	char *end;
 
 	(void)stress_exec_text_addr(&start, &end);
 	t1 = syscall_time_now();
@@ -5620,7 +5690,8 @@ static int syscall_sched_setparam(void)
 #define HAVE_SYSCALL_SCHED_SETSCHEDULER
 static int syscall_sched_setscheduler(void)
 {
-	int policy, ret;
+	int policy;
+	int ret;
 	struct sched_param param;
 
 	(void)shim_memset(&param, 0, sizeof(param));
@@ -5683,8 +5754,11 @@ static int syscall_seccomp(void)
 #define HAVE_SYSCALL_SELECT
 static int syscall_select(void)
 {
-	fd_set rd_set, wr_set;
-	int fds[4], nfds = -1, ret;
+	fd_set rd_set;
+	fd_set wr_set;
+	int fds[4];
+	int nfds = -1;
+	int ret;
 	size_t i;
 	struct timeval tv;
 
@@ -5749,7 +5823,8 @@ static int syscall_new_sem_sysv(key_t *key)
 #define HAVE_SYSCALL_SEMCTL
 static int syscall_semctl(void)
 {
-	int sem_id, ret;
+	int sem_id;
+	int ret;
 	key_t key;
 
 	sem_id = syscall_new_sem_sysv(&key);
@@ -5768,7 +5843,8 @@ static int syscall_semctl(void)
 #define HAVE_SYSCALL_SEMGET
 static int syscall_semget(void)
 {
-	int sem_id, ret;
+	int sem_id;
+	int ret;
 	key_t key;
 
 	sem_id = syscall_new_sem_sysv(&key);
@@ -5791,7 +5867,8 @@ static int syscall_semget(void)
 #define HAVE_SYSCALL_SEMOP
 static int syscall_semop(void)
 {
-	int sem_id, ret;
+	int sem_id;
+	int ret;
 	key_t key;
 	struct sembuf sop;
 
@@ -5817,7 +5894,8 @@ static int syscall_semop(void)
 #define HAVE_SYSCALL_SEMTIMEDOP
 static int syscall_semtimedop(void)
 {
-	int sem_id, ret;
+	int sem_id;
+	int ret;
 	key_t key;
 	struct sembuf sop;
 	struct timespec ts;
@@ -5921,7 +5999,8 @@ static int syscall_setitimer(void)
 {
 	static size_t i = 0;
 
-	struct itimerval val, oldval;
+	struct itimerval val;
+	struct itimerval oldval;
 	int ret;
 	const shim_itimer_which_t itimer = itimers[i];
 
@@ -5949,7 +6028,8 @@ static int syscall_set_mempolicy(void)
 {
 	unsigned long int node_mask[NUMA_LONG_BITS];
 	unsigned long int max_nodes = 1;
-	int ret, mode;
+	int ret;
+	int mode;
 	void *buf;
 
 	buf = mmap(NULL, syscall_page_size, PROT_READ | PROT_WRITE,
@@ -5995,7 +6075,8 @@ static int syscall_setpgid(void)
 #define HAVE_SYSCALL_SETPRIORITY
 static int syscall_setpriority(void)
 {
-	int prio, ret;
+	int prio;
+	int ret;
 
 	prio = getpriority(PRIO_PROCESS, syscall_pid);
 	if (prio < 0)
@@ -6013,7 +6094,8 @@ static int syscall_setpriority(void)
 static int syscall_setregid(void)
 {
 	int ret;
-	gid_t rgid, egid;
+	gid_t rgid;
+	gid_t egid;
 
 	rgid = getgid();
 	egid = getegid();
@@ -6031,7 +6113,9 @@ static int syscall_setregid(void)
 static int syscall_setresgid(void)
 {
 	int ret;
-	gid_t rgid, egid, sgid;
+	gid_t rgid;
+	gid_t egid;
+	gid_t sgid;
 
 	if (getresgid(&rgid, &egid, &sgid) < 0)
 		return -1;
@@ -6048,7 +6132,9 @@ static int syscall_setresgid(void)
 #define HAVE_SYSCALL_SETRESUID
 static int syscall_setresuid(void)
 {
-	uid_t ruid, euid, suid;
+	uid_t ruid;
+	uid_t euid;
+	uid_t suid;
 	int ret;
 
 	if (getresuid(&ruid, &euid, &suid) < 0)
@@ -6065,7 +6151,9 @@ static int syscall_setresuid(void)
 #define HAVE_SYSCALL_SETREUID
 static int syscall_setreuid(void)
 {
-	uid_t ruid, euid, suid;
+	uid_t ruid;
+	uid_t euid;
+	uid_t suid;
 	int ret;
 
 	if (getresuid(&ruid, &euid, &suid) < 0)
@@ -6078,12 +6166,14 @@ static int syscall_setreuid(void)
 }
 #endif
 
-#define HAVE_SYSCALL_SETRLIMIT
+#define HAVE_SYSCALL_SETRLIMIT &&	\
+	HAVE_SYSCALL_GETRLIMIT
 static int syscall_setrlimit(void)
 {
 	static size_t i = 0;
 
-	struct rlimit old_rlim, new_rlim;
+	struct rlimit old_rlim;
+	struct rlimit new_rlim;
 	int ret;
 	const shim_rlimit_resource_t limit = limits[i];
 
@@ -6149,7 +6239,9 @@ static int syscall_setsid(void)
 #define HAVE_SYSCALL_SETSOCKOPT
 static int syscall_setsockopt(void)
 {
-	int sfd, rcvbuf = 2048, ret;
+	int sfd;
+	int rcvbuf = 2048;
+	int ret;
 	socklen_t len = sizeof(rcvbuf);
 
 	sfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -6181,6 +6273,7 @@ static int syscall_setuid(void)
 static int syscall_setxattr(void)
 {
 	int ret;
+
 	t1 = syscall_time_now();
 	ret = shim_setxattr(syscall_filename, syscall_xattr_name, "123", 3, 0);
 	t2 = syscall_time_now();
@@ -6203,7 +6296,7 @@ static int syscall_new_shm_sysv(key_t *key)
 	for (i = 0; i < 65536; i++) {
 		int ret;
 
-		ret = shmget(*key, 1 * MB, IPC_CREAT | S_IRUSR | S_IWUSR);
+		ret = shmget(*key, 1 * STRESS_MB, IPC_CREAT | S_IRUSR | S_IWUSR);
 		if (ret != -1) {
 			saved_key = *key;
 			return ret;
@@ -6329,7 +6422,8 @@ static int syscall_shutdown(void)
 #define HAVE_SYSCALL_SIGACTION
 static int syscall_sigaction(void)
 {
-	struct sigaction act, old_act;
+	struct sigaction act;
+	struct sigaction old_act;
 	int ret;
 
 	(void)shim_memset(&act, 0, sizeof(act));
@@ -6349,7 +6443,8 @@ static int syscall_sigaction(void)
 #define HAVE_SYSCALL_SIGALTSTACK
 static int syscall_sigaltstack(void)
 {
-	stack_t new_ss, old_ss;
+	stack_t new_ss;
+	stack_t old_ss;
 	uint64_t stack[1024];
 	int ret;
 
@@ -6424,7 +6519,8 @@ static int syscall_sigpending(void)
 #define HAVE_SYSCALL_SIGPROCMASK
 static int syscall_sigprocmask(void)
 {
-	sigset_t new_set, old_set;
+	sigset_t new_set;
+	sigset_t old_set;
 	int ret;
 
 	VOID_RET(int, sigemptyset(&new_set));
@@ -6459,7 +6555,8 @@ static int syscall_sigreturn(void)
 static int syscall_sigsuspend(void)
 {
 	pid_t pid;
-	sigset_t new_mask, old_mask;
+	sigset_t new_mask;
+	sigset_t old_mask;
 	int ret;
 
 	syscall_shared_error(-1);
@@ -6529,7 +6626,8 @@ static int syscall_socket(void)
 #define HAVE_SYSCALL_SOCKETPAIR
 static int syscall_socketpair(void)
 {
-	int sfds[2], ret;
+	int sfds[2];
+	int ret;
 
 	t1 = syscall_time_now();
 	ret = socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sfds);
@@ -6549,7 +6647,8 @@ static int syscall_socketpair(void)
 static int syscall_splice(void)
 {
 	ssize_t ret = -1;
-	int fd1[2], fd2[2];
+	int fd1[2];
+	int fd2[2];
 	char buf[4];
 	ssize_t sret;
 
@@ -6718,7 +6817,8 @@ static int syscall_sync_file_range(void)
 #define HAVE_SYSCALL_SYNCFS
 static int syscall_syncfs(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 
 	fd = openat(AT_FDCWD, ".", O_RDONLY | O_NONBLOCK | O_DIRECTORY);
 	if (fd < 0)
@@ -6772,9 +6872,11 @@ static int syscall_syslog(void)
 #define HAVE_SYSCALL_TEE
 static int syscall_tee(void)
 {
-	int fd1[2], fd2[2];
+	int fd1[2];
+	int fd2[2];
 	char buf[4];
-	ssize_t tret, sret;
+	ssize_t tret;
+	ssize_t sret;
 
 	if (pipe(fd1) < 0)
 		return -1;
@@ -6893,7 +6995,8 @@ static int syscall_timerfd_create(void)
 #define HAVE_SYSCALL_TIMERFD_GETTIME
 static int syscall_timerfd_gettime(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 	struct itimerspec value;
 
 	fd = timerfd_create(CLOCK_REALTIME, 0);
@@ -6917,7 +7020,8 @@ static int syscall_timerfd_gettime(void)
 #define HAVE_SYSCALL_TIMERFD_SETTIME
 static int syscall_timerfd_settime(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 	struct itimerspec value;
 
 	fd = timerfd_create(CLOCK_REALTIME, 0);
@@ -7007,7 +7111,8 @@ static int syscall_timer_getoverrun(void)
 static int syscall_timer_settime(void)
 {
 	struct sigevent sev;
-	struct itimerspec new_value, old_value;
+	struct itimerspec new_value;
+	struct itimerspec old_value;
 	timer_t timerid;
 	int ret;
 
@@ -7094,7 +7199,8 @@ static int syscall_uname(void)
 #define HAVE_SYSCALL_UNLINK
 static int syscall_unlink(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 
 	fd = creat(syscall_tmp_filename, S_IRUSR | S_IWUSR);
 	if (fd < 0)
@@ -7112,7 +7218,8 @@ static int syscall_unlink(void)
 #define HAVE_SYSCALL_UNLINKAT
 static int syscall_unlinkat(void)
 {
-	int fd, ret;
+	int fd;
+	int ret;
 
 	fd = creat(syscall_tmp_filename, S_IRUSR | S_IWUSR);
 	if (fd < 0)
@@ -7401,7 +7508,8 @@ static int syscall_wait(void)
 		_exit(0);
 	} else {
 		for (;;) {
-			int ret, status;
+			int ret;
+			int status;
 
 			ret = wait(&status);
 			if (ret == pid)
@@ -7429,7 +7537,8 @@ static int syscall_wait3(void)
 		_exit(0);
 	} else {
 		for (;;) {
-			int ret, status;
+			int ret;
+			int status;
 			struct rusage usage;
 
 			ret = wait3(&status, 0, &usage);
@@ -7460,7 +7569,8 @@ static int syscall_wait4(void)
 		_exit(0);
 	} else {
 		for (;;) {
-			int ret, status;
+			int ret;
+			int status;
 			struct rusage usage;
 
 			ret = wait4(pid, &status, 0, &usage);
@@ -7521,7 +7631,8 @@ static int syscall_write(void)
 	return (int)ret;
 }
 
-#if defined(HAVE_SYS_UIO_H)
+#if defined(HAVE_SYS_UIO_H) &&	\
+    defined(HAVE_IOVEC)
 #define HAVE_SYSCALL_WRITEV
 static int syscall_writev(void)
 {
@@ -8314,7 +8425,8 @@ static const syscall_t syscalls[] = {
 #if defined(HAVE_SYSCALL_SETREUID)
 	SYSCALL(syscall_setreuid),
 #endif
-#if defined(HAVE_SYSCALL_SETRLIMIT)
+#if defined(HAVE_SYSCALL_SETRLIMIT) &&	\
+    defined(HAVE_SYSCALL_GETRLIMIT)
 	SYSCALL(syscall_setrlimit),
 #endif
 #if defined(HAVE_SYSCALL_SET_ROBUST_LIST)
@@ -8554,7 +8666,8 @@ static void stress_syscall_shuffle_calls(void)
 	register size_t i;
 
 	for (i = 0; i < STRESS_SYSCALLS_MAX; i++) {
-		register size_t j, tmp;
+		register size_t j;
+		register size_t tmp;
 
 		j = stress_mwc16modn(STRESS_SYSCALLS_MAX);
 		tmp = stress_syscall_index[i];
@@ -8623,7 +8736,7 @@ static int cmp_syscall_name(const void *p1, const void *p2)
 	const size_t i1 = *(const size_t *)p1;
 	const size_t i2 = *(const size_t *)p2;
 
-	return strcmp(syscall_stats[i1].name, syscall_stats[i2].name) >= 0;
+	return shim_strcmp(syscall_stats[i1].name, syscall_stats[i2].name) >= 0;
 }
 
 /*
@@ -8666,8 +8779,11 @@ static int cmp_syscall_max(const void *p1, const void *p2)
  */
 static void stress_syscall_report_syscall_top(stress_args_t *args)
 {
-	size_t i, n, sort_index[STRESS_SYSCALLS_MAX];
-	size_t syscall_top = 10, syscall_rank = 1;
+	size_t i;
+	size_t n;
+	size_t sort_index[STRESS_SYSCALLS_MAX];
+	size_t syscall_top = 10;
+	size_t syscall_rank = 1;
 
 	(void)stress_setting_get("syscall-top", &syscall_top);
 	(void)stress_setting_get("syscall-rank", &syscall_rank);
@@ -8704,7 +8820,7 @@ static void stress_syscall_report_syscall_top(stress_args_t *args)
 		"System Call", "Avg (ns)", "Min (ns)", "Max (ns)");
 	for (n = 0, i = 0; n < syscall_top; i++) {
 		const size_t j = sort_index[i];
-		syscall_stats_t *ss = &syscall_stats[j];
+		const syscall_stats_t *ss = &syscall_stats[j];
 
 		if (ss->succeed) {
 			pr_inf("%s: %25s %10.1f %10" PRIu64 " %10" PRIu64 "%s\n",
@@ -8739,7 +8855,10 @@ static int cmp_test_duration(const void *p1, const void *p2)
  */
 static void stress_syscall_rank_calls_by_sort(const int percent)
 {
-	size_t i, n, max, sort_index[STRESS_SYSCALLS_MAX];
+	size_t i;
+	size_t n;
+	size_t max;
+	size_t sort_index[STRESS_SYSCALLS_MAX];
 
 	stress_syscall_reset_index();
 
@@ -8777,6 +8896,7 @@ static void stress_syscall_rank_calls_by_sort(const int percent)
 static void stress_syscall_rank_calls(const int syscall_method)
 {
 	size_t i;
+
 	switch (syscall_method) {
 	default:
 	case SYSCALL_METHOD_ALL:
@@ -8818,11 +8938,12 @@ static void stress_syscall_rank_calls(const int syscall_method)
  */
 static void stress_syscall_benchmark_calls(stress_args_t *args)
 {
-	NOCLOBBER size_t i;
+	CLOBBERED size_t i;
 
 	for (i = 0; i < STRESS_SYSCALLS_MAX; i++) {
 		int ret;
-		uint64_t test_t1, test_t2;
+		uint64_t test_t1;
+		uint64_t test_t2;
 		uint64_t d;
 		size_t j = stress_syscall_index[i];
 		syscall_stats_t *ss = &syscall_stats[j];
@@ -8834,17 +8955,21 @@ static void stress_syscall_benchmark_calls(stress_args_t *args)
 		t2 = ~0ULL;
 		errno = 0;
 
+#if defined(HAVE_SIGLONGJMP)
 		ret = sigsetjmp(jmp_env, 1);
 		do_jmp = true;
 		if (ret) {
 			ss->segv = true;
 			continue;
 		}
+#endif
 
 		/* Do the system call test */
 		test_t1 = syscall_time_now();
 		ret = syscalls[j].syscall();
+#if defined(HAVE_SIGLONGJMP)
 		do_jmp = false;
+#endif
 		ss->syscall_errno = syscall_errno;
 		test_t2 = syscall_time_now();
 
@@ -8879,7 +9004,8 @@ static void stress_syscall_benchmark_calls(stress_args_t *args)
  */
 static int stress_syscall(stress_args_t *args)
 {
-	int ret, rc = EXIT_NO_RESOURCE;
+	int ret;
+	int rc = EXIT_NO_RESOURCE;
 	size_t exercised = 0;
 	size_t i;
 	int syscall_method = SYSCALL_METHOD_FAST75;
@@ -8904,8 +9030,10 @@ static int stress_syscall(stress_args_t *args)
 	syscall_umask_mask = umask(0);
 	syscall_exec_prog = stress_proc_self_exe_get(exec_path, sizeof(exec_path));
 
+#if defined(HAVE_SIGLONGJMP)
 	if (stress_signal_handler(args->name, SIGSEGV, syscall_sigsegv_handler, NULL) < 0)
 		return EXIT_NO_RESOURCE;
+#endif
 	if (stress_signal_handler(args->name, SIGUSR1, syscall_sigusr1_handler, NULL) < 0)
 		return EXIT_NO_RESOURCE;
 #if defined(SIGXFSZ)
@@ -8928,7 +9056,7 @@ static int stress_syscall(stress_args_t *args)
 
 	ret = stress_fs_temp_dir_make_args(args);
 	if (ret < 0) {
-		rc = stress_exit_status((int)-ret);
+		rc = stress_exit_status(-ret);
 		goto err_close_dir_fd;
 	}
 
@@ -8942,7 +9070,7 @@ static int stress_syscall(stress_args_t *args)
 	syscall_2_pages = mmap(NULL, args->page_size * 2, PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (syscall_2_pages == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), "
 			"skipping stressor\n", args->name, args->page_size * 2,
 			stress_memory_free_get(), errno, strerror(errno));
 		goto err_rmdir;
@@ -8954,7 +9082,7 @@ static int stress_syscall(stress_args_t *args)
 				PROT_READ | PROT_WRITE,
 				MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (syscall_shared_info == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu bytes%s, errno=%d (%s), "
+		pr_inf_skip("%s: mmap %zu bytes failed%s, errno=%d (%s), "
 			"skipping stressor\n", args->name, sizeof(*syscall_shared_info),
 			stress_memory_free_get(), errno, strerror(errno));
 		goto err_unmap_syscall_page;
@@ -8962,7 +9090,7 @@ static int stress_syscall(stress_args_t *args)
 
 	syscall_fd = open(syscall_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 	if (syscall_fd < 0) {
-		pr_inf_skip("%s: cannot create file %s, errno=%d (%s), skipping stressor\n",
+		pr_inf_skip("%s: open '%s' failed, errno=%d (%s), skipping stressor\n",
 			args->name, syscall_filename, errno, strerror(errno));
 		goto err_unmap_syscall_shared_info;
 	}
@@ -9062,15 +9190,995 @@ static const char *stress_syscall_rank(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_syscall_method, "syscall-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_syscall_method },
-	{ OPT_syscall_rank,   "syscall-rank",   TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_syscall_rank },
+	{ OPT_syscall_method, "syscall-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_syscall_method },
+	{ OPT_syscall_rank,   "syscall-rank",   TYPE_ID_SIZE_T_METHOD, 0, 0, stress_syscall_rank },
 	{ OPT_syscall_top,    "syscall-top",    TYPE_ID_SIZE_T, 0, 1000, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("page-faults-kernel"),
+
+#if defined(HAVE_SYSCALL_ACCEPT)
+	STRESS_EX_SYSCALL("accept"),
+#endif
+#if defined(HAVE_SYSCALL_ACCEPT4)
+	STRESS_EX_SYSCALL("accept4"),
+#endif
+#if defined(HAVE_SYSCALL_ACCESS)
+	STRESS_EX_SYSCALL("access"),
+#endif
+	/* syscall_acct, ignore, don't want to interfere with process accounting */
+#if defined(HAVE_SYSCALL_ADD_KEY)
+	STRESS_EX_SYSCALL("add_key"),
+#endif
+	/* syscall_adjtimex, ignore, don't want to adjust system time */
+#if defined(HAVE_SYSCALL_ALARM)
+	STRESS_EX_SYSCALL("alarm"),
+#endif
+	/* syscall_arch_prctl, ignored */
+#if defined(HAVE_SYSCALL_BIND)
+	STRESS_EX_SYSCALL("bind"),
+#endif
+	/* syscall_bpf, ignore for now */
+#if defined(HAVE_SYSCALL_BRK)
+	STRESS_EX_SYSCALL("brk"),
+#endif
+#if defined(HAVE_SYSCALL_CACHEFLUSH)
+	STRESS_EX_SYSCALL("cacheflush"),
+#endif
+#if defined(HAVE_SYSCALL_CAPGET)
+	STRESS_EX_SYSCALL("capget"),
+#endif
+#if defined(HAVE_SYSCALL_CAPSET)
+	STRESS_EX_SYSCALL("capset"),
+#endif
+#if defined(HAVE_SYSCALL_CHDIR)
+	STRESS_EX_SYSCALL("chdir"),
+#endif
+#if defined(HAVE_SYSCALL_CHMOD)
+	STRESS_EX_SYSCALL("chmod"),
+#endif
+#if defined(HAVE_SYSCALL_CHOWN)
+	STRESS_EX_SYSCALL("chown"),
+#endif
+#if defined(HAVE_SYSCALL_CHROOT)
+	STRESS_EX_SYSCALL("chroot"),
+#endif
+#if defined(HAVE_SYSCALL_CLOCK_ADJTIME)
+	STRESS_EX_SYSCALL("clock_adjtime"),
+#endif
+#if defined(HAVE_SYSCALL_CLOCK_GETRES)
+	STRESS_EX_SYSCALL("clock_getres"),
+#endif
+#if defined(HAVE_SYSCALL_CLOCK_GETTIME)
+	STRESS_EX_SYSCALL("clock_gettime"),
+#endif
+#if defined(HAVE_SYSCALL_CLOCK_NANOSLEEP)
+	STRESS_EX_SYSCALL("clock_nanosleep"),
+#endif
+#if defined(HAVE_SYSCALL_CLOCK_SETTIME)
+	STRESS_EX_SYSCALL("clock_settime"),
+#endif
+#if defined(HAVE_SYSCALL_CLONE)
+	STRESS_EX_SYSCALL("clone"),
+#endif
+#if defined(HAVE_SYSCALL_CLONE3)
+	STRESS_EX_SYSCALL("clone3"),
+#endif
+#if defined(HAVE_SYSCALL_CLOSE)
+	STRESS_EX_SYSCALL("close"),
+#endif
+#if defined(HAVE_SYSCALL_CONNECT)
+	STRESS_EX_SYSCALL("connect"),
+#endif
+#if defined(HAVE_SYSCALL_COPY_FILE_RANGE)
+	STRESS_EX_SYSCALL("copy_file_range"),
+#endif
+#if defined(HAVE_SYSCALL_CREAT)
+	STRESS_EX_SYSCALL("creat"),
+#endif
+	/* syscall_create_module, ignore */
+	/* syscall_delete_module. ignore */
+#if defined(HAVE_SYSCALL_DUP2)
+	STRESS_EX_SYSCALL("dup"),
+#endif
+#if defined(HAVE_SYSCALL_DUP2)
+	STRESS_EX_SYSCALL("dup2"),
+#endif
+#if defined(HAVE_SYSCALL_DUP3)
+	STRESS_EX_SYSCALL("dup3"),
+#endif
+#if defined(HAVE_SYSCALL_EPOLL_CREATE)
+	STRESS_EX_SYSCALL("epoll_create"),
+#endif
+#if defined(HAVE_SYSCALL_EPOLL_CREATE1)
+	STRESS_EX_SYSCALL("epoll_create1"),
+#endif
+#if defined(HAVE_SYSCALL_EPOLL_CTL)
+	STRESS_EX_SYSCALL("epoll_ctl"),
+#endif
+#if defined(HAVE_SYSCALL_EPOLL_PWAIT)
+	STRESS_EX_SYSCALL("epoll_pwait"),
+#endif
+#if defined(HAVE_SYSCALL_EPOLL_WAIT)
+	STRESS_EX_SYSCALL("epoll_wait"),
+#endif
+#if defined(HAVE_SYSCALL_EVENTFD)
+	STRESS_EX_SYSCALL("eventfd"),
+#endif
+#if defined(HAVE_SYSCALL_EVENTFD2)
+	STRESS_EX_SYSCALL("eventfd2"),	/* not yet implemented */
+#endif
+#if defined(HAVE_SYSCALL_EXECVE)
+	STRESS_EX_SYSCALL("execve"),
+#endif
+#if defined(HAVE_SYSCALL_EXECVEAT)
+	STRESS_EX_SYSCALL("execveat"),
+#endif
+#if defined(HAVE_SYSCALL_EXIT)
+	STRESS_EX_SYSCALL("exit"),
+#endif
+	/* syscall_exit_group */
+#if defined(HAVE_SYSCALL_FACCESSAT)
+	STRESS_EX_SYSCALL("faccessat"),
+#endif
+#if defined(HAVE_SYSCALL_FALLOCATE)
+	STRESS_EX_SYSCALL("fallocate"),
+#endif
+#if defined(HAVE_SYSCALL_FANOTIFY_INIT)
+	STRESS_EX_SYSCALL("fanotify_init"),
+#endif
+#if defined(HAVE_SYSCALL_FANOTIFY_MARK)
+	STRESS_EX_SYSCALL("fanotify_mark"),
+#endif
+#if defined(HAVE_SYSCALL_FCHDIR)
+	STRESS_EX_SYSCALL("fchdir"),
+#endif
+#if defined(HAVE_SYSCALL_FCHMOD)
+	STRESS_EX_SYSCALL("fchmod"),
+#endif
+#if defined(HAVE_SYSCALL_FCHMODAT)
+	STRESS_EX_SYSCALL("fchmodat"),
+#endif
+#if defined(HAVE_SYSCALL_FCHMODAT2)
+	STRESS_EX_SYSCALL("fchmodat2"),
+#endif
+#if defined(HAVE_SYSCALL_FCHOWN)
+	STRESS_EX_SYSCALL("fchown"),
+#endif
+#if defined(HAVE_SYSCALL_FCHOWNAT)
+	STRESS_EX_SYSCALL("fchownat"),
+#endif
+#if defined(HAVE_SYSCALL_FCNTL)
+	STRESS_EX_SYSCALL("fcntl"),
+#endif
+#if defined(HAVE_SYSCALL_FDATASYNC)
+	STRESS_EX_SYSCALL("fdatasync"),
+#endif
+#if defined(HAVE_SYSCALL_FGETXATTR)
+	STRESS_EX_SYSCALL("fgetxattr"),
+#endif
+	/* syscall_finit_module, */
+#if defined(HAVE_SYSCALL_FLISTXATTR)
+	STRESS_EX_SYSCALL("flistxattr"),
+#endif
+#if defined(HAVE_SYSCALL_FLOCK)
+	STRESS_EX_SYSCALL("flock"),
+#endif
+#if defined(HAVE_SYSCALL_FORK)
+	STRESS_EX_SYSCALL("fork"),
+#endif
+#if defined(HAVE_SYSCALL_FREMOVEXATTR)
+	STRESS_EX_SYSCALL("fremovexattr"),
+#endif
+	/* syscall_fsconfig, ignored */
+#if defined(HAVE_SYSCALL_FSETXATTR)
+	STRESS_EX_SYSCALL("fsetxattr"),
+#endif
+	/* syscall_fsmount, ignored */
+	/* syscall_fsopen, ignored */
+	/* syscall_fspick, ignored */
+#if defined(HAVE_SYSCALL_FSTAT)
+	STRESS_EX_SYSCALL("fstat"),
+#endif
+#if defined(HAVE_SYSCALL_FSTATAT)
+	STRESS_EX_SYSCALL("fstatat"),
+#endif
+#if defined(HAVE_SYSCALL_FSTATFS)
+	STRESS_EX_SYSCALL("fstatfs"),
+#endif
+#if defined(HAVE_SYSCALL_FSYNC)
+	STRESS_EX_SYSCALL("fsync"),
+#endif
+#if defined(HAVE_SYSCALL_FTRUNCATE)
+	STRESS_EX_SYSCALL("ftruncate"),
+#endif
+	/* syscall_futex, */
+#if defined(HAVE_SYSCALL_FUTIMES)
+	STRESS_EX_SYSCALL("futimes"),
+#endif
+#if defined(HAVE_SYSCALL_FUTIMESAT)
+	STRESS_EX_SYSCALL("futimesat"),
+#endif
+#if defined(HAVE_SYSCALL_GETCPU)
+	STRESS_EX_SYSCALL("getcpu"),
+#endif
+#if defined(HAVE_SYSCALL_GETCWD)
+	STRESS_EX_SYSCALL("getcwd"),
+#endif
+#if defined(HAVE_SYSCALL_GETDENTS)
+	STRESS_EX_SYSCALL("getdents"),
+#endif
+#if defined(HAVE_SYSCALL_GETEGID)
+	STRESS_EX_SYSCALL("getegid"),
+#endif
+#if defined(HAVE_SYSCALL_GETEUID)
+	STRESS_EX_SYSCALL("geteuid"),
+#endif
+#if defined(HAVE_SYSCALL_GETGID)
+	STRESS_EX_SYSCALL("getgid"),
+#endif
+#if defined(HAVE_SYSCALL_GETGROUPS)
+	STRESS_EX_SYSCALL("getgroups"),
+#endif
+#if defined(HAVE_SYSCALL_GETITIMER)
+	STRESS_EX_SYSCALL("getitimer"),
+#endif
+#if defined(HAVE_SYSCALL_GET_MEMPOLICY)
+	STRESS_EX_SYSCALL("get_mempolicy"),
+#endif
+#if defined(HAVE_SYSCALL_GETPEERNAME)
+	STRESS_EX_SYSCALL("getpeername"),
+#endif
+#if defined(HAVE_SYSCALL_GETPGID)
+	STRESS_EX_SYSCALL("getpgid"),
+#endif
+#if defined(HAVE_SYSCALL_GETPGRP)
+	STRESS_EX_SYSCALL("getpgrp"),
+#endif
+#if defined(HAVE_SYSCALL_GETPID)
+	STRESS_EX_SYSCALL("getpid"),
+#endif
+#if defined(HAVE_SYSCALL_GETPPID)
+	STRESS_EX_SYSCALL("getppid"),
+#endif
+#if defined(HAVE_SYSCALL_GETPRIORITY)
+	STRESS_EX_SYSCALL("getpriority"),
+#endif
+#if defined(HAVE_SYSCALL_GETRANDOM)
+	STRESS_EX_SYSCALL("getrandom"),
+#endif
+#if defined(HAVE_SYSCALL_GETRESGID)
+	STRESS_EX_SYSCALL("getresgid"),
+#endif
+#if defined(HAVE_SYSCALL_GETRESUID)
+	STRESS_EX_SYSCALL("getresuid"),
+#endif
+#if defined(HAVE_SYSCALL_GETRLIMIT)
+	STRESS_EX_SYSCALL("getrlimit"),
+#endif
+#if defined(HAVE_SYSCALL_GET_ROBUST_LIST)
+	STRESS_EX_SYSCALL("get_robust_list"),
+#endif
+#if defined(HAVE_SYSCALL_GETRUSAGE)
+	STRESS_EX_SYSCALL("getrusage"),
+#endif
+#if defined(HAVE_SYSCALL_GETSID)
+	STRESS_EX_SYSCALL("getsid"),
+#endif
+#if defined(HAVE_SYSCALL_GETSOCKNAME)
+	STRESS_EX_SYSCALL("getsockname"),
+#endif
+#if defined(HAVE_SYSCALL_GETSOCKOPT)
+	STRESS_EX_SYSCALL("getsockopt"),
+#endif
+#if defined(HAVE_SYSCALL_GET_THREAD_AREA)
+	STRESS_EX_SYSCALL("get_thread_area"),
+#endif
+#if defined(HAVE_SYSCALL_GETTID)
+	STRESS_EX_SYSCALL("gettid"),
+#endif
+#if defined(HAVE_SYSCALL_GETTIMEOFDAY)
+	STRESS_EX_SYSCALL("gettimeofday"),
+#endif
+#if defined(HAVE_SYSCALL_GETUID)
+	STRESS_EX_SYSCALL("getuid"),
+#endif
+#if defined(HAVE_SYSCALL_GETXATTR)
+	STRESS_EX_SYSCALL("getxattr"),
+#endif
+	/* syscall_init_module, */
+#if defined(HAVE_SYSCALL_INOTIFY_ADD_WATCH)
+	STRESS_EX_SYSCALL("inotify_add_watch"),
+#endif
+#if defined(HAVE_SYSCALL_INOTIFY_INIT)
+	STRESS_EX_SYSCALL("inotify_init"),
+#endif
+#if defined(HAVE_SYSCALL_INOTIFY_INIT1)
+	STRESS_EX_SYSCALL("inotify_init1"),
+#endif
+#if defined(HAVE_SYSCALL_INOTIFY_RM_WATCH)
+	STRESS_EX_SYSCALL("inotify_rm_watch"),
+#endif
+#if defined(HAVE_SYSCALL_IO_CANCEL)
+	STRESS_EX_SYSCALL("io_cancel"),
+#endif
+#if defined(HAVE_SYSCALL_IO_DESTROY)
+	STRESS_EX_SYSCALL("io_destroy"),
+#endif
+#if defined(HAVE_SYSCALL_IO_GETEVENTS)
+	STRESS_EX_SYSCALL("io_getevents"),
+#endif
+#if defined(HAVE_SYSCALL_IO_PGETEVENTS)
+	STRESS_EX_SYSCALL("io_pgetevents"),
+#endif
+#if defined(HAVE_SYSCALL_IOPRIO_GET)
+	STRESS_EX_SYSCALL("ioprio_get"),
+#endif
+#if defined(HAVE_SYSCALL_IOPRIO_SET)
+	STRESS_EX_SYSCALL("ioprio_set"),
+#endif
+#if defined(HAVE_SYSCALL_IO_SETUP)
+	STRESS_EX_SYSCALL("io_setup"),
+#endif
+#if defined(HAVE_SYSCALL_IO_SUBMIT)
+	STRESS_EX_SYSCALL("io_submit"),
+#endif
+	/* syscall_io_uring_enter, */
+	/* syscall_io_uring_register, */
+#if defined(HAVE_SYSCALL_IO_URING_SETUP)
+	STRESS_EX_SYSCALL("io_uring_setup"),
+#endif
+#if defined(HAVE_SYSCALL_IOPERM)
+	STRESS_EX_SYSCALL("ioperm"),
+#endif
+#if defined(HAVE_SYSCALL_IOPL)
+	STRESS_EX_SYSCALL("iopl"),
+#endif
+#if defined(HAVE_SYSCALL_IOCTL)
+	STRESS_EX_SYSCALL("ioctl"),
+#endif
+	/* syscall_ipc, ignored */
+#if defined(HAVE_SYSCALL_KCMP)
+	STRESS_EX_SYSCALL("kcmp"),
+#endif
+	/* syscall_kexec_file_load, ignored */
+	/* syscall_kexec_load, ignored */
+#if defined(HAVE_SYSCALL_KEYCTL)
+	STRESS_EX_SYSCALL("keyctl"),
+#endif
+#if defined(HAVE_SYSCALL_KILL)
+	STRESS_EX_SYSCALL("kill"),
+#endif
+#if defined(HAVE_SYSCALL_LCHOWN)
+	STRESS_EX_SYSCALL("lchown"),
+#endif
+#if defined(HAVE_SYSCALL_LGETXATTR)
+	STRESS_EX_SYSCALL("lgetxattr"),
+#endif
+#if defined(HAVE_SYSCALL_LINK)
+	STRESS_EX_SYSCALL("link"),
+#endif
+#if defined(HAVE_SYSCALL_LINKAT)
+	STRESS_EX_SYSCALL("linkat"),
+#endif
+#if defined(HAVE_SYSCALL_LISTEN)
+	STRESS_EX_SYSCALL("listen"),
+#endif
+#if defined(HAVE_SYSCALL_LISTXATTR)
+	STRESS_EX_SYSCALL("listxattr"),
+#endif
+#if defined(HAVE_SYSCALL_LLISTXATTR)
+	STRESS_EX_SYSCALL("llistxattr"),
+#endif
+#if defined(HAVE_SYSCALL_LOOKUP_DCOOKIE)
+	STRESS_EX_SYSCALL("lookup_dcookie"),
+#endif
+#if defined(HAVE_SYSCALL_LREMOVEXATTR)
+	STRESS_EX_SYSCALL("lremovexattr"),
+#endif
+#if defined(HAVE_SYSCALL_LSEEK)
+	STRESS_EX_SYSCALL("lseek"),
+#endif
+#if defined(HAVE_SYSCALL_LSETXATTR)
+	STRESS_EX_SYSCALL("lsetxattr"),
+#endif
+#if defined(HAVE_SYSCALL_LSTAT)
+	STRESS_EX_SYSCALL("lstat"),
+#endif
+#if defined(HAVE_SYSCALL_LSM_GET_SELF_ATTR)
+	STRESS_EX_SYSCALL("lsm_get_self_attr"),
+#endif
+#if defined(HAVE_SYSCALL_LSM_LIST_MODULES)
+	STRESS_EX_SYSCALL("lsm_list_modules"),
+#endif
+#if defined(HAVE_SYSCALL_MADVISE)
+	STRESS_EX_SYSCALL("madvise"),
+#endif
+#if defined(HAVE_SYSCALL_MAP_SHADOW_STACK)
+	STRESS_EX_SYSCALL("map_shadow_stack"),
+#endif
+#if defined(HAVE_SYSCALL_MBIND)
+	STRESS_EX_SYSCALL("mbind"),
+#endif
+	/* syscall_memory_ordering, SPARC only */
+#if defined(HAVE_SYSCALL_MEMBARRIER)
+	STRESS_EX_SYSCALL("membarrier"),
+#endif
+#if defined(HAVE_SYSCALL_MEMFD_CREATE)
+	STRESS_EX_SYSCALL("memfd_create"),
+#endif
+#if defined(HAVE_SYSCALL_MIGRATE_PAGES)
+	STRESS_EX_SYSCALL("migrate_pages"),
+#endif
+#if defined(HAVE_SYSCALL_MINCORE)
+	STRESS_EX_SYSCALL("mincore"),
+#endif
+#if defined(HAVE_SYSCALL_MKDIR)
+	STRESS_EX_SYSCALL("mkdir"),
+#endif
+#if defined(HAVE_SYSCALL_MKDIRAT)
+	STRESS_EX_SYSCALL("mkdirat"),
+#endif
+#if defined(HAVE_SYSCALL_MKNOD)
+	STRESS_EX_SYSCALL("mknod"),
+#endif
+#if defined(HAVE_SYSCALL_MKNODAT)
+	STRESS_EX_SYSCALL("mknodat"),
+#endif
+#if defined(HAVE_SYSCALL_MLOCK)
+	STRESS_EX_SYSCALL("mlock"),
+#endif
+#if defined(HAVE_SYSCALL_MLOCK2)
+	STRESS_EX_SYSCALL("mlock2"),
+#endif
+#if defined(HAVE_SYSCALL_MLOCKALL)
+	STRESS_EX_SYSCALL("mlockall"),
+#endif
+#if defined(HAVE_SYSCALL_MMAP)
+	STRESS_EX_SYSCALL("mmap"),
+#endif
+	/* syscall_modify_ldt, too risky */
+	/* syscall_mount, ignored */
+	/* syscall_move_mount, ignored */
+#if defined(HAVE_SYSCALL_MOVE_PAGES)
+	STRESS_EX_SYSCALL("move_pages"),
+#endif
+#if defined(HAVE_SYSCALL_MPROTECT)
+	STRESS_EX_SYSCALL("mprotect"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_CLOSE)
+	STRESS_EX_SYSCALL("mq_close"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_GETATTR)
+	STRESS_EX_SYSCALL("mq_getattr"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_NOTIFY)
+	STRESS_EX_SYSCALL("mq_notify"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_OPEN)
+	STRESS_EX_SYSCALL("mq_open"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_SETATTR)
+	STRESS_EX_SYSCALL("mq_setattr"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_TIMEDRECEIVE)
+	STRESS_EX_SYSCALL("mq_timedreceive"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_TIMEDSEND)
+	STRESS_EX_SYSCALL("mq_timedsend"),
+#endif
+#if defined(HAVE_SYSCALL_MQ_UNLINK)
+	STRESS_EX_SYSCALL("mq_unlink"),
+#endif
+#if defined(HAVE_SYSCALL_MREMAP)
+	STRESS_EX_SYSCALL("mremap"),
+#endif
+#if defined(HAVE_SYSCALL_MSGCTL)
+	STRESS_EX_SYSCALL("msgctl"),
+#endif
+#if defined(HAVE_SYSCALL_MSGGET)
+	STRESS_EX_SYSCALL("msgget"),
+#endif
+#if defined(HAVE_SYSCALL_MSGRCV)
+	STRESS_EX_SYSCALL("msgrcv"),
+#endif
+#if defined(HAVE_SYSCALL_MSGSND)
+	STRESS_EX_SYSCALL("msgsnd"),
+#endif
+#if defined(HAVE_SYSCALL_MSYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+#if defined(HAVE_SYSCALL_MUNLOCK)
+	STRESS_EX_SYSCALL("munlock"),
+#endif
+#if defined(HAVE_SYSCALL_MUNLOCKALL)
+	STRESS_EX_SYSCALL("munlockall"),
+#endif
+#if defined(HAVE_SYSCALL_MUNMAP)
+	STRESS_EX_SYSCALL("munmap"),
+#endif
+#if defined(HAVE_SYSCALL_NAME_TO_HANDLE_AT)
+	STRESS_EX_SYSCALL("name_to_handle_at"),
+#endif
+#if defined(HAVE_SYSCALL_NANOSLEEP)
+	STRESS_EX_SYSCALL("nanosleep"),
+#endif
+	/* syscall_nfsservctl, ignored */
+#if defined(HAVE_SYSCALL_NICE)
+	STRESS_EX_SYSCALL("nice"),
+#endif
+#if defined(HAVE_SYSCALL_OPEN)
+	STRESS_EX_SYSCALL("open"),
+#endif
+#if defined(HAVE_SYSCALL_OPENAT)
+	STRESS_EX_SYSCALL("openat"),
+#endif
+#if defined(HAVE_OPEN_BY_HANDLE_AT)
+	STRESS_EX_SYSCALL("open_by_handle_at"),
+#endif
+	/* syscall_open_tree, ignored */
+#if defined(HAVE_SYSCALL_PAUSE)
+	STRESS_EX_SYSCALL("pause"),
+#endif
+	/* syscall_perf_event_open, may clash with --perf, ignore */
+#if defined(HAVE_SYSCALL_PERSONALITY)
+	STRESS_EX_SYSCALL("personality"),
+#endif
+#if defined(HAVE_SYSCALL_PIDFD_OPEN)
+	STRESS_EX_SYSCALL("pidfd_open"),
+#endif
+#if defined(HAVE_SYSCALL_PIDFD_SEND_SIGNAL)
+	STRESS_EX_SYSCALL("pidfd_send_signal"),
+#endif
+#if defined(HAVE_SYSCALL_PIPE)
+	STRESS_EX_SYSCALL("pipe"),
+#endif
+#if defined(HAVE_SYSCALL_PIPE2)
+	STRESS_EX_SYSCALL("pipe2"),
+#endif
+	/* syscall_pivot_root, ignored for now */
+#if defined(HAVE_SYSCALL_PKEY_ALLOC)
+	STRESS_EX_SYSCALL("pkey_alloc"),
+#endif
+#if defined(HAVE_SYSCALL_PKEY_FREE)
+	STRESS_EX_SYSCALL("pkey_free"),
+#endif
+#if defined(HAVE_SYSCALL_PKEY_GET)
+	STRESS_EX_SYSCALL("pkey_get"),
+#endif
+#if defined(HAVE_SYSCALL_PKEY_MPROTECT)
+	STRESS_EX_SYSCALL("pkey_mprotect"),
+#endif
+#if defined(HAVE_SYSCALL_PKEY_SET)
+	STRESS_EX_SYSCALL("pkey_set"),
+#endif
+#if defined(HAVE_SYSCALL_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#endif
+#if defined(HAVE_SYSCALL_PPOLL)
+	STRESS_EX_SYSCALL("ppoll"),
+#endif
+#if defined(HAVE_SYSCALL_PRCTL)
+	STRESS_EX_SYSCALL("prctl"),
+#endif
+#if defined(HAVE_SYSCALL_PREAD)
+	STRESS_EX_SYSCALL("pread"),
+#endif
+#if defined(HAVE_SYSCALL_PREADV)
+	STRESS_EX_SYSCALL("preadv"),
+#endif
+#if defined(HAVE_SYSCALL_PREADV2)
+	STRESS_EX_SYSCALL("preadv2"),
+#endif
+#if defined(HAVE_SYSCALL_PRLIMIT)
+	STRESS_EX_SYSCALL("prlimit"),
+#endif
+#if defined(HAVE_SYSCALL_PROCESS_VM_READV)
+	STRESS_EX_SYSCALL("process_vm_readv"),
+#endif
+#if defined(HAVE_SYSCALL_PROCESS_VM_WRITEV)
+	STRESS_EX_SYSCALL("process_vm_writev"),
+#endif
+#if defined(HAVE_SYSCALL_PSELECT)
+	STRESS_EX_SYSCALL("pselect"),
+#endif
+	/* syscall_ptrace, */
+#if defined(HAVE_SYSCALL_PWRITE)
+	STRESS_EX_SYSCALL("pwrite"),
+#endif
+#if defined(HAVE_SYSCALL_PWRITEV)
+	STRESS_EX_SYSCALL("pwritev"),
+#endif
+#if defined(HAVE_SYSCALL_PWRITEV2)
+	STRESS_EX_SYSCALL("pwritev2"),
+#endif
+#if defined(HAVE_SYSCALL_QUOTACTL)
+	STRESS_EX_SYSCALL("quotactl"),
+#endif
+#if defined(HAVE_SYSCALL_QUOTACTL_FD)
+	STRESS_EX_SYSCALL("quotactl_fd"),
+#endif
+#if defined(HAVE_SYSCALL_READ)
+	STRESS_EX_SYSCALL("read"),
+#endif
+#if defined(HAVE_SYSCALL_READAHEAD)
+	STRESS_EX_SYSCALL("readahead"),
+#endif
+	/* syscall_readdir, ancient, ignore */
+#if defined(HAVE_SYSCALL_READLINK)
+	STRESS_EX_SYSCALL("readlink"),
+#endif
+#if defined(HAVE_SYSCALL_READLINKAT)
+	STRESS_EX_SYSCALL("readlinkat"),
+#endif
+#if defined(HAVE_SYSCALL_READV)
+	STRESS_EX_SYSCALL("readv"),
+#endif
+	/* syscall_reboot, ignore */
+#if defined(HAVE_SYSCALL_RECV)
+	STRESS_EX_SYSCALL("recv"),
+#endif
+#if defined(HAVE_SYSCALL_RECVFROM)
+	STRESS_EX_SYSCALL("recvfrom"),
+#endif
+#if defined(HAVE_SYSCALL_RECVMMSG)
+	STRESS_EX_SYSCALL("recvmmsg"),
+#endif
+#if defined(HAVE_SYSCALL_RECVMSG)
+	STRESS_EX_SYSCALL("recvmsg"),
+#endif
+#if defined(HAVE_SYSCALL_RFORK)
+	STRESS_EX_SYSCALL("rfork"),
+#endif
+#if defined(HAVE_SYSCALL_REMAP_FILE_PAGES)
+	STRESS_EX_SYSCALL("remap_file_pages"),
+#endif
+#if defined(HAVE_SYSCALL_REMOVEXATTR)
+	STRESS_EX_SYSCALL("removexattr"),
+#endif
+#if defined(HAVE_SYSCALL_RENAME)
+	STRESS_EX_SYSCALL("rename"),
+#endif
+#if defined(HAVE_SYSCALL_RENAMEAT)
+	STRESS_EX_SYSCALL("renameat"),
+#endif
+#if defined(HAVE_SYSCALL_RENAMEAT2)
+	STRESS_EX_SYSCALL("renameat2"),
+#endif
+#if defined(HAVE_SYSCALL_REQUEST_KEY)
+	STRESS_EX_SYSCALL("request_key"),
+#endif
+#if defined(HAVE_SYSCALL_RESTART_SYSCALL)
+	STRESS_EX_SYSCALL("restart_syscall"),
+#endif
+#if defined(HAVE_SYSCALL_RISCV_FLUSH_ICACHE)
+	STRESS_EX_SYSCALL("riscv_flush_icache"),
+#endif
+#if defined(HAVE_SYSCALL_RISCV_HWPROBE)
+	STRESS_EX_SYSCALL("riscv_hwprobe"),
+#endif
+#if defined(HAVE_SYSCALL_RMDIR)
+	STRESS_EX_SYSCALL("rmdir"),
+#endif
+#if defined(HAVE_SYSCALL_RSEQ)
+	STRESS_EX_SYSCALL("rseq"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GETAFFINITY)
+	STRESS_EX_SYSCALL("sched_getaffinity"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GETATTR)
+	STRESS_EX_SYSCALL("sched_getattr"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GETPARAM)
+	STRESS_EX_SYSCALL("sched_getparam"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GET_PRIORITY_MAX)
+	STRESS_EX_SYSCALL("sched_get_priority_max"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GET_PRIORITY_MIN)
+	STRESS_EX_SYSCALL("sched_get_priority_min"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_GETSCHEDULER)
+	STRESS_EX_SYSCALL("sched_getscheduler"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_RR_GET_INTERVAL)
+	STRESS_EX_SYSCALL("sched_rr_get_interval"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_SETAFFINITY)
+	STRESS_EX_SYSCALL("sched_setaffinity"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_SETATTR)
+	STRESS_EX_SYSCALL("sched_setattr"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_SETPARAM)
+	STRESS_EX_SYSCALL("sched_setparam"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_SETSCHEDULER)
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+#endif
+#if defined(HAVE_SYSCALL_SCHED_YIELD)
+	STRESS_EX_SYSCALL("sched_yield"),
+#endif
+#if defined(HAVE_SYSCALL_SECCOMP)
+	STRESS_EX_SYSCALL("seccomp"),
+#endif
+#if defined(HAVE_SYSCALL_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+#if defined(HAVE_SYSCALL_SEMCTL)
+	STRESS_EX_SYSCALL("semctl"),
+#endif
+#if defined(HAVE_SYSCALL_SEMGET)
+	STRESS_EX_SYSCALL("semget"),
+#endif
+#if defined(HAVE_SYSCALL_SEMOP)
+	STRESS_EX_SYSCALL("semop"),
+#endif
+#if defined(HAVE_SYSCALL_SEMTIMEDOP)
+	STRESS_EX_SYSCALL("semtimedop"),
+#endif
+#if defined(HAVE_SYSCALL_SENDFILE)
+	STRESS_EX_SYSCALL("sendfile"),
+#endif
+#if defined(HAVE_SYSCALL_SEND)
+	STRESS_EX_SYSCALL("send"),
+#endif
+#if defined(HAVE_SYSCALL_SENDMMSG)
+	STRESS_EX_SYSCALL("sendmmsg"),
+#endif
+#if defined(HAVE_SYSCALL_SENDMSG)
+	STRESS_EX_SYSCALL("sendmsg"),
+#endif
+#if defined(HAVE_SYSCALL_SENDTO)
+	STRESS_EX_SYSCALL("sendto"),
+#endif
+	/* syscall_setdomainname, */
+	/* syscall_setfsgid, */
+	/* syscall_setfsuid, */
+#if defined(HAVE_SYSCALL_SETGID)
+	STRESS_EX_SYSCALL("setgid"),
+#endif
+	/* syscall_setgroups, */
+	/* syscall_sethostname, */
+#if defined(HAVE_SYSCALL_SETITIMER)
+	STRESS_EX_SYSCALL("setitimer"),
+#endif
+#if defined(HAVE_SYSCALL_SET_MEMPOLICY)
+	STRESS_EX_SYSCALL("set_mempolicy"),
+#endif
+#if defined(HAVE_SYSCALL_SETPGID)
+	STRESS_EX_SYSCALL("setpgid"),
+#endif
+#if defined(HAVE_SYSCALL_SETPRIORITY)
+	STRESS_EX_SYSCALL("setpriority"),
+#endif
+#if defined(HAVE_SYSCALL_SETREGID)
+	STRESS_EX_SYSCALL("setregid"),
+#endif
+#if defined(HAVE_SYSCALL_SETRESGID)
+	STRESS_EX_SYSCALL("setresgid"),
+#endif
+#if defined(HAVE_SYSCALL_SETRESUID)
+	STRESS_EX_SYSCALL("setresuid"),
+#endif
+#if defined(HAVE_SYSCALL_SETREUID)
+	STRESS_EX_SYSCALL("setreuid"),
+#endif
+#if defined(HAVE_SYSCALL_SETRLIMIT) &&	\
+    defined(HAVE_SYSCALL_GETRLIMIT)
+	STRESS_EX_SYSCALL("setrlimit"),
+#endif
+#if defined(HAVE_SYSCALL_SET_ROBUST_LIST)
+	STRESS_EX_SYSCALL("set_robust_list"),
+#endif
+#if defined(HAVE_SYSCALL_SETSID)
+	STRESS_EX_SYSCALL("setsid"),
+#endif
+#if defined(HAVE_SYSCALL_SETSOCKOPT)
+	STRESS_EX_SYSCALL("setsockopt"),
+#endif
+	/* syscall_set_thread_area, ignore */
+	/* syscall_set_tid_address, ignore */
+	/* syscall_settimeofday, ignore, don't modify time of day */
+#if defined(HAVE_SYSCALL_SETUID)
+	STRESS_EX_SYSCALL("setuid"),
+#endif
+#if defined(HAVE_SYSCALL_SETXATTR)
+	STRESS_EX_SYSCALL("setxattr"),
+#endif
+#if defined(HAVE_SYSCALL_SHMAT)
+	STRESS_EX_SYSCALL("shmat"),
+#endif
+#if defined(HAVE_SYSCALL_SHMCTL)
+	STRESS_EX_SYSCALL("shmctl"),
+#endif
+#if defined(HAVE_SYSCALL_SHMDT)
+	STRESS_EX_SYSCALL("shmdt"),
+#endif
+#if defined(HAVE_SYSCALL_SHMGET)
+	STRESS_EX_SYSCALL("shmget"),
+#endif
+#if defined(HAVE_SYSCALL_SHUTDOWN)
+	STRESS_EX_SYSCALL("shutdown"),
+#endif
+#if defined(HAVE_SYSCALL_SIGACTION)
+	STRESS_EX_SYSCALL("sigaction"),
+#endif
+#if defined(HAVE_SYSCALL_SIGALTSTACK)
+	STRESS_EX_SYSCALL("sigaltstack"),
+#endif
+#if defined(HAVE_SYSCALL_SIGNAL)
+	STRESS_EX_SYSCALL("signal"),
+#endif
+#if defined(HAVE_SYSCALL_SIGNALFD)
+	STRESS_EX_SYSCALL("signalfd"),
+#endif
+#if defined(HAVE_SYSCALL_SIGPENDING)
+	STRESS_EX_SYSCALL("sigpending"),
+#endif
+#if defined(HAVE_SYSCALL_SIGPROCMASK)
+	STRESS_EX_SYSCALL("sigprocmask"),
+#endif
+#if defined(HAVE_SYSCALL_SIGRETURN)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+#if defined(HAVE_SYSCALL_SIGSUSPEND)
+	STRESS_EX_SYSCALL("sigsuspend"),
+#endif
+#if defined(HAVE_SYSCALL_SOCKET)
+	STRESS_EX_SYSCALL("socket"),
+#endif
+#if defined(HAVE_SYSCALL_SOCKETPAIR)
+	STRESS_EX_SYSCALL("socketpair"),
+#endif
+#if defined(HAVE_SYSCALL_SPLICE)
+	STRESS_EX_SYSCALL("splice"),
+#endif
+#if defined(HAVE_SYSCALL_STAT)
+	STRESS_EX_SYSCALL("stat"),
+#endif
+#if defined(HAVE_SYSCALL_STATFS)
+	STRESS_EX_SYSCALL("statfs"),
+#endif
+#if defined(HAVE_SYSCALL_STATX)
+	STRESS_EX_SYSCALL("statx"),
+#endif
+	/* syscall_swapoff, */
+	/* syscall_swapon, */
+#if defined(HAVE_SYSCALL_SYMLINK)
+	STRESS_EX_SYSCALL("symlink"),
+#endif
+#if defined(HAVE_SYSCALL_SYMLINKAT)
+	STRESS_EX_SYSCALL("symlinkat"),
+#endif
+#if defined(HAVE_SYSCALL_SYNC)
+	STRESS_EX_SYSCALL("sync"),
+#endif
+#if defined(HAVE_SYSCALL_SYNC_FILE_RANGE)
+	STRESS_EX_SYSCALL("sync_file_range"),
+#endif
+#if defined(HAVE_SYSCALL_SYNCFS)
+	STRESS_EX_SYSCALL("syncfs"),
+#endif
+	/* STRESS_EX_SYSCALL("sysctl"), deprecated */
+	/* STRESS_EX_SYSCALL("sysfs"), obsolete */
+#if defined(HAVE_SYSCALL_SYSINFO)
+	STRESS_EX_SYSCALL("sysinfo"),
+#endif
+#if defined(HAVE_SYSCALL_SYSLOG)
+	STRESS_EX_SYSCALL("syslog"),
+#endif
+#if defined(HAVE_SYSCALL_TEE)
+	STRESS_EX_SYSCALL("tee"),
+#endif
+	/* syscall_tgkill, */
+#if defined(HAVE_SYSCALL_TIME)
+	STRESS_EX_SYSCALL("time"),
+#endif
+#if defined(HAVE_SYSCALL_TIMER_CREATE)
+	STRESS_EX_SYSCALL("timer_create"),
+#endif
+#if defined(HAVE_SYSCALL_TIMER_DELETE)
+	STRESS_EX_SYSCALL("timer_delete"),
+#endif
+#if defined(HAVE_SYSCALL_TIMERFD_CREATE)
+	STRESS_EX_SYSCALL("timerfd_create"),
+#endif
+#if defined(HAVE_SYSCALL_TIMERFD_GETTIME)
+	STRESS_EX_SYSCALL("timerfd_gettime"),
+#endif
+#if defined(HAVE_SYSCALL_TIMERFD_SETTIME)
+	STRESS_EX_SYSCALL("timerfd_settime"),
+#endif
+#if defined(HAVE_SYSCALL_TIMER_GETOVERRUN)
+	STRESS_EX_SYSCALL("timer_getoverrun"),
+#endif
+#if defined(HAVE_SYSCALL_TIMER_GETTIME)
+	STRESS_EX_SYSCALL("timer_gettime"),
+#endif
+#if defined(HAVE_SYSCALL_TIMER_SETTIME)
+	STRESS_EX_SYSCALL("timer_settime"),
+#endif
+#if defined(HAVE_SYSCALL_TIMES)
+	STRESS_EX_SYSCALL("times"),
+#endif
+	/* syscall_tkill, obsolete */
+#if defined(HAVE_SYSCALL_TRUNCATE)
+	STRESS_EX_SYSCALL("truncate"),
+#endif
+#if defined(HAVE_SYSCALL_UMASK)
+	STRESS_EX_SYSCALL("umask"),
+#endif
+	/* syscall_umount, ignored */
+	/* syscall_umount2, ignored */
+#if defined(HAVE_SYSCALL_UNAME)
+	STRESS_EX_SYSCALL("uname"),
+#endif
+#if defined(HAVE_SYSCALL_UNLINK)
+	STRESS_EX_SYSCALL("unlink"),
+#endif
+#if defined(HAVE_SYSCALL_UNLINKAT)
+	STRESS_EX_SYSCALL("unlinkat"),
+#endif
+#if defined(HAVE_SYSCALL_UNSHARE)
+	STRESS_EX_SYSCALL("unshare"),
+#endif
+#if defined(HAVE_SYSCALL_USERFAULTFD)
+	STRESS_EX_SYSCALL("userfaultfd"),
+#endif
+#if defined(HAVE_SYSCALL_UTIME)
+	STRESS_EX_SYSCALL("utime"),
+#endif
+#if defined(HAVE_SYSCALL_UTIMENSAT)
+	STRESS_EX_SYSCALL("utimensat"),
+#endif
+#if defined(HAVE_SYSCALL_UTIMES)
+	STRESS_EX_SYSCALL("utimes"),
+#endif
+#if defined(HAVE_SYSCALL_VFORK)
+	STRESS_EX_SYSCALL("vfork"),
+#endif
+	/* syscall_vhangup, */
+	/* syscall_vm86, x86 32 bit only, ignore */
+#if defined(HAVE_SYSCALL_VMSPLICE)
+	STRESS_EX_SYSCALL("vmsplice"),
+#endif
+#if defined(HAVE_SYSCALL_WAIT)
+	STRESS_EX_SYSCALL("wait"),
+#endif
+#if defined(HAVE_SYSCALL_WAIT3)
+	STRESS_EX_SYSCALL("wait3"),
+#endif
+#if defined(HAVE_SYSCALL_WAIT4)
+	STRESS_EX_SYSCALL("wait4"),
+#endif
+#if defined(HAVE_SYSCALL_WAITID)
+	STRESS_EX_SYSCALL("waitid"),
+#endif
+#if defined(HAVE_SYSCALL_WAITPID)
+	STRESS_EX_SYSCALL("waitpid"),
+#endif
+#if defined(HAVE_SYSCALL_WRITE)
+	STRESS_EX_SYSCALL("write"),
+#endif
+#if defined(HAVE_SYSCALL_WRITEV)
+	STRESS_EX_SYSCALL("writev"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_syscall_info = {
 	.stressor = stress_syscall,
 	.classifier = CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

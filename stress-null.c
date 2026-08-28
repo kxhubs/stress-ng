@@ -43,7 +43,9 @@ static int stress_null(stress_args_t *args)
 	char ALIGN64 buffer[4096];
 	int fcntl_mask = 0;
 	uint64_t bytes = 0;
-	double t, duration = 0.0, rate;
+	double t;
+	double duration = 0.0;
+	double rate;
 	int metrics_count = 0;
 	bool null_write = false;
 	ssize_t ret;
@@ -63,7 +65,7 @@ static int stress_null(stress_args_t *args)
 	fcntl_mask |= O_NONBLOCK;
 #endif
 	if ((fd = open("/dev/null", O_RDWR)) < 0) {
-		pr_fail("%s: open /dev/null failed, errno=%d (%s)\n",
+		pr_fail("%s: open '/dev/null' failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -76,7 +78,7 @@ static int stress_null(stress_args_t *args)
 
 	if (null_write) {
 		if (stress_instance_zero(args))
-			pr_inf("%s: exercising /dev/null with just writes\n", args->name);
+			pr_inf("%s: exercising '/dev/null' with just writes\n", args->name);
 
 		t = stress_time_now();
 		do {
@@ -99,7 +101,7 @@ static int stress_null(stress_args_t *args)
 		duration += stress_time_now() - t;
 	} else {
 		if (stress_instance_zero(args)) {
-			pr_inf("%s: exercising /dev/null with writes, lseek, "
+			pr_inf("%s: exercising '/dev/null' with writes, lseek, "
 				"ioctl, fcntl, fallocate, fdatasync and mmap; for "
 				"just write benchmarking use --null-write\n",
 				args->name);
@@ -189,7 +191,7 @@ static int stress_null(stress_args_t *args)
 
 	stress_proc_state_set(args->name, STRESS_STATE_DEINIT);
 
-	rate = (duration > 0.0) ? ((double)bytes / duration) / (double)MB : 0.0;
+	rate = (duration > 0.0) ? ((double)bytes / duration) / (double)STRESS_MB : 0.0;
 	stress_metrics_set(args, "MB per sec /dev/null write rate",
 		rate, STRESS_METRIC_HARMONIC_MEAN);
 
@@ -201,10 +203,21 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("syscall-rate"),
+
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_null_info = {
 	.stressor = stress_null,
 	.classifier = CLASS_DEV | CLASS_MEMORY | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

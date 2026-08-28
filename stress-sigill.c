@@ -10,7 +10,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
@@ -183,7 +183,7 @@ static void stress_illegal_op(void)
 
 static sigjmp_buf jmp_env;
 #if defined(SA_SIGINFO)
-static volatile void *fault_addr;
+static void * volatile fault_addr;
 static volatile int signo;
 static volatile int code;
 #endif
@@ -297,6 +297,8 @@ static int stress_sigill(stress_args_t *args)
 				case __ILL_BNDMOD:
 					break;
 #endif
+				case 0x80:
+					break;
 				default:
 					pr_fail("%s: unexpecting SIGILL si_code %d\n",
 						args->name, code);
@@ -336,13 +338,22 @@ static int stress_sigill(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("cpu-opcode"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("sigaction"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigill_info = {
 	.stressor = stress_sigill,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 #if defined(SA_SIGINFO)
 	.verify = VERIFY_OPTIONAL,
 #endif
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -350,7 +361,7 @@ const stressor_info_t stress_sigill_info = {
 const stressor_info_t stress_sigill_info = {
 	.stressor = stress_unimplemented,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
-	.unimplemented_reason = "built without SIGILL support or illegal opcode function not implemented or siglongjmp not supported",
+	.unimplemented_reason = "built without SIGILL support or illegal opcode function not implemented or siglongjmp() not supported",
 	.help = help
 };
 

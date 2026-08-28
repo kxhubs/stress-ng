@@ -8,7 +8,7 @@ stress-ng will stress test a computer system in various selectable ways. It
 was designed to exercise various physical subsystems of a computer as well as
 the various operating system kernel interfaces. Stress-ng features:
 
-  * 370+ stress tests
+  * 380+ stress tests
   * 100+ CPU specific stress tests that exercise floating point, integer,
     bit manipulation and control flow
   * 60+ virtual memory stress tests
@@ -79,24 +79,31 @@ build: (note libattr is not required for more recent disto releases).
 
 Debian, Ubuntu:
 
-  * gcc g++ libacl1-dev libaio-dev libapparmor-dev libatomic1 libattr1-dev libbsd-dev libcap-dev libeigen3-dev libgbm-dev libcrypt-dev libglvnd-dev libipsec-mb-dev libjpeg-dev libjudy-dev libkeyutils-dev libkmod-dev libmd-dev libmpfr-dev libsctp-dev libxxhash-dev liblzma-dev zlib1g-dev
+  * gcc g++ libacl1-dev libaio-dev libapparmor-dev libatomic1 libattr1-dev libbsd-dev libcap-dev libeigen3-dev libgbm-dev libcrypt-dev libglvnd-dev libipsec-mb-dev libjpeg-dev libjudy-dev libkeyutils-dev libkmod-dev libmd-dev libmpfr-dev libnl-3-dev libsctp-dev libxxhash-dev liblzma-dev zlib1g-dev
 
 RHEL, Fedora, Centos:
 
-  * gcc g++ eigen3-devel Judy-devel keyutils-libs-devel kmod-devel libacl-devel libaio-devel libatomic libattr-devel libbsd-devel libcap-devel libgbm-devel libcrypt-devel libglvnd-core-devel libglvnd-devel libjpeg-devel libmd-devel mpfr-devel libX11-devel libXau-devel libxcb-devel lksctp-tools-devel xorg-x11-proto-devel xxhash-devel zlib-devel
+  * gcc g++ eigen3-devel Judy-devel keyutils-libs-devel kmod-devel libacl-devel libaio-devel libatomic libattr-devel libbsd-devel libcap-devel libgbm-devel libcrypt-devel libglvnd-core-devel libglvnd-devel libjpeg-devel libmd-devel libnl3-devel mpfr-devel libX11-devel libXau-devel libxcb-devel lksctp-tools-devel xorg-x11-proto-devel xxhash-devel zlib-devel
 
 RHEL, Fedora, Centos (static builds):
 
-  * gcc g++ eigen3-devel glibc-static Judy-devel keyutils-libs-devel libacl-devel libaio-devel libatomic-static libattr-devel libbsd-devel libcap-devel libgbm-devel libcrypt-devel libglvnd-core-devel libglvnd-devel libjpeg-devel libmd-devel libX11-devel libXau-devel libxcb-devel lksctp-tools-devel mpfr-devel xorg-x11-proto-devel xxhash-devel zlib-devel
+  * gcc g++ eigen3-devel glibc-static Judy-devel keyutils-libs-devel libacl-devel libaio-devel libatomic-static libattr-devel libbsd-devel libcap-devel libgbm-devel libcrypt-devel libglvnd-core-devel libglvnd-devel libjpeg-devel libmd-devel libnl3-devel libX11-devel libXau-devel libxcb-devel lksctp-tools-devel mpfr-devel xorg-x11-proto-devel xxhash-devel zlib-devel
 
 SUSE:
-  * gcc gcc-c++ eigen3-devel keyutils-devel libaio-devel libapparmor-devel libatomic1 libattr-devel libbsd-devel libcap-devel libgbm-devel libglvnd-devel libjpeg-turbo libkmod-devel libmd-devel libseccomp-devel lksctp-tools-devel mpfr-devel xxhash-devel zlib-devel
+  * gcc gcc-c++ eigen3-devel keyutils-devel libaio-devel libapparmor-devel libatomic1 libattr-devel libbsd-devel libcap-devel libgbm-devel libglvnd-devel libjpeg-turbo libkmod-devel libmd-devel libnl3-devel libseccomp-devel lksctp-tools-devel mpfr-devel xxhash-devel zlib-devel
 
 Alpine Linux:
   * build-base eigen-dev jpeg-dev judy-dev keyutils-dev kmod-dev libacl-dev libaio-dev libatomic libattr libbsd-dev libcap-dev libmd-dev libseccomp-dev lksctp-tools-dev mesa-dev mpfr-dev xxhash-dev zlib-dev
 
 NOTE: the build will try to detect build dependencies and will build an image
 with functionality disabled if the support libraries are not installed.
+
+A library check can also be turned off explicitly by emptying the matching
+LIB_* variable, even when the library is installed. This is useful for
+embedded or distro builds that do not want stressors pulling in extra
+dependencies, for example:
+
+    make LIB_ACL= LIB_EGL= LIB_GBM= LIB_GLES2= LIB_JPEG=
 
 At build-time stress-ng will detect kernel features that are available on the
 target build system and enable stress tests appropriately. Stress-ng has been
@@ -281,7 +288,7 @@ Build option: EXTRA_BUILDINFO=1, add CFLAGS, CXXFLAGS and LDFLAGS to --buildinfo
 NOTE: This can lead to build information being leaked and is not recommended for any distro releases.
 ```
     make clean
-    EXTRA_BUILDINFO=1 make -j 10
+    EXTRA_BUILDINFO=1 make
 ```
 
 ## Contributing to stress-ng:
@@ -455,6 +462,18 @@ run for 1 hour, show virtual memory statistics every 10 seconds and verify memor
 sudo stress-ng --log-file example.log --vm 2 --vm-bytes 95% --klog-check -v -t 1h  --vmstat 10 --verify
 ```
 
+Run all stressors on all CPUs that are known to make I/O devices hot and the CPU package hot and report the thermal zone temperatures,
+pause for 30 seconds between each stress test to cool down:
+
+```
+stress-ng --exercise-feature io-thermal,hot-package --seq 0 --tz -t 1m --pause 30s
+```
+
+Run permutations of 32 instances per stressor (for 1 minute each) that exercise the mq_send and msgsnd system calls:
+```
+stress-ng --exercise-syscall mq_send,msgsnd --permute 32 -t 1m
+```
+
 ## Bugs and regressions found with stress-ng
 
 stress-ng has found various Kernel, QEMU bugs/regressions, and libc bugs; appropriate fixes have been landed to address these issues:
@@ -611,6 +630,7 @@ stress-ng has found various Kernel, QEMU bugs/regressions, and libc bugs; approp
 
 2026:
  * [f2fs: fix to avoid mapping wrong physical block for swapfile](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=5c145c03188bc9ba1c29e0bc4d527a5978fc47f9)
+ * [fs/pipe: reduce pipe->mutex contention by pre-allocating outside the lock](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=99f414273beda01a86c2fb66c2155da61335fa59)
  * [mm/vmscan: fix demotion targets checks in reclaim/demotion](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=1aceed565ff172fc0331dd1d5e7e65139b711139)
  * [scsi: storvsc: Fix scheduling while atomic on PREEMPT_RT](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=57297736c08233987e5d29ce6584c6ca2a831b12)
  * [tools/sched_ext: Fix off-by-one in scx_sdt payload zeroing](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=a3c3fb2f86f8a1f266747622037f90eab58186ad)
@@ -618,8 +638,15 @@ stress-ng has found various Kernel, QEMU bugs/regressions, and libc bugs; approp
  * [sched/deadline: Fix missing ENQUEUE_REPLENISH during PI de-boosting](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=d658686a1331db3bb108ca079d76deb3208ed949)
  * [sched/fair: Fix zero_vruntime tracking fix](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=1319ea57529e131822bab56bf417c8edc2db9ae8)
  * [sched/debug: Fix avg_vruntime() usage](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=e08d007f9d813616ce7093600bc4fdb9c9d81d89)
+ * [memcg: multi objcg charge support](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=29a1ea41456b79d657e5f5deced1239477d03af1)
  * [mm: filemap: fix nr_pages calculation overflow in filemap_map_pages()](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=f58df566524ebcdfa394329c64f47e3c9257516e)
+ * [mm/vmstat: fix vmstat_shepherd double-scheduling vmstat_update](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=2b19bf05719b73f7d04d7d27ec423b459b868852)
  * [null pointer reference in gfs2 when using chattr](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/2148595)
+ * [wifi: rtw89: phy: increase RF calibration timeouts for USB transport](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=5055188134c3cc755333fa19e5b8a0f3cb6fbb9a)
+ * [Cygwin madvise(): aliased to posix_madvise() but the error handling should differ](https://cygwin.com/pipermail/cygwin/2026-July/259872.html)
+ * [mm/page_reporting: use system_freezable_wq to fix UAF during suspend](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=0b45f6927a14914ff685fe0e6f9d11232a1e03df)
+ * [s390/cpum_cf: Handle CPU hotplug via prepare/dead callbacks](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=337bd95507a16063687cfc286ea90de5cca48c37)
+
 
 ## Kernel improvements that used stress-ng
 
@@ -676,6 +703,7 @@ I appreciate information concerning kernel bugs or performance regressions found
 * [Linux Foundation Mentoring Session, May 2022](https://www.youtube.com/watch?v=gD3Hn02VSHA)
 * [Kernel Recipes presentation, Sept 2023](https://www.youtube.com/watch?v=PD0NOZCTIVQ)
 * [Linux Foundation, ELISA, June 2024](https://www.youtube.com/watch?v=-B1K-xpICtQ)
+* [Linux Foundation, ELISA Workshop, June 2026](https://directory.elisa.tech/workshops/2026-06-London/D2-13-15_Improving_kernel_test_coverage_with_stress-ng_Colin_King.pdf)
 
 ## Citations
 
@@ -691,21 +719,22 @@ Many thanks to the following contributors to stress-ng (in alphabetical order):
 Abdul Haleem, Aboorva Devarajan, Adriand Martin, Adrian Ratiu,
 Aleksandar N. Kostadinov, Alexander Chuprunov, Alexander Kanavin,
 Alexandru Ardelean, Alfonso Sánchez-Beato, Allen H, Amit Singh Tomar,
-Andrey Gelman, André Wild, Anisse Astier, Anton Eliasson, Arjan van de Ven,
-Artur Malchanau, Baruch Siach, Bernd Kuhls, Bryan W. Lewis,
-Camille Constans, Carlos Santos, Christian Ehrhardt, Christian Franke,
-Christopher Brown, Chunyu Hu, Daniel Andriesse, Daniel Hodges,
-Danilo Krummrich, Davidson Francis, David Turner, Denis Ovsienko,
-Dmitry Antipov, Dmitry Grand, Dominik B Czarnota, Dominik Steinberger,
-Dorinda Bassey, Eder Zulian, Eric Lin, Erik Stahlman, Erwan Velu,
-Fabien Malfoy, Fabrice Fontaine, Fernand Sieber, Fejza Indrit,
-Florian Weimer, Francis Laniel, Guilherme Janczak, Hui Wang,
-Hsieh-Tseng Shen, Iyán Méndez Veiga, Ivan Shapovalov, Jakub Sitnicki,
-James Hunt, Jan Luebbe, Jean-Paul Etienne, Jesse Huang, Jianshen Liu,
-Jimmy Ho, Jimmy Durand Wesolowskim, John Kacur, Julee, Jules Maselbas,
+Andreas Fried, Andrey Gelman, André Wild, Anisse Astier, Anton Eliasson,
+Arjan van de Ven, Artur Malchanau, Baruch Siach, Benjamin Legget
+Bernd Kuhls, Bryan W. Lewis, Camille Constans, Carlos Santos,
+Christian Ehrhardt, Christian Franke, Christopher Brown, Chunyu Hu,
+Daniel Andriesse, Daniel Hodges, Danilo Krummrich, Davidson Francis,
+David Turner, Denis Ovsienko, Dmitry Antipov, Dmitry Grand,
+Dominik B Czarnota, Dominik Steinberger, Dorinda Bassey, Eder Zulian,
+Eric Lin, Erik Stahlman, Erwan Velu, Fabien Malfoy, Fabrice Fontaine,
+Fernand Sieber, Fejza Indrit, Florian Weimer, Francis Laniel,
+Gianmarco De Gregori, Guilherme Janczak, Hui Wang, Hsieh-Tseng Shen,
+Iyán Méndez Veiga, Ivan Shapovalov, Jakub Sitnicki, James Hunt,
+Jan Luebbe, Jean-Paul Etienne, Jesse Huang, Jianshen Liu, Jimmy Ho,
+Jimmy Durand Wesolowskim, John Kacur, Julee, Jules Maselbas,
 Julien Olivain, Kenny Gong, Khalid Elmously, Khem Raj, Liew Rui Yan,
 Luca Pizzamiglio, Luis Chamberlain, Luis Henriques, Lukas Durfina,
-Matteo Italia, Matthew Tippett, Mauricio Faria de Oliveira,
+Mark Zhuang, Matteo Italia, Matthew Tippett, Mauricio Faria de Oliveira,
 Maxime Chevallier, Max Kellermann, Maya Rashish, Mayuresh Chitale,
 Mehmet Basaran, Meysam Azad, Mike Koreneff, Munehisa Kamata, Myd Xia,
 Nick Hanley, Nicolas Bouton, Nikolas Kyx, Nysal Jan K.A, Paul Menzel,
@@ -714,7 +743,8 @@ Rulin Huang, Sascha Hauer, Sergey Fedorov, Sergey Matyukevich,
 Shifrin Dmitry, Shoily Rahman, Siddhesh Poyarekar, Steven Hahn,
 Stian Onarheim, Thadeu Lima de Souza Cascardo, Thia Wyrod,
 Thinh Tran, Thomas Weißschuh, Tim Gardner, Tim Gates, Tim Orling,
-Tommi Rantala, Witold Baryluk, Yiwei Lin, Yong-Xuan Wang, Zhiyi Sun, Zong Li.
+Tommi Rantala, Witold Baryluk, Yiwei Lin, Yong-Xuan Wang, Zhaolong Zhang,
+Zhiyi Sun, Zong Li.
 
 ## Static Analysis
 

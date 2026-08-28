@@ -82,7 +82,7 @@
 
 #define MWC_RND_ELEMENT(array)		array[stress_mwc8modn(SIZEOF_ARRAY(array))]
 
-#define CLONE_STACK_SIZE		(8 * KB)
+#define CLONE_STACK_SIZE		(8 * STRESS_KB)
 
 #define FD_FILE				(0)
 #define FD_MEMFD			(1)
@@ -455,7 +455,8 @@ static void stress_mmaprandom_twiddle_file_flags(const int fd)
 		O_NONBLOCK,
 #endif
 	};
-	int flags, rnd_flag;
+	int flags;
+	int rnd_flag;
 
 	if (SIZEOF_ARRAY(file_flags) == 0)
 		return;
@@ -663,12 +664,16 @@ static int stress_mmaprandom_munmap_force(
 static void OPTIMIZE3 stress_mmaprandom_mmap_invalid(mr_ctxt_t *ctxt, const int idx)
 {
 	static uint32_t state = 0;
-	void *hint, *ptr;
-	size_t len, offset;
-	int prot, flags, fd;
+	void *hint;
+	void *ptr;
+	size_t len;
+	size_t offset;
+	int prot;
+	int flags;
+	int fd;
 	int mask;
 
-	hint = (state &  0x0001) ? MAP_FAILED : 0;
+	hint = (state &  0x0001) ? MAP_FAILED : NULL;
 	len = (state & 0x0002) ? 0 : ~(size_t)0;
 	prot = (state & 0x0004) ? 0 : PROT_READ;
 	prot |= (state & 0x0008) ? 0 : PROT_WRITE;
@@ -731,7 +736,9 @@ static void OPTIMIZE3 stress_mmaprandom_mmap_anon(mr_ctxt_t *ctxt, const int idx
 	size_t pages = stress_mwc32modn(ctxt->maxpages) + 1;
 	size_t size = page_size * pages, i, j;
 	uint8_t *addr;
-	int prot_flag, mmap_flag, extra_flags = 0;
+	int prot_flag;
+	int mmap_flag;
+	int extra_flags = 0;
 	mr_node_t *mr_node;
 	char name[80];
 
@@ -856,14 +863,18 @@ static int stress_mmaprandom_fallocate(
 static void OPTIMIZE3 stress_mmaprandom_mmap_file(mr_ctxt_t *ctxt, const int idx)
 {
 	const size_t page_size = ctxt->page_size;
-	size_t i, j;
+	size_t i;
+	size_t j;
 	const size_t pages = stress_mwc32modn(ctxt->maxpages) + 1;
 	const off_t offset = stress_mwc32modn(ctxt->maxpages) * page_size;
 	const size_t size = page_size * pages;
 	uint8_t *addr;
-	int prot_flag, mmap_flag, extra_flags = 0;
+	int prot_flag;
+	int mmap_flag;
+	int extra_flags = 0;
 	mr_node_t *mr_node;
-	int fd, mode;
+	int fd;
+	int mode;
 
 	mmap_flag = MWC_RND_ELEMENT(mmap_file_flags);
 
@@ -1047,7 +1058,8 @@ static void OPTIMIZE3 stress_mmaprandom_shm_sysv(mr_ctxt_t *ctxt, const int idx)
 	uint8_t *addr;
 	int prot_flag = 0;
 	mr_node_t *mr_node;
-	int shmid, shmflag;
+	int shmid;
+	int shmflag;
 	char name[80];
 
 	mr_node = RB_MIN(sm_free_node_tree, &sm_free_node_tree_root);
@@ -1109,7 +1121,8 @@ static void OPTIMIZE3 stress_mmaprandom_shm_posix(mr_ctxt_t *ctxt, const int idx
 	int prot_flag = PROT_READ;
 	mr_node_t *mr_node;
 	char name[256];
-	int fd, shmflag;
+	int fd;
+	int shmflag;
 	mode_t mode = S_IRUSR;
 
 	mr_node = RB_MIN(sm_free_node_tree, &sm_free_node_tree_root);
@@ -1436,7 +1449,7 @@ static inline size_t stress_mmaprandom_get_random_size(
 	const size_t mmap_size,
 	const size_t page_size)
 {
-	size_t n = mmap_size / page_size;
+	const size_t n = mmap_size / page_size;
 
 	return page_size * (1 + (size_t)stress_mwc8modn((uint8_t)n));
 }
@@ -1527,7 +1540,6 @@ static void stress_mmaprandom_mprotect(mr_ctxt_t *ctxt, const int idx)
 		if (shim_fallocate(mr_node->mmap_fd, 0, mr_node->mmap_offset, mr_node->mmap_size) < 0)
 			return;
 	}
-
 
 	if (LIKELY(mprotect(mr_node->mmap_addr, mr_node->mmap_size, prot_flag) == 0)) {
 		mr_node->mmap_prot = prot_flag;
@@ -1761,7 +1773,7 @@ static void stress_mmaprandom_clone(mr_ctxt_t *ctxt, const int idx)
 
 		if (stress_memory_usage_by_pid_get(getpid(), &total, &resident, &shared) < 0) {
 			/* Can't get memory, random guess at 128MB */
-			total = 128 * MB;
+			total = 128 * STRESS_MB;
 		}
 		if (stress_memory_low_check(total))
 			return;
@@ -1798,7 +1810,7 @@ static void stress_mmaprandom_fork(mr_ctxt_t *ctxt, const int idx)
 
 		if (stress_memory_usage_by_pid_get(getpid(), &total, &resident, &shared) < 0) {
 			/* Can't get memory, random guess at 128MB */
-			total = 128 * MB;
+			total = 128 * STRESS_MB;
 		}
 		if (stress_memory_low_check(total))
 			return;
@@ -1900,7 +1912,8 @@ static void stress_mmaprandom_numa_move(mr_ctxt_t *ctxt, const int idx)
 
 #if defined(__NR_process_madvise) &&	\
     defined(HAVE_SYSCALL) &&		\
-    defined(HAVE_SYS_UIO_H)
+    defined(HAVE_SYS_UIO_H) &&		\
+    defined(HAVE_IOVEC)
 /*
  *  stress_mmaprandom_process_madvise()
  *	madvise a mmap'd region using process_madvise
@@ -2057,7 +2070,8 @@ static const mr_funcs_t mr_funcs[] = {
 #endif
 #if defined(__NR_process_madvise) &&	\
     defined(HAVE_SYSCALL) &&		\
-    defined(HAVE_SYS_UIO_H)
+    defined(HAVE_SYS_UIO_H) &&		\
+    defined(HAVE_IOVEC)
 	{ stress_mmaprandom_process_madvise,	"process madvise" },
 #endif
 #if defined(__linux__)
@@ -2106,7 +2120,8 @@ static int stress_mmaprandom_child(stress_args_t *args, void *context)
 static int stress_mmaprandom(stress_args_t *args)
 {
 	mr_ctxt_t *ctxt;
-	double t, duration;
+	double t;
+	double duration;
 	size_t i;
 	const size_t count_size = SIZEOF_ARRAY(mr_funcs) * sizeof(*ctxt->count);
 	size_t mr_nodes_size;
@@ -2228,7 +2243,8 @@ static int stress_mmaprandom(stress_args_t *args)
 
 	t = stress_time_now();
 	while (stress_continue(args)) {
-		uint32_t w, z;
+		uint32_t w;
+		uint32_t z;
 
 		VOID_RET(int, stress_oomable_child(args, (void *)ctxt, stress_mmaprandom_child, STRESS_OOMABLE_QUIET));
 
@@ -2270,13 +2286,55 @@ unmap_ctxt:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("madvise"),
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("mprotect"),
+#if defined(HAVE_MLOCK)
+	STRESS_EX_SYSCALL("mlock"),
+#endif
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MREMAP)
+	STRESS_EX_SYSCALL("mremap"),
+#endif
+#if defined(HAVE_MSYNC)
+	STRESS_EX_SYSCALL("msync"),
+#endif
+#if defined(HAVE_MUNLOCK)
+	STRESS_EX_SYSCALL("munlock"),
+#endif
+	STRESS_EX_SYSCALL("munmap"),
+#if defined(HAVE_LIB_RT) &&     \
+    defined(HAVE_SHM_OPEN) &&   \
+    defined(HAVE_SHM_UNLINK)
+	STRESS_EX_SYSCALL("shm_open"),
+	STRESS_EX_SYSCALL("shm_unlink"),
+#endif
+#if defined(HAVE_SYS_SHM_H)
+	STRESS_EX_SYSCALL("shmat"),
+	STRESS_EX_SYSCALL("shmget"),
+	STRESS_EX_SYSCALL("shmctl"),
+#endif
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_mmaprandom_info = {
 	.stressor = stress_mmaprandom,
 	.classifier = CLASS_VM | CLASS_OS,
 	.verify = VERIFY_NONE,
 	.opts = opts,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(mr_funcs)
+	.max_metrics_items = SIZEOF_ARRAY(mr_funcs),
+	.exercises = exercises,
 };
 
 #else

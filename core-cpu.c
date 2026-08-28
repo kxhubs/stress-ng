@@ -22,6 +22,9 @@
 #include "core-asm-x86.h"
 #include "core-builtin.h"
 #include "core-cpu.h"
+#include "core-target-clones.h"
+
+#include <sched.h>
 
 #if defined(XMMINTRIN_H)
 #include <ximmintrin.h>
@@ -371,10 +374,16 @@ static OPTIMIZE3 bool stress_cpu_is_x86_test(void)
 		"XenVMMXenVMM",		/* XEN HVM */
 	};
 
-	uint32_t eax, ebx, ecx, edx;
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
 	size_t i;
 
-	eax = 0; ebx = 0; ecx = 0; edx = 0;
+	eax = 0;
+	ebx = 0;
+	ecx = 0;
+	edx = 0;
 	stress_asm_x86_cpuid(eax, ebx, ecx, edx);
 
 	/* Intel CPU? */
@@ -383,20 +392,25 @@ static OPTIMIZE3 bool stress_cpu_is_x86_test(void)
 
 		if ((shim_memcmp(&ebx, str + 0, 4) == 0) &&
 		    (shim_memcmp(&edx, str + 4, 4) == 0) &&
-		    (shim_memcmp(&ecx, str + 8, 4) == 0))
-		return true;
+		    (shim_memcmp(&ecx, str + 8, 4) == 0)) {
+			return true;
+		}
 	}
 
 	/* Virtual machine? */
-	eax = 0x40000000; ebx = 0; ecx = 0; edx = 0;
+	eax = 0x40000000;
+	ebx = 0;
+	ecx = 0;
+	edx = 0;
 	stress_asm_x86_cpuid(eax, ebx, ecx, edx);
 	for (i = 0; i < SIZEOF_ARRAY(x86_virt_id_str); i++) {
 		const char *str = x86_virt_id_str[i];
 
 		if ((shim_memcmp(&ebx, str + 0, 4) == 0) &&
 		    (shim_memcmp(&edx, str + 4, 4) == 0) &&
-		    (shim_memcmp(&ecx, str + 8, 4) == 0))
-		return true;
+		    (shim_memcmp(&ecx, str + 8, 4) == 0)) {
+			return true;
+		}
 	}
 #endif
 	return false;
@@ -478,7 +492,6 @@ bool OPTIMIZE3 stress_cpu_x86_has_waitpkg(void)
 	return false;
 #endif
 }
-
 
 /*
  *  stress_cpu_x86_has_rdseed()
@@ -624,6 +637,19 @@ bool OPTIMIZE3 stress_cpu_x86_has_sse2(void)
 }
 
 /*
+ *  stress_cpu_x86_has_sse4_1()
+ *	does x86 cpu support sse?
+ */
+bool OPTIMIZE3 stress_cpu_x86_has_sse4_1(void)
+{
+#if defined(STRESS_ARCH_X86)
+	STRESS_CPU_X86_HAS(__func__, 0x1, 0, 0, 0, !!(ecx & CPUID_sse4_2_ECX));
+#else
+	return false;
+#endif
+}
+
+/*
  *  stress_cpu_x86_has_serialize()
  *	does x86 cpu support serialize opcode?
  */
@@ -711,44 +737,45 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages(
 	uint32_t *entries,
 	uint8_t *level)
 {
-	uint32_t eax, ebx, ecx, edx;
-	uint32_t levels, max_levels;
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+	uint32_t levels;
+	uint32_t max_levels;
 
 	/* see https://www.felixcloutier.com/x86/cpuid#tbl-3-12 */
 	switch (descriptor) {
-	case 0x03:
-		*entries = 64;
-		*level = 1;
-		break;
-	case 0x4f:
-		*entries = 32;
-		*level = 1;
-		break;
-	case 0x50:
-		*entries = 64;
-		*level = 1;
-		break;
-	case 0x51:
-		*entries = 128;
-		*level = 1;
-		break;
-	case 0x52:
-		*entries = 256;
+	case 0xc0:
+		*entries = 8;
 		*level = 1;
 		break;
 	case 0x57:
+	case 0xc2:
 		*entries = 16;
 		*level = 1;
 		break;
+	case 0x4f:
+	case 0xa0:
+		*entries = 32;
+		*level = 1;
+		break;
+	case 0x51:
+	case 0x03:
+	case 0x50:
 	case 0x5b:
+	case 0xba:
 		*entries = 64;
 		*level = 1;
 		break;
 	case 0x5c:
+	case 0xb3:
 		*entries = 128;
 		*level = 1;
 		break;
+	case 0x52:
 	case 0x5d:
+	case 0xb4:
 		*entries = 256;
 		*level = 1;
 		break;
@@ -756,44 +783,23 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages(
 		*entries = 512;
 		*level = 1;
 		break;
-	case 0xa0:
-		*entries = 32;
-		*level = 1;
-		break;
-	case 0xb3:
-		*entries = 128;
-		*level = 1;
-		break;
-	case 0xb4:
-		*entries = 256;
-		*level = 1;
-		break;
-	case 0xba:
-		*entries = 64;
-		*level = 1;
-		break;
-	case 0xc0:
-		*entries = 8;
-		*level = 1;
+	case 0xca:
+		*entries = 512;
+		*level = 2;
 		break;
 	case 0xc1:
 		*entries = 1024;
 		*level = 2;
 		break;
-	case 0xc2:
-		*entries = 16;
-		*level = 1;
-		break;
 	case 0xc3:
 		*entries = 1536;
 		*level = 2;
 		break;
-	case 0xca:
-		*entries = 512;
-		*level = 2;
-		break;
 	case 0xfe:
-		eax = 0x18; ebx = 0; ecx = 0; edx = 0;
+		eax = 0x18;
+		ebx = 0;
+		ecx = 0;
+		edx = 0;
 		stress_asm_x86_cpuid(eax, ebx, ecx, edx);
 		max_levels = eax;
 
@@ -802,7 +808,10 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages(
 			 * get Deterministic Address Translation
 			 * Parameters for sub leaves
 			 */
-			eax = 0x18; ebx = 0; ecx = levels; edx = 0;
+			eax = 0x18;
+			ebx = 0;
+			ecx = levels;
+			edx = 0;
 			stress_asm_x86_cpuid(eax, ebx, ecx, edx);
 			if (ebx & 1) {
 				/* 4K page */
@@ -829,6 +838,7 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages(
 /*
  *  stress_cpu_x86_dtlb_size_for_4k_pages_reg
  *	return largest data (or shared) TLB for 4K pages for given register
+ * 	for all CPUs
  */
 static void stress_cpu_x86_dtlb_size_for_4k_pages_reg(
 	uint32_t reg,
@@ -836,21 +846,49 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages_reg(
 	uint8_t *level)
 {
 	int i;
+#if defined(HAVE_SCHED_SETAFFINITY)
+	uint32_t cpu;
+	uint32_t cpus;
+	cpu_set_t mask;
+#endif
 
 	if (reg == 0x80000000)
 		return;
+
+#if defined(HAVE_SCHED_SETAFFINITY)
+	cpus = stress_cpus_configured_get();
+#endif
 
 	for (i = 0; i < 4; i++) {
 		uint32_t new_entries = 0;
 		uint8_t new_level = 0;
 
+#if defined(HAVE_SCHED_SETAFFINITY)
+		for (cpu = 0; cpu < cpus; cpu++) {
+			CPU_ZERO(&mask);
+			CPU_SET(cpu, &mask);
+
+			(void)sched_setaffinity(0, sizeof(mask), &mask);
+			stress_cpu_x86_dtlb_size_for_4k_pages(reg & 0xff, &new_entries, &new_level);
+			if (new_entries > *entries) {
+				*entries = new_entries;
+				*level = new_level;
+			}
+		}
+#else
 		stress_cpu_x86_dtlb_size_for_4k_pages(reg & 0xff, &new_entries, &new_level);
 		if (new_entries > *entries) {
 			*entries = new_entries;
 			*level = new_level;
 		}
+#endif
 		reg >>= 8;
 	}
+#if defined(HAVE_SCHED_SETAFFINITY)
+	CPU_ZERO(&mask);
+	CPU_SET(0, &mask);
+	(void)sched_setaffinity(0, sizeof(mask), &mask);
+#endif
 }
 #endif
 
@@ -861,12 +899,18 @@ static void stress_cpu_x86_dtlb_size_for_4k_pages_reg(
 void stress_cpu_x86_dtlb_entries(uint32_t *entries, uint8_t *level)
 {
 #if defined(STRESS_ARCH_X86)
-	uint32_t eax, ebx, ecx, edx;
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
 
 	*entries = 0;
 	*level = 0;
 
-	eax = 2; ebx = 0; ecx = 0; edx = 0;
+	eax = 2;
+	ebx = 0;
+	ecx = 0;
+	edx = 0;
 	stress_asm_x86_cpuid(eax, ebx, ecx, edx);
 	stress_cpu_x86_dtlb_size_for_4k_pages_reg(eax, entries, level);
 	stress_cpu_x86_dtlb_size_for_4k_pages_reg(ebx, entries, level);
@@ -912,3 +956,74 @@ void OPTIMIZE3 stress_cpu_fp_subnormals_enable(void)
 		_mm_setcsr(_mm_getcsr() & ~(X86_FP_DAZ | X86_FP_FTZ));
 #endif
 }
+
+#if defined(STRESS_ARCH_X86) &&			\
+    defined(HAVE_TARGET_CLONES) &&		\
+    defined(HAVE_LD_WRAP_CPU_INDICATOR_INIT)
+
+/*
+ *  libgcc's CPU description. The resolvers GCC emits for target_clones
+ *  call __cpu_indicator_init() and then compare __cpu_model.__cpu_subtype
+ *  to pick an "arch=" clone. Layout is fixed by the libgcc ABI.
+ */
+struct stress_cpu_model_t {
+	unsigned int __cpu_vendor;
+	unsigned int __cpu_type;
+	unsigned int __cpu_subtype;
+	unsigned int __cpu_features[1];
+};
+
+extern struct stress_cpu_model_t __cpu_model;
+extern void __real___cpu_indicator_init(void);
+
+void __wrap___cpu_indicator_init(void);
+
+/*
+ *  __wrap___cpu_indicator_init()
+ *	__builtin_cpu_is() picks an "arch=" clone on the family/model in
+ *	__cpu_model alone, never checking that the clone's instructions can
+ *	run. A CPU reporting an AVX-512 model without usable AVX-512 gets EVEX
+ *	code and dies with SIGILL. AVX-512 goes missing when a hypervisor masks
+ *	it, when firmware disables it, or when the kernel skips the xstate.
+ *	Booting with clearcpuid=avx512f reproduces it.
+ *
+ *	Family 6 model 0x55 is the worst case. In
+ *	gcc/common/config/i386/cpuinfo.h "case 0x55" AVX512BF16 selects Cooper
+ *	Lake, AVX512VNNI selects Cascade Lake, anything else falls through to
+ *	skylake-avx512. Those feature bits are xgetbv gated, the subtype is
+ *	not, so masking steers the CPU onto the AVX-512 clone.
+ *
+ *	Clear the classification so no "arch=" clone matches and the feature
+ *	clones or the default are used. Those resolve through
+ *	__builtin_cpu_supports(), which libgcc gates on OSXSAVE plus xgetbv.
+ *	Every other CPU keeps its clone.
+ *
+ *	Runs during ifunc relocation, before main() and before libc is up, so
+ *	it touches nothing but __cpu_model.
+ */
+void __wrap___cpu_indicator_init(void)
+{
+	/* 0: not started, 1: in progress, 2: done */
+	static volatile int state = 0;
+
+	/*
+	 * The builtins below can re-enter this wrapper; let those calls fall
+	 * straight through, libgcc's own initialiser is idempotent.
+	 */
+	if (state != 0) {
+		__real___cpu_indicator_init();
+		return;
+	}
+	state = 1;
+
+	__real___cpu_indicator_init();
+
+	if (TARGET_CLONE_MODELS_CLAIM_AVX512 &&
+	    !__builtin_cpu_supports("avx512f")) {
+		__cpu_model.__cpu_type = 0;
+		__cpu_model.__cpu_subtype = 0;
+	}
+	state = 2;
+}
+
+#endif

@@ -56,7 +56,9 @@ static const stress_help_t help[] = {
  */
 static int stress_xattr(stress_args_t *args)
 {
-	int ret, fd, rc = EXIT_FAILURE;
+	int ret;
+	int fd;
+	int rc = EXIT_FAILURE;
 	const int bad_fd = stress_fs_bad_fd_get();
 	char filename[PATH_MAX];
 #if defined(O_TMPFILE)
@@ -67,16 +69,17 @@ static int stress_xattr(stress_args_t *args)
 	const char *fs_type;
 #if defined(XATTR_SIZE_MAX)
 	const size_t hugevalue_sz = XATTR_SIZE_MAX + 16;
+	int xattr_size_max = 0;
 	char *large_tmp;
 #else
-	const size_t hugevalue_sz = 256 * KB;
+	const size_t hugevalue_sz = 256 * STRESS_KB;
 #endif
 	uint32_t rnd32;
 
 #if defined(XATTR_SIZE_MAX)
 	large_tmp = (char *)calloc(XATTR_SIZE_MAX + 2, sizeof(*large_tmp));
 	if (!large_tmp) {
-		pr_inf_skip("%s: failed to allocate large %zu byte xattr buffer%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate large %zu byte xattr buffer failed%s, skipping stressor\n",
 			args->name, (size_t)(XATTR_SIZE_MAX + 2) * sizeof(*large_tmp),
 			stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
@@ -93,7 +96,7 @@ static int stress_xattr(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), rnd32);
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto out;
 	}
@@ -112,7 +115,8 @@ static int stress_xattr(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		int i, j;
+		int i;
+		int j;
 		char attrname[32];
 		char value[32];
 		char tmp[sizeof(value)];
@@ -142,7 +146,9 @@ static int stress_xattr(stress_args_t *args)
 					rc = EXIT_NO_RESOURCE;
 					goto out_close;
 				}
-				if ((errno != ENOSPC) && (errno != EDQUOT) && (errno != E2BIG)) {
+				if (errno == ENOSPC)
+					break;
+				if ((errno != EDQUOT) && (errno != E2BIG)) {
 					pr_fail("%s: fsetxattr failed, errno=%d (%s)%s\n",
 						args->name, errno, strerror(errno), fs_type);
 					goto out_close;
@@ -238,34 +244,6 @@ static int stress_xattr(stress_args_t *args)
 				args->name, errno, strerror(errno), fs_type);
 			goto out_close;
 		}
-
-#if defined(XATTR_SIZE_MAX)
-		/* Exercise invalid size argument fsetxattr syscall */
-		(void)shim_memset(large_tmp, 'f', XATTR_SIZE_MAX + 1);
-		ret = shim_fsetxattr(fd, attrname, large_tmp, XATTR_SIZE_MAX + 1,
-			XATTR_CREATE);
-		if (UNLIKELY(ret >= 0)) {
-			pr_fail("%s: fsetxattr succeeded unexpectedly, "
-				"created attribute with size greater "
-				"than permitted size, errno=%d (%s)%s\n",
-				args->name, errno, strerror(errno), fs_type);
-			goto out_close;
-		}
-#endif
-
-#if defined(HAVE_LSETXATTR) && \
-    defined(XATTR_SIZE_MAX)
-		(void)shim_memset(large_tmp, 'l', XATTR_SIZE_MAX + 1);
-		ret = shim_lsetxattr(filename, attrname, large_tmp,
-			XATTR_SIZE_MAX + 1, XATTR_CREATE);
-		if (UNLIKELY(ret >= 0)) {
-			pr_fail("%s: lsetxattr succeeded unexpectedly, "
-				"created attribute with size greater "
-				"than permitted size, errno=%d (%s)%s\n",
-				args->name, errno, strerror(errno), fs_type);
-			goto out_close;
-		}
-#endif
 
 #if defined(XATTR_SIZE_MAX)
 		(void)shim_memset(large_tmp, 's', XATTR_SIZE_MAX + 1);
@@ -401,7 +379,7 @@ static int stress_xattr(stress_args_t *args)
 					args->name, errno, strerror(errno), fs_type);
 				goto out_close;
 			}
-			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && strncmp(value, tmp, (size_t)sret))) {
+			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && shim_strncmp(value, tmp, (size_t)sret))) {
 				pr_fail("%s: fgetxattr values different %.*s vs %.*s\n",
 					args->name, ret, value, (int)sret, tmp);
 				goto out_close;
@@ -417,7 +395,7 @@ static int stress_xattr(stress_args_t *args)
 					args->name, errno, strerror(errno));
 				goto out_close;
 			}
-			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && strncmp(value, tmp, (size_t)sret))) {
+			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && shim_strncmp(value, tmp, (size_t)sret))) {
 				pr_fail("%s: getxattr values different %.*s vs %.*s\n",
 					args->name, ret, value, (int)sret, tmp);
 				goto out_close;
@@ -430,7 +408,7 @@ static int stress_xattr(stress_args_t *args)
 					args->name, errno, strerror(errno), fs_type);
 				goto out_close;
 			}
-			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && strncmp(value, tmp, (size_t)sret))) {
+			if (UNLIKELY((STRESS_GETBIT(set_xattr_ok, j) != 0) && shim_strncmp(value, tmp, (size_t)sret))) {
 				pr_fail("%s: lgetxattr values different %.*s vs %.*s\n",
 					args->name, ret, value, (int)sret, tmp);
 				goto out_close;
@@ -506,7 +484,7 @@ static int stress_xattr(stress_args_t *args)
 #endif
 
 		for (j = 0; j < i; j++) {
-			char *errmsg;
+			const char *errmsg;
 
 			(void)snprintf(attrname, sizeof(attrname), "user.var_%d", j);
 
@@ -578,6 +556,65 @@ static int stress_xattr(stress_args_t *args)
 		}
 #endif
 
+#if defined(XATTR_SIZE_MAX)
+		/* Exercise invalid size argument fsetxattr syscall */
+		(void)shim_memset(large_tmp, 'f', XATTR_SIZE_MAX + 1);
+		ret = shim_fsetxattr(fd, attrname, large_tmp, XATTR_SIZE_MAX + 1,
+			XATTR_CREATE);
+		if (UNLIKELY(ret >= 0)) {
+			pr_fail("%s: fsetxattr succeeded unexpectedly, "
+				"created attribute with size greater "
+				"than permitted size, errno=%d (%s)%s\n",
+				args->name, errno, strerror(errno), fs_type);
+			goto out_close;
+		}
+
+		/* find largest xattr length possible */
+		(void)shim_memset(large_tmp, 'F', XATTR_SIZE_MAX + 1);
+		if (xattr_size_max == 0) {
+			/*
+			 *  Working backwards is faster since failures on large
+			 *  xattrs take less time to create/remove
+			 */
+			for (j = XATTR_SIZE_MAX; (j > 0) && stress_continue(args); j--) {
+				ret = shim_fsetxattr(fd, attrname, large_tmp, j, XATTR_CREATE);
+				/* remove even if setxattr fails, just in case */
+				(void)shim_fremovexattr(fd, attrname);
+				if (ret == 0) {
+					xattr_size_max = j;
+					break;
+				}
+			}
+		}
+
+		if (xattr_size_max > 0) {
+			/* add/remove maximum and randomly sized xattr */
+			for (j = 0; j < 10; j++) {
+				int rnd_size = (int)stress_mwc32modn((uint32_t)xattr_size_max);
+
+				(void)shim_fsetxattr(fd, attrname, large_tmp, xattr_size_max, XATTR_CREATE);
+				(void)shim_fremovexattr(fd, attrname);
+				(void)shim_fsetxattr(fd, attrname, large_tmp, rnd_size, XATTR_CREATE);
+				(void)shim_fremovexattr(fd, attrname);
+			}
+		}
+#endif
+
+#if defined(HAVE_LSETXATTR) && \
+    defined(XATTR_SIZE_MAX)
+		(void)shim_memset(large_tmp, 'l', XATTR_SIZE_MAX + 1);
+		ret = shim_lsetxattr(filename, attrname, large_tmp,
+			XATTR_SIZE_MAX + 1, XATTR_CREATE);
+		if (UNLIKELY(ret >= 0)) {
+			pr_fail("%s: lsetxattr succeeded unexpectedly, "
+				"created attribute with size greater "
+				"than permitted size, errno=%d (%s)%s\n",
+				args->name, errno, strerror(errno), fs_type);
+			goto out_close;
+		}
+#endif
+
+
 #if defined(O_TMPFILE)
 		{
 			/*
@@ -617,11 +654,42 @@ out_free:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("flistxattr"),
+	STRESS_EX_SYSCALL("fremovexattr"),
+	STRESS_EX_SYSCALL("fsetxattr"),
+	STRESS_EX_SYSCALL("listxattr"),
+#if defined(HAVE_LISTXATTRAT) &&	\
+    defined(AT_FDCWD)
+	STRESS_EX_SYSCALL("listxattrat"),
+#endif
+#if defined(HAVE_LLISTXATTR)
+	STRESS_EX_SYSCALL("llistxattr"),
+#endif
+#if defined(HAVE_LREMOVEXATTR)
+	STRESS_EX_SYSCALL("lremovexattr"),
+#endif
+#if defined(HAVE_REMOVEXATTRAT) &&	\
+    defined(AT_FDCWD)
+	STRESS_EX_SYSCALL("lremovexattrat"),
+#endif
+#if defined(HAVE_LSETXATTR)
+	STRESS_EX_SYSCALL("lsetxattr"),
+#endif
+	STRESS_EX_SYSCALL("setxattr"),
+#if defined(HAVE_SETXATTRAT) &&	\
+    defined(AT_FDCWD)
+	STRESS_EX_SYSCALL("setxattrat"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_xattr_info = {
 	.stressor = stress_xattr,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_xattr_info = {

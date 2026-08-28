@@ -60,10 +60,12 @@ static int stress_io(stress_args_t *args)
 	char *mnts[MAX_MNTS];
 	char filename[PATH_MAX];
 	int fds[MAX_MNTS];
+#endif
 
 	if (stress_instance_zero(args))
 		pr_inf("%s: this is a legacy I/O sync stressor, consider using iomix instead\n", args->name);
 
+#if defined(HAVE_SYNCFS)
 	ret = stress_fs_temp_dir_make_args(args);
 	if (ret < 0) {
 		rc = stress_exit_status((int)-ret);
@@ -73,7 +75,7 @@ static int stress_io(stress_args_t *args)
 	(void)stress_fs_temp_filename_args(args, filename, sizeof(filename), stress_mwc32());
 	if ((fd_tmp = open(filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
                 goto tidy_dir;
 
@@ -169,15 +171,30 @@ tidy:
 
 #if defined(HAVE_SYNCFS)
 tidy_dir:
-#endif
 	(void)stress_fs_temp_dir_rm_args(args);
+#endif
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-thermal"),
+	STRESS_EX_FEATURE("io-wait"),
+
+#if defined(HAVE_SYNCFS)
+	STRESS_EX_SYSCALL("fsync"),
+	STRESS_EX_SYSCALL("fsyncdatasync"),
+	STRESS_EX_SYSCALL("lseek"),
+	STRESS_EX_SYSCALL("write"),
+#endif
+	STRESS_EX_SYSCALL("sync"),
+	STRESS_EX_END,
+};
 
 const stressor_info_t stress_io_info = {
 	.stressor = stress_io,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

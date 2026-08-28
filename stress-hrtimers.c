@@ -46,7 +46,7 @@ static stress_args_t *s_args;
 static timer_t timerid;
 static double time_end;
 static long int ns_delay;
-static void *lock;
+static void *counter_lock;
 
 #define PROCS_MAX	(8)
 
@@ -77,7 +77,7 @@ static void MLOCKED_TEXT OPTIMIZE3 stress_hrtimers_handler(int sig)
 
 	(void)sig;
 
-	VOID_RET(bool, stress_bogo_inc_lock(s_args, lock, 1));
+	VOID_RET(bool, stress_bogo_inc_lock(s_args, counter_lock, 1));
 	if (UNLIKELY(!stress_continue(s_args)))
 		goto cancel;
 	bogo_counter = stress_bogo_get(s_args);
@@ -137,7 +137,7 @@ static int stress_hrtimer_process(stress_args_t *args)
 	sev.sigev_value.sival_ptr = &timerid;
 	if (timer_create(CLOCK_REALTIME, &sev, &timerid) < 0) {
 		if ((errno == EAGAIN) || (errno == ENOMEM) || (errno == ENOTSUP)) {
-			pr_inf_skip("%s: timer_create, errno=%d (%s), skipping stressor\n",
+			pr_inf_skip("%s: timer_create failed, errno=%d (%s), skipping stressor\n",
 				args->name, errno, strerror(errno));
 			return EXIT_NO_RESOURCE;
 		}
@@ -180,10 +180,12 @@ static int stress_hrtimer_process(stress_args_t *args)
 
 static int stress_hrtimers(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	size_t i;
 	bool hrtimers_adjust = false;
-	double start_time = -1.0, end_time;
+	double start_time = -1.0;
+	double end_time;
 	sigset_t mask;
 	int rc = EXIT_SUCCESS;
 
@@ -199,9 +201,9 @@ static int stress_hrtimers(stress_args_t *args)
 		return EXIT_NO_RESOURCE;
 	}
 
-	lock = stress_lock_create("counter");
-	if (!lock) {
-		pr_inf("%s: cannot create lock, skipping stressor\n", args->name);
+	counter_lock = stress_lock_create("counter");
+	if (!counter_lock) {
+		pr_inf("%s: create lock failed, skipping stressor\n", args->name);
 		rc = EXIT_NO_RESOURCE;
 		goto tidy_s_pids;
 	}
@@ -265,19 +267,39 @@ reap:
 				rate, STRESS_METRIC_HARMONIC_MEAN);
 		}
 	}
-	stress_lock_destroy(lock);
+	stress_lock_destroy(counter_lock);
 tidy_s_pids:
 	(void)stress_sync_s_pids_munmap(s_pids, PROCS_MAX);
 
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("cpu-migrations"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("timer_create"),
+	STRESS_EX_SYSCALL("timer_delete"),
+	STRESS_EX_SYSCALL("timer_getovereun"),
+	STRESS_EX_SYSCALL("timer_settime"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_hrtimers_info = {
 	.stressor = stress_hrtimers,
 	.classifier = CLASS_SCHEDULER,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_hrtimers_info = {

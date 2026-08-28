@@ -73,11 +73,15 @@ static int OPTIMIZE3 stress_hash_generic(
 	const uint32_t le_result,
 	const uint32_t be_result)
 {
-	double sum = 0.0, n, m, divisor;
-	uint32_t i_sum = 0;
+	double sum = 0.0;
+	double n;
+	double m;
+	double divisor;
+	double t1;
+	double t2;
 	size_t i;
+	uint32_t i_sum = 0;
 	const uint32_t result = stress_little_endian() ? le_result: be_result;
-	double t1, t2;
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 
 	if (verify)
@@ -714,8 +718,8 @@ static int OPTIMIZE3 stress_hash(stress_args_t *args)
 			const stress_hash_stats_t *stats = &hash_stats[i];
 
 			if ((stats->duration > 0.0) && (stats->total > 0)) {
-				const double rate = (double)((stats->duration > 0.0) ?
-					(double)stats->total / stats->duration : (double)0.0);
+				const double rate = ((stats->duration > 0.0) ?
+					(double)stats->total / stats->duration : 0.0);
 
 				pr_inf("%s: %12.12s %15.2f %10.2f\n",
 					args->name, hash_methods[i].name, rate, stats->chi_squared);
@@ -735,8 +739,24 @@ static const char *stress_hash_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_hash_method, "hash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_hash_method },
+	{ OPT_hash_method, "hash-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_hash_method },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("cpu-bit"),
+	STRESS_EX_FEATURE("cpu-shift"),
+	STRESS_EX_FEATURE("integer"),
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("user-time"),
+
+#if defined(HAVE_XXHASH_H) &&	\
+    defined(HAVE_LIB_XXHASH)
+	STRESS_EX_LIBRARY("xxhash"),
+#endif
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_hash_info = {
@@ -744,5 +764,6 @@ const stressor_info_t stress_hash_info = {
 	.classifier = CLASS_CPU | CLASS_INTEGER | CLASS_COMPUTE | CLASS_SEARCH,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

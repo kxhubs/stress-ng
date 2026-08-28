@@ -151,28 +151,11 @@ extern int setdomainname(const char *name, size_t len);
  *	the sysnr argument and all following 1..N syscall
  *	arguments.  Returns -1 and sets errno to ENOSYS
  */
-static inline long int shim_enosys(long sysnr, ...)
+long int shim_enosys(long sysnr, ...)
 {
 	(void)sysnr;
 	errno = ENOSYS;
 	return (long int)-1;
-}
-
-/*
- *  shim_sched_yield()
- *  	wrapper for sched_yield(2) - yield the processor
- */
-int shim_sched_yield(void)
-{
-#if defined(HAVE_SCHED_YIELD)
-	return sched_yield();
-#elif defined(__NR_sched_yield) &&	\
-      defined(HAVE_SYSCALL)
-	return syscall(__NR_sched_yield);
-#else
-	UNEXPECTED
-	return sleep(0);
-#endif
 }
 
 /*
@@ -188,7 +171,9 @@ int OPTIMIZE3 shim_cacheflush(char *addr, int nbytes, int cache)
 	extern int cacheflush(void *addr, int nbytes, int cache);
 
 	return cacheflush((void *)addr, nbytes, cache);
-#elif defined(STRESS_ARCH_RISCV)
+#endif
+
+#if defined(STRESS_ARCH_RISCV)
 #if defined(__NR_riscv_flush_icache)
 	if (cache == SHIM_ICACHE) {
 		if (syscall(__NR_riscv_flush_icache, (uintptr_t)addr,
@@ -211,7 +196,8 @@ int OPTIMIZE3 shim_cacheflush(char *addr, int nbytes, int cache)
 #endif
 #if defined(HAVE_ASM_RISCV_CBO_CACHE_MANAGEMENT)
 	if (cache == SHIM_DCACHE)  {
-		unsigned int cl_size, i;
+		unsigned int cl_size;
+		unsigned int i;
 
 		if (!stress_asm_riscv_has_cbom())
 			return -1;
@@ -225,8 +211,9 @@ int OPTIMIZE3 shim_cacheflush(char *addr, int nbytes, int cache)
 		return 0;
 	}
 #endif
-	return -1;
-#elif defined(HAVE_ASM_X86_CLFLUSH)
+#endif
+
+#if defined(HAVE_ASM_X86_CLFLUSH)
 	if ((cache == SHIM_DCACHE) && (stress_cpu_x86_has_clfsh())) {
 		register int i;
 
@@ -234,23 +221,32 @@ int OPTIMIZE3 shim_cacheflush(char *addr, int nbytes, int cache)
 			stress_asm_x86_clflush(addr + i);
 		return 0;
 	}
-	return (int)shim_enosys(0, addr, nbytes, cache);
-#elif defined(__NR_cacheflush) &&	\
+#endif
+
+#if defined(__NR_cacheflush) &&	\
       defined(HAVE_SYSCALL)
 	/* potentially incorrect args, needs per-arch fixing */
 #if defined(STRESS_ARCH_M68K)
-	return (int)syscall(__NR_cacheflush, addr, 1 /* cacheline */, cache, nbytes);
-#elif defined(STRESS_ARCH_SH4)
-	return (int)syscall(__NR_cacheflush, addr, nbytes, (cache == SHIM_ICACHE) ? 0x4 : 0x3);
-#else
-	return (int)syscall(__NR_cacheflush, addr, nbytes, cache);
+	if (syscall(__NR_cacheflush, addr, 1 /* cacheline */, cache, nbytes) == 0)
+		return 0;
 #endif
-#elif defined(HAVE_ASM_CACHECTL_H) &&	\
+#if defined(STRESS_ARCH_SH4)
+	if (syscall(__NR_cacheflush, addr, nbytes, (cache == SHIM_ICACHE) ? 0x4 : 0x3) == 0)
+		return 0;
+#endif
+	if (syscall(__NR_cacheflush, addr, nbytes, cache) == 0)
+		return 0;
+#endif
+
+#if defined(HAVE_ASM_CACHECTL_H) &&	\
       defined(HAVE_CACHEFLUSH)
 	extern int cacheflush(void *addr, int nbytes, int cache);
 
-	return cacheflush((void *)addr, nbytes, cache);
-#elif defined(HAVE_BUILTIN___CLEAR_CACHE)
+	if (cacheflush((void *)addr, nbytes, cache) == 0)
+		return 0;
+#endif
+
+#if defined(HAVE_BUILTIN___CLEAR_CACHE)
 	/* More portable builtin */
 	(void)cache;
 
@@ -312,6 +308,15 @@ static int shim_emulate_fallocate(int fd, off_t offset, off_t len)
 			return -1;
 		}
 	}
+	if (n > 0) {
+		/*
+		 * If we exited the loop but still have data left (n > 0),
+	         * it means we were interrupted by stress_continue_flag
+		 * being set to false. Return EINTR instead of success.
+		 */
+		errno = EINTR;
+		return -1;
+	}
 	return 0;
 }
 
@@ -327,7 +332,7 @@ int shim_posix_fallocate(int fd, off_t offset, off_t len)
     !defined(__FreeBSD__) &&		\
     defined(EINVAL) &&			\
     defined(EOPNOTSUPP)
-	const off_t chunk_len = (off_t)(1 * MB);
+	const off_t chunk_len = (off_t)(1 * STRESS_MB);
 	static bool emulate = false;
 
 	if (emulate) {
@@ -524,7 +529,7 @@ long int shim_getcpu(
 	return (long int)syscall(__NR_getcpu, cpu, node, tcache);
 #else
 	UNEXPECTED
-	return (long int)shim_enosys(0, cpu, node, tcache);
+	return shim_enosys(0, cpu, node, tcache);
 #endif
 }
 
@@ -598,10 +603,8 @@ void shim_flush_icache(void *begin, void *end)
       defined(HAVE_SYSCALL)
 	(void)syscall(__NR_riscv_flush_icache, begin, end, 0);
 #else
-	if (begin < end) {
-		if (shim_cacheflush((char *)begin, (int)((uintptr_t)end - (uintptr_t)begin), SHIM_ICACHE) < 0)
-			(void)shim_enosys(0, begin, end);
-	}
+	if (begin < end)
+		(void)shim_cacheflush((char *)begin, (int)((uintptr_t)end - (uintptr_t)begin), SHIM_ICACHE);
 #endif
 }
 
@@ -617,7 +620,7 @@ long int shim_kcmp(pid_t pid1, pid_t pid2, int type, unsigned long int idx1, uns
 	errno = 0;
 	return (long int)syscall(__NR_kcmp, pid1, pid2, type, idx1, idx2);
 #else
-	return (long int)shim_enosys(0, pid1, pid2, type, idx1, idx2);
+	return shim_enosys(0, pid1, pid2, type, idx1, idx2);
 #endif
 }
 
@@ -722,7 +725,7 @@ long int shim_mbind(
 	return (long int)syscall(__NR_mbind,
 		addr, len, mode, nodemask, maxnode, flags);
 #else
-	return (long int)shim_enosys(0, addr, len, mode, nodemask, maxnode, flags);
+	return shim_enosys(0, addr, len, mode, nodemask, maxnode, flags);
 #endif
 }
 
@@ -741,7 +744,7 @@ long int shim_migrate_pages(
 	return (long int)syscall(__NR_migrate_pages,
 		pid, maxnode, old_nodes, new_nodes);
 #else
-	return (long int)shim_enosys(0, pid, maxnode, old_nodes, new_nodes);
+	return shim_enosys(0, pid, maxnode, old_nodes, new_nodes);
 #endif
 }
 
@@ -762,7 +765,7 @@ long int shim_move_pages(
 	return (long int)syscall(__NR_move_pages, pid, count, pages, nodes,
 		status, flags);
 #else
-	return (long int)shim_enosys(0, pid, count, pages, nodes, status, flags);
+	return shim_enosys(0, pid, count, pages, nodes, status, flags);
 #endif
 }
 
@@ -846,22 +849,6 @@ int shim_sched_setattr(
 }
 
 /*
- *  shim_mlock()
- *	wrapper for mlock(2) - lock memory
- */
-int shim_mlock(const void *addr, size_t len)
-{
-#if defined(HAVE_MLOCK)
-	return mlock(shim_unconstify_ptr(addr), len);
-#elif defined(__NR_mlock) &&	\
-      defined(HAVE_SYSCALL)
-	return (int)syscall(__NR_mlock, addr, len);
-#else
-	return (int)shim_enosys(0, addr, len);
-#endif
-}
-
-/*
  *  shim_munlock()
  *	wrapper for munlock(2) - unlock memory
  */
@@ -935,7 +922,8 @@ int shim_munlockall(void)
 int shim_nanosleep_uint64(uint64_t nsec)
 {
 #if defined(HAVE_NANOSLEEP)
-	struct timespec t, trem;
+	struct timespec t;
+	struct timespec trem;
 
 	t.tv_sec = nsec / STRESS_NANOSECOND;
 	t.tv_nsec = nsec % STRESS_NANOSECOND;
@@ -997,7 +985,8 @@ int shim_usleep(uint64_t usec)
 int shim_usleep_interruptible(uint64_t usec)
 {
 #if defined(HAVE_NANOSLEEP)
-	struct timespec t, trem;
+	struct timespec t;
+	struct timespec trem;
 
 	t.tv_sec = (time_t)((double)usec * ONE_MILLIONTH);
 	t.tv_nsec = ((long int)usec - (t.tv_sec * 1000000)) * 1000;
@@ -1151,6 +1140,7 @@ int shim_madvise(void *addr, size_t length, int advice)
 	return (int)syscall(__NR_madvise, addr, length, advice);
 #elif defined(HAVE_POSIX_MADVISE)
 	int posix_advice;
+	int ret;
 
 	switch (advice) {
 #if defined(POSIX_MADV_NORMAL) &&	\
@@ -1187,31 +1177,15 @@ int shim_madvise(void *addr, size_t length, int advice)
 		posix_advice = POSIX_MADV_NORMAL;
 		break;
 	}
-	return (int)posix_madvise(addr, length, posix_advice);
+	/* unlike madvise, posix_madvise returns a +ve error code */
+	ret = posix_madvise(addr, length, posix_advice);
+	if (ret) {
+		errno = (ret > 0) ? ret : ENOSYS;
+		return -1;
+	}
+	return 0;
 #else
 	return (int)shim_enosys(0, addr, length, advice);
-#endif
-}
-
-/*
- *  shim_mincore()
- *	wrapper for mincore(2) -  determine whether pages are resident in memory
- */
-int shim_mincore(void *addr, size_t length, unsigned char *vec)
-{
-#if defined(HAVE_MINCORE) &&	\
-    NEED_GLIBC(2,2,0)
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || \
-    defined(__NetBSD__) || defined(__sun__)
-	return mincore(addr, length, (char *)vec);
-#else
-	return mincore(addr, length, vec);
-#endif
-#elif defined(__NR_mincore) &&	\
-      defined(HAVE_SYSCALL)
-	return (int)syscall(__NR_mincore, addr, length, vec);
-#else
-	return (int)shim_enosys(0, addr, length, vec);
 #endif
 }
 
@@ -1445,7 +1419,8 @@ size_t shim_strlcat(char *dst, const char *src, size_t len)
 #else
 	register char *d = dst;
 	register const char *s = src;
-	register size_t n = len, tmplen;
+	register size_t n = len;
+	register size_t tmplen;
 
 	while (n-- && (*d != '\0'))
 		d++;
@@ -1454,7 +1429,7 @@ size_t shim_strlcat(char *dst, const char *src, size_t len)
 	n = len - tmplen;
 
 	if (!n)
-		return strlen(s) + tmplen;
+		return shim_strlen(s) + tmplen;
 
 	while (*s != '\0') {
 		if (n != 1) {
@@ -2229,6 +2204,7 @@ int shim_reboot(int magic, int magic2, int cmd, void *arg)
 #endif
 }
 
+#if defined(HAVE_IOVEC)
 /*
  *   shim_process_madvise
  *	wrapper for the new linux 5.10 process_madvise system call
@@ -2251,6 +2227,7 @@ ssize_t shim_process_madvise(
 		iovec, vlen, advice, flags);
 #endif
 }
+#endif
 
 /*
  *   shim_clock_getres
@@ -2328,7 +2305,8 @@ static int shim_nice_autogroup(int niceness)
 {
 #if defined(__linux__)
 	if ((g_opt_flags & OPT_FLAGS_AUTOGROUP) && (errno == 0)) {
-		int fd, saved_err = errno;
+		int fd;
+		int saved_err = errno;
 		int retries = 0;
 
 		fd = open("/proc/self/autogroup", O_WRONLY);
@@ -2381,7 +2359,9 @@ int shim_nice(int inc)
 #elif defined(HAVE_GETPRIORITY) &&	\
       defined(HAVE_SETPRIORITY) &&	\
       defined(PRIO_PROCESS)
-	int prio, ret, saved_err;
+	int prio;
+	int ret;
+	int saved_err;
 
 	prio = getpriority(PRIO_PROCESS, 0);
 	if (prio == -1) {
@@ -2412,6 +2392,7 @@ int shim_nice(int inc)
 	return shim_nice_autogroup(nice(inc));
 #else
 	(void)inc;
+	(void)shim_nice_autogroup;
 
 	UNEXPECTED
 	errno = -ENOSYS;
@@ -2514,7 +2495,7 @@ long int shim_sgetmask(void)
     defined(HAVE_SYSCALL)
 	return (long int)syscall(__NR_sgetmask);
 #else
-	return (long int)shim_enosys(0);
+	return shim_enosys(0);
 #endif
 }
 
@@ -2528,7 +2509,7 @@ long int shim_ssetmask(long int newmask)
     defined(HAVE_SYSCALL)
 	return (long int)syscall(__NR_ssetmask, newmask);
 #else
-	return (long int)shim_enosys(0, newmask);
+	return shim_enosys(0, newmask);
 #endif
 }
 
@@ -3260,3 +3241,84 @@ int shim_posix_fadvise(int fd, off_t offset, off_t size, int advice)
 	return (int)shim_enosys(0, fd, offset, size, advice);
 #endif
 }
+
+/*
+ *  shim_strtok_r()
+ *	shim wrapper for strtok_r, use unsafe strtok if strtok_r
+ *	not available.
+ */
+char *shim_strtok_r(
+	char *str,
+	const char *delim,
+	char **saveptr)
+{
+#if defined(HAVE_STRTOK_R)
+	return strtok_r(str, delim, saveptr);
+#else
+	(void)saveptr;
+	return strtok(str, delim);
+#endif
+}
+
+/*
+ *  shim_localtime_r()
+ *	shim wrapper for localtime_r, use unsafe localtime if
+ *	it is not available.
+ */
+struct tm *shim_localtime_r(
+	const time_t *timep,
+	struct tm *result)
+{
+#if defined(HAVE_LOCALTIME_R)
+	return localtime_r(timep, result);
+#else
+	struct tm *ret;
+
+	ret = localtime(timep);
+	(void)memcpy(result, ret, sizeof(*result));
+	return ret;
+#endif
+}
+
+/*
+ *  shim_getpwuid_r()
+ *  	shim wrapper for getpwuid_r, use unsafe getpwduid if
+ *  	it is not available.
+ */
+int shim_getpwuid_r(
+	uid_t uid,
+	struct passwd *pwd,
+	char *buf,
+	size_t size,
+	struct passwd **result)
+{
+#if defined(HAVE_GETPWUID_R) &&	\
+    !defined(BUILD_STATIC)
+	return getpwuid_r(uid, pwd, buf, size, result);
+#elif !defined(BUILD_STATIC)
+	const struct passwd *ret;
+
+	(void)buf;
+	(void)size;
+
+	ret = getpwuid(uid);
+	if (!ret) {
+		*result = NULL;
+	} else {
+		(void)shim_memcpy(pwd, ret, sizeof(*pwd));
+		*result = pwd;
+	}
+	return 0;
+#else
+	/* fake a valid error return */
+	(void)uid;
+	(void)pwd;
+	(void)buf;
+	(void)size;
+	(void)result;
+
+	*result = NULL;
+	return ENOMEM;
+#endif
+}
+

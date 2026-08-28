@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-ioctl.h"
 
 #include <time.h>
 #include <sys/ioctl.h>
@@ -105,7 +106,7 @@ static int stress_watchdog(stress_args_t *args)
 {
 	int ret;
 	size_t i;
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	fd = -1;
 	for (i = 0; i < SIZEOF_ARRAY(sigs); i++) {
@@ -122,12 +123,12 @@ static int stress_watchdog(stress_args_t *args)
 	if (access(dev_watchdog, R_OK | W_OK) < 0) {
 		if (errno == ENOENT) {
 			if (stress_instance_zero(args))
-				pr_inf_skip("%s: %s does not exist, skipping stressor\n",
+				pr_inf_skip("%s: '%s' does not exist, skipping stressor\n",
 					args->name, dev_watchdog);
 			return EXIT_SUCCESS;
 		} else {
 			if (stress_instance_zero(args))
-				pr_inf_skip("%s: cannot access %s, errno=%d (%s), skipping stressor\n",
+				pr_inf_skip("%s: cannot access '%s', errno=%d (%s), skipping stressor\n",
 					args->name, dev_watchdog, errno, strerror(errno));
 			return EXIT_SUCCESS;
 		}
@@ -227,9 +228,8 @@ static int stress_watchdog(stress_args_t *args)
 
 #if defined(WDIOC_GETSTATUS)
 		if (LIKELY(stress_continue_flag())) {
-			int flags;
-
-			VOID_RET(int, ioctl(fd, WDIOC_GETSTATUS, &flags));
+			if (stress_ioctl_get_check(fd, WDIOC_GETSTATUS, sizeof(int)) < 0)
+				pr_fail("%s: ioctl WDIOC_GETSTATUS failed, not getting value reliably\n", args->name);
 		}
 #else
 		UNEXPECTED
@@ -237,9 +237,8 @@ static int stress_watchdog(stress_args_t *args)
 
 #if defined(WDIOC_GETBOOTSTATUS)
 		if (LIKELY(stress_continue_flag())) {
-			int flags;
-
-			VOID_RET(int, ioctl(fd, WDIOC_GETBOOTSTATUS, &flags));
+			if (stress_ioctl_get_check(fd, WDIOC_GETBOOTSTATUS, sizeof(int)) < 0)
+				pr_fail("%s: ioctl WDIOC_GETBOOTSTATUS failed, not getting value reliably\n", args->name);
 		}
 #else
 		UNEXPECTED
@@ -264,7 +263,7 @@ static int stress_watchdog(stress_args_t *args)
 		ret = close(fd);
 		fd = -1;
 		if (ret < 0) {
-			pr_fail("%s: cannot close %s, errno=%d (%s)\n",
+			pr_fail("%s: cannot close '%s', errno=%d (%s)\n",
 				args->name, dev_watchdog, errno, strerror(errno));
 			rc = EXIT_FAILURE;
 			break;
@@ -278,11 +277,18 @@ static int stress_watchdog(stress_args_t *args)
 	return rc;
 }
 
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_watchdog_info = {
 	.stressor = stress_watchdog,
 	.classifier = CLASS_OS | CLASS_PATHOLOGICAL,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_watchdog_info = {

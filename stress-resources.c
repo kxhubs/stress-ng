@@ -25,7 +25,7 @@
 #include "core-resources.h"
 #include "core-signal.h"
 
-#define MIN_MEM_FREE	(16 * MB)
+#define MIN_MEM_FREE	(16 * STRESS_MB)
 
 #define MIN_RESOURCES_PROCS	(1)
 #define MAX_RESOURCES_PROCS	(4096)
@@ -69,8 +69,9 @@ static void stress_resources_alarm(
  */
 static int stress_resources(stress_args_t *args)
 {
+	stress_memory_info_t info;
 	const size_t pipe_size = stress_fs_max_pipe_size_get();
-	size_t min_mem_free, shmall, freemem, totalmem, freeswap, totalswap;
+	size_t min_mem_free;
 	size_t resources_num = DEFAULT_RESOURCES_NUM;
 	size_t resources_procs = DEFAULT_RESOURCES_PROCS;
 	stress_resources_t *resources;
@@ -97,8 +98,8 @@ static int stress_resources(stress_args_t *args)
 			resources_procs = MAX_RESOURCES_PROCS;
 	}
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-	min_mem_free = (freemem / 100) * 2;
+	stress_memory_info_get(&info);
+	min_mem_free = (info.freemem / 100) * 2;
 	if (min_mem_free < MIN_MEM_FREE)
 		min_mem_free = MIN_MEM_FREE;
 
@@ -111,14 +112,14 @@ static int stress_resources(stress_args_t *args)
 
 	s_pids = stress_sync_s_pids_mmap(resources_procs);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu PIDs failed%s, skipping stressor\n",
 			args->name, resources_procs, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
 
-	resources = (stress_resources_t *)malloc(resources_num * sizeof(*resources));
+	resources = (stress_resources_t *)calloc(resources_num, sizeof(*resources));
 	if (!resources) {
-		pr_inf_skip("%s: cannot allocate %zu resource structures%s, skipping stressor\n",
+		pr_inf_skip("%s: allocate %zu resource structures failed%s, skipping stressor\n",
 			args->name, resources_num, stress_memory_free_get());
 		(void)stress_sync_s_pids_munmap(s_pids, resources_procs);
 		return EXIT_NO_RESOURCE;
@@ -135,7 +136,9 @@ static int stress_resources(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
 
 	do {
-		size_t i, forked, reaped;
+		size_t i;
+		size_t forked;
+		size_t reaped;
 		stress_pid_t *s_pids_head;
 
 		stress_sync_init_pids(s_pids, resources_procs);
@@ -144,8 +147,8 @@ static int stress_resources(stress_args_t *args)
 		for (forked = 0, i = 0; i < resources_procs; i++) {
 			pid_t pid;
 
-			stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-			if ((freemem > 0) && (freemem < min_mem_free))
+			stress_memory_info_get(&info);
+			if ((info.freemem > 0) && (info.freemem < min_mem_free))
 				break;
 			if (!stress_continue(args))
 				break;
@@ -215,7 +218,6 @@ static int stress_resources(stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
-
 static const stress_opt_t opts[] = {
 	{ OPT_resources_mlock, "resources-mlock", TYPE_ID_BOOL, 0, 1, NULL },
 	{ OPT_resources_num,   "resources-num",   TYPE_ID_SIZE_T, MIN_RESOURCES_NUM, MAX_RESOURCES_NUM, NULL },
@@ -223,9 +225,108 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("memory-stalls"),
+	STRESS_EX_FEATURE("vmalloc"),
+
+	STRESS_EX_SYSCALL("close"),
+#if defined(HAVE_EVENTFD)
+	STRESS_EX_SYSCALL("eventfd"),
+#endif
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("ftruncate"),
+#if defined(HAVE_SYS_INOTIFY_H)
+	STRESS_EX_SYSCALL("inotify_init"),
+	STRESS_EX_SYSCALL("inotify_add_watch"),
+	STRESS_EX_SYSCALL("inotify_rm_watch"),
+#endif
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("madvise"),
+#if defined(HAVE_MEMFD_CREATE)
+	STRESS_EX_SYSCALL("memfd_create"),
+#endif
+#if defined(__NR_memfd_secret)
+	STRESS_EX_SYSCALL("memfd_secret"),
+#endif
+	STRESS_EX_SYSCALL("mlock"),
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MQ_SYSV) &&	\
+    defined(HAVE_SYS_IPC_H) &&	\
+    defined(HAVE_SYS_MSG_H)
+	STRESS_EX_SYSCALL("msgctl"),
+	STRESS_EX_SYSCALL("msgget"),
+#endif
+#if defined(HAVE_LIB_PTHREAD) &&	\
+    defined(HAVE_THREADS_H) &&		\
+    defined(HAVE_MTX_T) && 		\
+    defined(HAVE_MTX_DESTROY) &&	\
+    defined(HAVE_MTX_INIT)
+	STRESS_EX_SYSCALL("mtx_destroy"),
+	STRESS_EX_SYSCALL("mtx_init"),
+#endif
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_MQ_POSIX) &&	\
+    defined(HAVE_MQUEUE_H)
+	STRESS_EX_SYSCALL("mq_destroy"),
+	STRESS_EX_SYSCALL("mq_open"),
+#endif
+	STRESS_EX_SYSCALL("munlock"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_PIDFD_OPEN)
+	STRESS_EX_SYSCALL("pidfd_open"),
+#endif
+#if defined(HAVE_PIDFD_GETFD)
+	STRESS_EX_SYSCALL("pidfd_get"),
+#endif
+	STRESS_EX_SYSCALL("pipe"),
+#if defined(HAVE_PKEY_ALLOC) && \
+    defined(HAVE_PKEY_FREE)
+	STRESS_EX_SYSCALL("pkey_alloc"),
+	STRESS_EX_SYSCALL("pkey_free"),
+#endif
+	STRESS_EX_SYSCALL("sbrk"),
+	STRESS_EX_SYSCALL("sched_yield"),
+#if defined(HAVE_LIB_PTHREAD) &&	\
+    defined(HAVE_SEM_POSIX)
+	STRESS_EX_SYSCALL("sem_destroy>"),
+	STRESS_EX_SYSCALL("sem_init"),
+#endif
+#if defined(HAVE_SEM_SYSV) &&	\
+    defined(HAVE_KEY_T)
+	STRESS_EX_SYSCALL("semctl"),
+	STRESS_EX_SYSCALL("semget"),
+#endif
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("sockpair"),
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_TIMER_CREATE)
+	STRESS_EX_SYSCALL("timer_create"),
+#endif
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_TIMER_DELETE)
+	STRESS_EX_SYSCALL("timer_delete"),
+#endif
+#if defined(HAVE_SYS_TIMERFD_H) &&	\
+    defined(HAVE_TIMERFD_CREATE) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("timerfd_create"),
+#endif
+#if defined(HAVE_USERFAULTFD)
+	STRESS_EX_SYSCALL("userfaultfd"),
+#endif
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_resources_info = {
 	.stressor = stress_resources,
 	.classifier = CLASS_MEMORY | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

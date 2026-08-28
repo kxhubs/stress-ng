@@ -44,21 +44,25 @@ static int stress_flock_child(
 	const bool save_metrics)
 {
 	bool cont;
-	int i, rc = EXIT_SUCCESS;
-	int fd1, fd2;
-	double lock_duration = 0.0, lock_count = 0.0;
-	double unlock_duration = 0.0, unlock_count = 0.0;
+	int i;
+	int rc = EXIT_SUCCESS;
+	int fd1;
+	int fd2;
+	double lock_duration = 0.0;
+	double lock_count = 0.0;
+	double unlock_duration = 0.0;
+	double unlock_count = 0.0;
 	double rate;
 
 	fd1 = open(filename, O_RDONLY);
 	if (fd1 < 0) {
-		pr_err("%s: failed to open %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
 	fd2 = open(filename, O_RDONLY);
 	if (fd2 < 0) {
-		pr_err("%s: failed to open %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		(void)close(fd1);
 		return EXIT_FAILURE;
@@ -247,10 +251,13 @@ static int stress_flock_child(
  */
 static int stress_flock(stress_args_t *args)
 {
-	int fd, ret, rc = EXIT_FAILURE;
+	int fd;
+	int ret;
+	int rc = EXIT_FAILURE;
 	const int bad_fd = stress_fs_bad_fd_get();
 	size_t i;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	char filename[PATH_MAX];
 
 	s_pids = stress_sync_s_pids_mmap(MAX_FLOCK_STRESSORS);
@@ -270,7 +277,7 @@ static int stress_flock(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
-		pr_err("%s: failed to create %s, errno=%d (%s)\n",
+		pr_err("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto err;
 	}
@@ -319,11 +326,20 @@ err_free_s_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("file-lock"),
+
+	STRESS_EX_SYSCALL("flock"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_flock_info = {
 	.stressor = stress_flock,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_flock_info = {

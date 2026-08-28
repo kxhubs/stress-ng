@@ -71,9 +71,13 @@ static int stress_lsm(stress_args_t *args)
 	void *buf;
 	int rc = EXIT_SUCCESS;
 	const size_t buf_size = args->page_size * 32;
-	bool lsm_id_undef = false, lsm_id_reserved = false, lsm_id_defined = false;
-	double list_duration = 0.0, list_count = 0.0;
-	double get_duration = 0.0, get_count = 0.0;
+	bool lsm_id_undef = false;
+	bool lsm_id_reserved = false;
+	bool lsm_id_defined = false;
+	double list_duration = 0.0;
+	double list_count = 0.0;
+	double get_duration = 0.0;
+	double get_count = 0.0;
 	double rate;
 
 	static const unsigned int attr[] = {
@@ -100,7 +104,7 @@ static int stress_lsm(stress_args_t *args)
 
 	buf = stress_mmap_populate(NULL, buf_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buf == MAP_FAILED) {
-		pr_inf_skip("%s: cannot mmap %zu byte sized buffer%s, errno=%d (%s),"
+		pr_inf_skip("%s: mmap %zu byte sized buffer failed%s, errno=%d (%s),"
 			"skipping stressor\n",
 			args->name, buf_size, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -115,7 +119,8 @@ static int stress_lsm(stress_args_t *args)
 	do {
 		size_t j;
 		uint32_t size;
-		int i, ret;
+		int i;
+		int ret;
 		uint64_t *ids = (uint64_t *)buf;
 		double t;
 
@@ -158,7 +163,7 @@ static int stress_lsm(stress_args_t *args)
 
 		for (j = 0; j < SIZEOF_ARRAY(attr); j++) {
 			struct lsm_ctx *ctx = (struct lsm_ctx *)buf;
-			struct lsm_ctx *ctx_end = (struct lsm_ctx *)((uintptr_t)buf + buf_size);
+			const struct lsm_ctx *ctx_end = (struct lsm_ctx *)((uintptr_t)buf + buf_size);
 			struct lsm_ctx tmp_ctx ALIGNED(8);
 
 			size = (uint32_t)buf_size;
@@ -246,10 +251,20 @@ err:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+
+	STRESS_EX_SYSCALL("lsm_get_self_attr"),
+	STRESS_EX_SYSCALL("lsm_list_modules"),
+	STRESS_EX_SYSCALL("lsm_set_self_attr"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_lsm_info = {
 	.stressor = stress_lsm,
 	.classifier = CLASS_OS | CLASS_SECURITY,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_lsm_info = {

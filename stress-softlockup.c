@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-affinity.h"
+#include "core-arch.h"
 #include "core-builtin.h"
 #include "core-capabilities.h"
 #include "core-killpid.h"
@@ -32,7 +33,8 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_SCHED_GET_PRIORITY_MIN) &&	\
-    defined(HAVE_SCHED_SETSCHEDULER)
+    defined(HAVE_SCHED_SETSCHEDULER) &&		\
+    defined(HAVE_SIGLONGJMP)
 
 /*
  *  stress_softlockup_supported()
@@ -104,7 +106,8 @@ static NOINLINE void OPTIMIZE0 stress_softlockup_loop(const uint64_t loops)
  */
 static uint64_t OPTIMIZE0 stress_softlockup_loop_count(void)
 {
-	uint64_t n = 1024 * 64, i;
+	uint64_t n = 1024 * 64;
+	uint64_t i;
 
 	do {
 		double t, d;
@@ -129,7 +132,7 @@ static void OPTIMIZE3 stress_softlockup_rep_stosb(void)
 	if (softlockup_buffer == MAP_FAILED)
 		return;
 
-	stress_softlockup_stosb(softlockup_buffer, MB);
+	stress_softlockup_stosb(softlockup_buffer, STRESS_MB);
 }
 #else
 static void stress_softlockup_rep_stosb(void)
@@ -175,7 +178,9 @@ static void NORETURN stress_softlockup_child(
 	const uint64_t loop_count)
 {
 	struct sigaction old_action_xcpu;
+#if defined(HAVE_SETRLIMIT)
 	struct rlimit rlim;
+#endif
 	const pid_t mypid = getpid();
 	int ret;
 	int rc = EXIT_FAILURE;
@@ -187,11 +192,15 @@ static void NORETURN stress_softlockup_child(
 	 * terminated with a SIGKILL and we can
 	 * catch that with the parent
 	 */
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_CPU)
 	rlim.rlim_cur = timeout;
 	rlim.rlim_max = timeout;
 	(void)setrlimit(RLIMIT_CPU, &rlim);
+#endif
 
-#if defined(RLIMIT_RTTIME)
+#if defined(HAVE_SETRLIMIT) &&	\
+    defined(RLIMIT_RTTIME)
 	rlim.rlim_cur = 1000000 * timeout;
 	rlim.rlim_max = 1000000 * timeout;
 	(void)setrlimit(RLIMIT_RTTIME, &rlim);
@@ -249,18 +258,20 @@ tidy:
 
 static int stress_softlockup(stress_args_t *args)
 {
+	struct sched_param param;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
+	uint64_t loop_count;
+	CLOBBERED uint64_t timeout;
 	size_t policy = 0;
-	int max_prio = 0, parent_cpu;
-	bool good_policy = false;
-	const bool first_instance = (stress_instance_zero(args));
 	const uint32_t cpus_online = (uint32_t)stress_cpus_online_get();
 	uint32_t i;
-	struct sched_param param;
-	NOCLOBBER uint64_t timeout;
-	const double start = stress_time_now();
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	int max_prio = 0;
+	int parent_cpu;
 	int rc = EXIT_SUCCESS;
-	uint64_t loop_count;
+	const double start = stress_time_now();
+	const bool first_instance = (stress_instance_zero(args));
+	bool good_policy = false;
 
 	timeout = g_opt_timeout;
 	(void)shim_memset(&param, 0, sizeof(param));
@@ -268,15 +279,15 @@ static int stress_softlockup(stress_args_t *args)
 	loop_count = stress_softlockup_loop_count();
 
 #if defined(HAVE_X86_REP_STOSB)
-	softlockup_buffer = (uint8_t *)mmap(NULL, MB, PROT_READ | PROT_WRITE,
+	softlockup_buffer = (uint8_t *)mmap(NULL, STRESS_MB, PROT_READ | PROT_WRITE,
 					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (softlockup_buffer != MAP_FAILED)
-		stress_memory_anon_name_set(softlockup_buffer, MB, "x86-rep-stosb-data");
+		stress_memory_anon_name_set(softlockup_buffer, STRESS_MB, "x86-rep-stosb-data");
 #endif
 
 	s_pids = stress_sync_s_pids_mmap((size_t)cpus_online);
 	if (s_pids == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu PIDs%s, skipping stressor\n",
+		pr_inf_skip("%s: mmap %zu PIDs failed%s, skipping stressor\n",
 			args->name, (size_t)cpus_online, stress_memory_free_get());
 		return EXIT_NO_RESOURCE;
 	}
@@ -325,15 +336,12 @@ static int stress_softlockup(stress_args_t *args)
 	}
 
 	for (i = 0; i < cpus_online; i++) {
-again:
 		parent_cpu = stress_cpu_get();
-		s_pids[i].pid = fork();
+		s_pids[i].pid = stress_retry_fork(args, 0);
 		if (s_pids[i].pid < 0) {
-			if (stress_redo_fork(args, errno))
-				goto again;
 			if (UNLIKELY(!stress_continue(args)))
 				goto finish;
-			pr_inf("%s: cannot fork, errno=%d (%s)\n",
+			pr_inf("%s: fork failed, errno=%d (%s)\n",
 				args->name, errno, strerror(errno));
 			goto finish;
 		} else if (s_pids[i].pid == 0) {
@@ -365,7 +373,7 @@ finish:
 
 #if defined(HAVE_X86_REP_STOSB)
 	if (softlockup_buffer != MAP_FAILED)
-		(void)munmap((void *)softlockup_buffer, MB);
+		(void)munmap((void *)softlockup_buffer, STRESS_MB);
 #endif
 
 	(void)stress_sync_s_pids_munmap(s_pids, (size_t)cpus_online);
@@ -373,12 +381,30 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+#if defined(STRESS_ARCH_X86)
+	STRESS_EX_FEATURE("cpu-heavy-ops"),
+#endif
+	STRESS_EX_FEATURE("frontend-bound-bandwidth"),
+	STRESS_EX_FEATURE("integer-ops"),
+	STRESS_EX_FEATURE("load-average"),
+#if defined(HAVE_X86_REP_STOSB)
+	STRESS_EX_FEATURE("memory-loads"),
+	STRESS_EX_FEATURE("memory-stores"),
+#endif
+
+	STRESS_EX_SYSCALL("sched_setscheduler"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_softlockup_info = {
 	.stressor = stress_softlockup,
 	.supported = stress_softlockup_supported,
 	.classifier = CLASS_SCHEDULER,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_softlockup_info = {
@@ -386,6 +412,6 @@ const stressor_info_t stress_softlockup_info = {
 	.classifier = CLASS_SCHEDULER,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without sched_get_priority_min() or sched_setscheduler()"
+	.unimplemented_reason = "built without siglongjmp(), sched_get_priority_min() or sched_setscheduler()"
 };
 #endif

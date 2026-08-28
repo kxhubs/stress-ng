@@ -49,11 +49,8 @@ static pid_t spawn(
 {
 	pid_t pid;
 
-again:
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		return -1;
 	}
 	if (pid == 0) {
@@ -174,7 +171,9 @@ static pid_t syscall_shim_waitpid(pid_t pid, int *wstatus, int options)
 static int stress_wait(stress_args_t *args)
 {
 	int ret = EXIT_SUCCESS;
-	pid_t pid_r, pid_k, wret;
+	pid_t pid_r;
+	pid_t pid_k;
+	pid_t wret;
 	int options = 0;
 #if defined(HAVE_WAIT4)
 	const pid_t pgrp = getpgrp();
@@ -395,11 +394,32 @@ tidy:
 	return ret;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("lock-contention"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("wait"),
+#if defined(HAVE_WAIT3)
+	STRESS_EX_SYSCALL("wait3"),
+#endif
+#if defined(HAVE_WAIT4)
+	STRESS_EX_SYSCALL("wait4"),
+#endif
+#if defined(HAVE_WAITID)
+	STRESS_EX_SYSCALL("waitid"),
+#endif
+	STRESS_EX_SYSCALL("waitpid"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_wait_info = {
 	.stressor = stress_wait,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_wait_info = {

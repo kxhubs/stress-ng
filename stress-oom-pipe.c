@@ -91,7 +91,9 @@ static int stress_oom_pipe_child(stress_args_t *args, void *ctxt)
 	const size_t page_size = args->page_size;
 
 	size_t i;
-	int *fds = context->fds, *fd, pipes_open = 0;
+	int *fds = context->fds;
+	const int *fd;
+	int pipes_open = 0;
 	const bool aggressive = (g_opt_flags & OPT_FLAGS_AGGRESSIVE);
 	uint32_t *rd_buffer = (uint32_t *)context->rd_buffer;
 	uint32_t *wr_buffer = (uint32_t *)context->wr_buffer;
@@ -130,7 +132,7 @@ static int stress_oom_pipe_child(stress_args_t *args, void *ctxt)
 	}
 
 	if (!pipes_open) {
-		pr_dbg("%s: failed to open any pipes, aborted\n",
+		pr_dbg("%s: opening pipes failed, aborted\n",
 			args->name);
 		return EXIT_NO_RESOURCE;
 	}
@@ -197,7 +199,7 @@ static int stress_oom_pipe(stress_args_t *args)
 	buffer = stress_mmap_populate(NULL, buffer_size, PROT_READ | PROT_WRITE,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (buffer == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte pipe write buffer%s, "
+		pr_inf_skip("%s: mmap %zu byte pipe write buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, buffer_size, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -216,7 +218,7 @@ static int stress_oom_pipe(stress_args_t *args)
 		context.max_fd = 1024 * 1024;
 		context.fds = (int *)calloc(context.max_fd, sizeof(*context.fds));
 		if (!context.fds) {
-			pr_inf_skip("%s: cannot allocate %zu file descriptors%s, skipping stressor\n",
+			pr_inf_skip("%s: allocate %zu file descriptors failed%s, skipping stressor\n",
 				args->name, context.max_fd,
 				stress_memory_free_get());
 			(void)munmap(buffer, buffer_size);
@@ -242,11 +244,25 @@ static int stress_oom_pipe(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("pipe"),
+	STRESS_EX_SYSCALL("read"),
+	STRESS_EX_SYSCALL("write"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_oom_pipe_info = {
 	.stressor = stress_oom_pipe,
 	.classifier = CLASS_MEMORY | CLASS_OS | CLASS_PATHOLOGICAL,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_oom_pipe_info = {

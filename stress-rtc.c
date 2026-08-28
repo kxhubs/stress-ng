@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 
 #include <sys/ioctl.h>
 
@@ -55,7 +56,8 @@ static const char * const interfaces[] = {
 
 static inline int stress_rtc_dev(stress_args_t *args)
 {
-	int fd, ret = 0;
+	int fd;
+	int ret = 0;
 	static bool do_dev = true;
 
 	if (!do_dev)
@@ -155,6 +157,8 @@ static inline int stress_rtc_dev(stress_args_t *args)
 			}
 		} else {
 #if defined(RTC_EPOCH_SET)
+			if (stress_ioctl_get_check(fd, RTC_EPOCH_READ, sizeof(unsigned long int)) < 0)
+				pr_fail("%s: ioctl RTC_EPOCH_READ failed, not getting value reliably\n", args->name);
 			VOID_RET(int, ioctl(fd, RTC_EPOCH_SET, tmp));
 #endif
 		}
@@ -174,9 +178,11 @@ static inline int stress_rtc_dev(stress_args_t *args)
 			}
 #if defined(RTC_IRQP_SET)
 		} else {
+			if (stress_ioctl_get_check(fd, RTC_IRQP_READ, sizeof(unsigned long int)) < 0)
+				pr_fail("%s: ioctl RTC_IRQP_READ failed, not getting value reliably\n", args->name);
 			VOID_RET(int, ioctl(fd, RTC_IRQP_SET, tmp));
-#endif
 		}
+#endif
 	}
 #endif
 
@@ -210,6 +216,9 @@ static inline int stress_rtc_dev(stress_args_t *args)
 					args->name, errno, strerror(errno));
 				goto err;
 			}
+		} else {
+			if (stress_ioctl_get_check(fd, RTC_VL_READ, sizeof(unsigned long int)) < 0)
+				pr_fail("%s: ioctl RTC_VL_READ failed, not getting value reliably\n", args->name);
 		}
 	}
 #endif
@@ -284,14 +293,14 @@ static inline int stress_rtc_sys(stress_args_t *args)
 				/* this can occur on interrupted EFI rtc reads, ignore */
 				continue;
 			} else {
-				pr_fail("%s: read of %s failed, errno=%zd (%s)\n",
+				pr_fail("%s: read of '%s' failed, errno=%zd (%s)\n",
 					args->name, path, -ret, strerror((int)-ret));
 				rc = (int)ret;
 			}
 		}
 	}
 	if (enoents == SIZEOF_ARRAY(interfaces)) {
-		pr_inf("%s: no RTC interfaces found for /sys/class/rtc/rtc0\n", args->name);
+		pr_inf("%s: no RTC interfaces found for '/sys/class/rtc/rtc0'\n", args->name);
 		rc = -ENOENT;
 	}
 
@@ -302,12 +311,12 @@ static inline int stress_rtc_proc(stress_args_t *args)
 {
 	ssize_t ret;
 	char buf[4096];
-	static char *path = "/proc/driver/rtc";
+	static const char *path = "/proc/driver/rtc";
 
 	ret = stress_fs_file_read(path, buf, sizeof(buf));
 	if (ret < 0) {
 		if ((ret != -ENOENT) && (ret != -EINTR)) {
-			pr_fail("%s: read of %s failed, errno=%zd (%s)\n",
+			pr_fail("%s: read of '%s' failed, errno=%zd (%s)\n",
 			args->name, path, -ret, strerror((int)-ret));
 		}
 	}
@@ -382,11 +391,27 @@ static int stress_rtc(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_SYS_SELECT_H) &&	\
+    defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rtc_info = {
 	.stressor = stress_rtc,
 	.classifier = CLASS_OS,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rtc_info = {

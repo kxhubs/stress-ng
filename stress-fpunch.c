@@ -24,9 +24,9 @@
 #include "core-mmap.h"
 #include "core-signal.h"
 
-#define MIN_FPUNCH_BYTES	(1 * MB)
-#define MAX_FPUNCH_BYTES	(2 * GB)
-#define DEFAULT_FPUNCH_BYTES	(16 * MB)
+#define MIN_FPUNCH_BYTES	(1 * STRESS_MB)
+#define MAX_FPUNCH_BYTES	(2 * STRESS_GB)
+#define DEFAULT_FPUNCH_BYTES	(16 * STRESS_MB)
 
 #if defined(HAVE_PREADV) || \
     defined(HAVE_PWRITEV)
@@ -47,8 +47,8 @@ static const stress_opt_t opts[] = {
 
 #if defined(HAVE_FALLOCATE)
 
-#define PROC_FPUNCH_OFFSET		(2 * MB)
-#define BUF_SIZE			(4096)
+#define PROC_FPUNCH_OFFSET		(2 * STRESS_MB)
+#define BUF_SIZE			(4 * STRESS_KB)
 #define STRESS_PUNCH_PIDS		(4)
 
 typedef struct {
@@ -123,7 +123,8 @@ static inline int stress_punch_check_zero(
 	const size_t size)
 {
 	ssize_t ret;
-	register const char *ptr, *ptr_end;
+	register const char *ptr;
+	register const char *ptr_end;
 
 #if defined(HAVE_PREAD)
 	ret = pread(fd, data, size, offset);
@@ -287,14 +288,22 @@ static int stress_punch_file(
  */
 static int stress_fpunch(stress_args_t *args)
 {
-	int fd = -1, ret, rc = EXIT_SUCCESS;
+	int fd = -1;
+	int ret;
+	int rc = EXIT_SUCCESS;
 	char filename[PATH_MAX];
 	off_t offset;
-	stress_pid_t *s_pids, *s_pids_head = NULL;
-	size_t i, extents, n;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
+	size_t i;
+	size_t extents;
+	size_t n;
 	const size_t stride = (size_t)BUF_SIZE << 1;
 	stress_punch_buf_t *buf;
-	uint64_t punches, fpunch_bytes, fpunch_bytes_total = DEFAULT_FPUNCH_BYTES, max_punches;
+	uint64_t punches;
+	uint64_t fpunch_bytes;
+	uint64_t fpunch_bytes_total = DEFAULT_FPUNCH_BYTES;
+	uint64_t max_punches;
 
 	if (!stress_setting_get("fpunch-bytes", &fpunch_bytes_total)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -350,7 +359,7 @@ static int stress_fpunch(stress_args_t *args)
 		filename, sizeof(filename), stress_mwc32());
 	if ((fd = open(filename, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, filename, errno, strerror(errno));
 		goto tidy_temp;
 	}
@@ -414,7 +423,7 @@ static int stress_fpunch(stress_args_t *args)
 			 */
 			if ((tmp_fd = open(filename, O_RDWR, S_IRUSR | S_IWUSR)) < 0) {
 				rc = stress_exit_status(errno);
-				pr_fail("%s: open %s failed, errno=%d (%s)\n",
+				pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 					args->name, filename, errno, strerror(errno));
 				_exit(EXIT_FAILURE);
 			}
@@ -458,12 +467,32 @@ tidy_s_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-read"),
+	STRESS_EX_FEATURE("io-write"),
+
+	STRESS_EX_SYSCALL("fallocate"),
+	STRESS_EX_SYSCALL("ftruncate"),
+#if defined(HAVE_PREAD)
+	STRESS_EX_SYSCALL("pread"),
+#else
+	STRESS_EX_SYSCALL("read"),
+#endif
+#if defined(HAVE_PWRITE)
+	STRESS_EX_SYSCALL("pwrite"),
+#else
+	STRESS_EX_SYSCALL("write"),
+#endif
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fpunch_info = {
 	.stressor = stress_fpunch,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fpunch_info = {

@@ -150,7 +150,8 @@ static int stress_timer(stress_args_t *args)
 	struct itimerspec timer;
 	sigset_t mask;
 	uint64_t timer_freq = DEFAULT_TIMER_FREQ;
-	int n = 0, rc = EXIT_SUCCESS;
+	int n = 0;
+	int rc = EXIT_SUCCESS;
 
 	s_args = args;
 
@@ -273,12 +274,32 @@ static int stress_timer(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("interrupt"),
+	STRESS_EX_FEATURE("frontend-bound-bandwidth"),
+	STRESS_EX_FEATURE("timer"),
+
+	STRESS_EX_SYSCALL("nanosleep"),
+	STRESS_EX_SYSCALL("timer_create"),
+	STRESS_EX_SYSCALL("timer_delete"),
+	STRESS_EX_SYSCALL("timer_getoverrun"),
+	STRESS_EX_SYSCALL("timer_settime"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_timer_info = {
 	.stressor = stress_timer,
 	.classifier = CLASS_SIGNAL | CLASS_INTERRUPT | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_timer_info = {

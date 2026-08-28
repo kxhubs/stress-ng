@@ -54,6 +54,7 @@ static const stress_help_t help[] = {
     defined(HAVE_TIMER_CREATE) &&	\
     defined(HAVE_TIMER_DELETE) &&	\
     defined(HAVE_TIMER_SETTIME) &&	\
+    defined(HAVE_SIGLONGJMP) &&		\
     NEED_GLIBC(2,3,2)
 
 typedef void (stress_epoll_func_t)(
@@ -84,6 +85,7 @@ static const stress_opt_t opts[] = {
     defined(HAVE_TIMER_CREATE) &&	\
     defined(HAVE_TIMER_DELETE) &&	\
     defined(HAVE_TIMER_SETTIME) &&	\
+    defined(HAVE_SIGLONGJMP) &&		\
     NEED_GLIBC(2,3,2)
 
 static sigjmp_buf jmp_env;
@@ -168,16 +170,16 @@ static pid_t epoll_spawn(
 	const int epoll_sockets,
 	const int max_servers)
 {
-again:
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
+	pid_t pid;
+
+	pid = stress_retry_fork(args, 0);
+	if (pid < 0) {
+		s_pid->pid = pid;
 		return -1;
-	} else if (s_pid->pid == 0) {
+	} else if (pid == 0) {
+		s_pid->pid = getpid();
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 		stress_make_it_fail_set();
-		s_pid->pid = getpid();
 		stress_parent_died_alarm();
 		(void)stress_sched_settings_apply(true);
 		stress_sync_start_wait_s_pid(s_pid);
@@ -185,9 +187,10 @@ again:
 		func(args, child, mypid, epoll_port, epoll_domain, epoll_sockets, max_servers);
 		_exit(EXIT_SUCCESS);
 	}  else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 /*
@@ -517,9 +520,10 @@ static int epoll_client(
 	uint64_t connect_timeouts = 0;
 	struct sigevent sev;
 	struct itimerspec timer;
-	struct sockaddr *addr = NULL;
+	struct sockaddr_storage addr;
 	uint64_t buf[4096 / sizeof(uint64_t)];
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (stress_signal_handler(args->name, SIGRTMIN, epoll_timer_handler, NULL) < 0)
 		return EXIT_FAILURE;
 
@@ -585,16 +589,14 @@ retry:
 			(void)close(fd);
 			return EXIT_FAILURE;
 		}
-
 		if (UNLIKELY(stress_net_sockaddr_set(args->name, args->instance,
 						     mypid, epoll_domain, port,
 						     &addr, &addr_len, NET_ADDR_ANY) < 0)) {
 			(void)close(fd);
 			return EXIT_FAILURE;
 		}
-
 		errno = 0;
-		ret = connect(fd, addr, addr_len);
+		ret = connect(fd, (struct sockaddr *)&addr, addr_len);
 		saved_errno = errno;
 
 		/* No longer need timer */
@@ -647,14 +649,8 @@ retry:
 		(void)shim_sched_yield();
 	} while (stress_continue(args));
 
-#if defined(AF_UNIX) &&		\
-    defined(HAVE_SOCKADDR_UN)
-	if (addr && (epoll_domain == AF_UNIX)) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	stress_net_af_unix_unlink(epoll_domain, &addr);
 
-		(void)shim_unlink(addr_un->sun_path);
-	}
-#endif
 	if (connect_timeouts)
 		pr_dbg("%s: %" PRIu64 " x 0.25 second "
 			"connect timeouts, connection table full "
@@ -676,15 +672,19 @@ static void NORETURN epoll_server(
 	const int epoll_sockets,
 	const int max_servers)
 {
-	NOCLOBBER int efd = -1, efd2 = -1, sfd = -1, rc = EXIT_SUCCESS;
+	CLOBBERED int efd = -1;
+	CLOBBERED int efd2 = -1;
+	CLOBBERED int sfd = -1;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	int so_reuseaddr = 1;
 	const int port = epoll_port + child + (max_servers * (int)args->instance);
-	NOCLOBBER struct epoll_event *events = NULL;
-	struct sockaddr *addr = NULL;
+	struct epoll_event * CLOBBERED events = NULL;
+	struct sockaddr_storage addr;
 	socklen_t addr_len = 0;
 	const int bad_fd = stress_fs_bad_fd_get();
 	int fd_count = 0;
 
+	(void)shim_memset(&addr, 0, sizeof(addr));
 	if (stress_signal_handler(args->name, SIGSEGV, stress_segv_handler, NULL) < 0) {
 		rc = EXIT_NO_RESOURCE;
 		goto die;
@@ -702,15 +702,13 @@ static void NORETURN epoll_server(
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-
 	if (stress_net_sockaddr_set(args->name, args->instance, mypid,
-				    epoll_domain, port, &addr, &addr_len,
-				    NET_ADDR_ANY) < 0) {
+				    epoll_domain, port,
+				    &addr, &addr_len, NET_ADDR_ANY) < 0) {
 		rc = EXIT_FAILURE;
 		goto die_close;
 	}
-
-	if (bind(sfd, addr, addr_len) < 0) {
+	if (bind(sfd, (struct sockaddr *)&addr, addr_len) < 0) {
 		pr_fail("%s: bind failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		rc = EXIT_FAILURE;
@@ -832,7 +830,10 @@ static void NORETURN epoll_server(
 	}
 
 	do {
-		int n, i, ret, saved_errno;
+		int n;
+		int i;
+		int ret;
+		int saved_errno;
 		sigset_t sigmask;
 		static bool wait_segv = false;
 
@@ -957,8 +958,8 @@ die_close:
 die:
 #if defined(AF_UNIX) &&		\
     defined(HAVE_SOCKADDR_UN)
-	if (addr && (epoll_domain == AF_UNIX)) {
-		const struct sockaddr_un *addr_un = (struct sockaddr_un *)addr;
+	if (epoll_domain == AF_UNIX) {
+		const struct sockaddr_un *addr_un = (struct sockaddr_un *)&addr;
 
 		(void)shim_unlink(addr_un->sun_path);
 	}
@@ -974,13 +975,17 @@ die:
  */
 static int stress_epoll(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	const pid_t mypid = getpid();
-	int i, rc = EXIT_SUCCESS;
+	int i;
+	int rc = EXIT_SUCCESS;
 	int epoll_domain = AF_UNIX;
 	int epoll_port = DEFAULT_EPOLL_PORT;
 	int epoll_sockets = DEFAULT_EPOLL_SOCKETS;
-	int start_port, end_port, reserved_port;
+	int start_port;
+	int end_port;
+	int reserved_port;
 	int max_servers;
 
 	(void)stress_setting_get("epoll-domain", &epoll_domain);
@@ -1094,13 +1099,45 @@ reap:
 
 	return rc;
 }
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("accept"),
+	STRESS_EX_SYSCALL("bind"),
+	STRESS_EX_SYSCALL("connect"),
+#if defined(__NR_epoll_pwait2) &&	\
+    defined(HAVE_SYSCALL)
+	STRESS_EX_SYSCALL("epoll_pwait2"),
+#endif
+	STRESS_EX_SYSCALL("epoll_pwait"),
+	STRESS_EX_SYSCALL("epoll_wait"),
+#if defined(HAVE_EPOLL_CREATE1)
+	STRESS_EX_SYSCALL("epoll_create1"),
+#else
+	STRESS_EX_SYSCALL("epoll_create"),
+#endif
+	STRESS_EX_SYSCALL("listen"),
+	STRESS_EX_SYSCALL("recv"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("send"),
+
+#if defined(HAVE_LIB_RT)
+	STRESS_EX_LIBRARY("rt"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_epoll_info = {
 	.stressor = stress_epoll,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
+
 #else
 const stressor_info_t stress_epoll_info = {
 	.stressor = stress_unimplemented,
@@ -1108,6 +1145,6 @@ const stressor_info_t stress_epoll_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without sys/epoll.h or librt or timer support"
+	.unimplemented_reason = "built without siglongjmp(), sys/epoll.h, librt or timer support"
 };
 #endif

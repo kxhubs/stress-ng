@@ -89,12 +89,20 @@ static int stress_link_generic(
 	const char *funcname,
 	const bool do_sync)
 {
-	int rc, ret, fd, temp_dir_fd = -1, mounts_max;
-	char oldpath[PATH_MAX], tmp_newpath[PATH_MAX];
+	int rc;
+	int ret;
+	int fd;
+	int temp_dir_fd = -1;
+	int mounts_max;
+	char oldpath[PATH_MAX];
+	char tmp_newpath[PATH_MAX];
 	size_t oldpathlen;
 	bool symlink_func = (linkfunc == symlink);
 	char *mnts[MOUNTS_MAX];
-	double t_start, duration, rate, link_count = 0.0;
+	double t_start;
+	double duration;
+	double rate;
+	double link_count = 0.0;
 	char dir_path[PATH_MAX];
 
 	(void)shim_memset(tmp_newpath, 0, sizeof(tmp_newpath));
@@ -122,7 +130,7 @@ static int stress_link_generic(
 				(void)close(temp_dir_fd);
 			return EXIT_NO_RESOURCE;
 		}
-		pr_fail("%s: open %s failed, errno=%d (%s)\n",
+		pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 			args->name, oldpath, errno, strerror(errno));
 		if (temp_dir_fd >= 0)
 			(void)close(temp_dir_fd);
@@ -141,7 +149,8 @@ static int stress_link_generic(
 	rc = EXIT_SUCCESS;
 	t_start = stress_time_now();
 	do {
-		uint64_t i, n = DEFAULT_LINKS;
+		uint64_t i;
+		uint64_t n = DEFAULT_LINKS;
 		char testpath[PATH_MAX];
 		ssize_t rret;
 
@@ -183,7 +192,8 @@ static int stress_link_generic(
     defined(HAVE_LIBGEN_H) &&	\
     defined(HAVE_READLINKAT)
 				{
-					char tmpfilename[PATH_MAX], *filename;
+					char tmpfilename[PATH_MAX];
+					const char *filename;
 					char tmpdir[PATH_MAX];
 					const char *dir;
 					int dir_fd;
@@ -223,7 +233,7 @@ static int stress_link_generic(
 							args->name, (size_t)rret, oldpathlen);
 						rc = EXIT_FAILURE;
 					} else {
-						if (strncmp(oldpath, buf, (size_t)rret)) {
+						if (shim_strncmp(oldpath, buf, (size_t)rret)) {
 							pr_fail("%s: readlink path error, got %s, expected %s\n",
 								args->name, buf, oldpath);
 							rc = EXIT_FAILURE;
@@ -350,12 +360,29 @@ static int stress_symlink(stress_args_t *args)
 }
 
 #if !defined(__HAIKU__)
+
+static const stress_exercises_t exercises_link[] = {
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("link"),
+	STRESS_EX_SYSCALL("readlink"),
+#if defined(O_DIRECTORY) &&	\
+    defined(HAVE_LIBGEN_H) &&	\
+    defined(HAVE_READLINKAT)
+	STRESS_EX_SYSCALL("readlinkat"),
+#endif
+	STRESS_EX_SYSCALL("unlink"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_link_info = {
 	.stressor = stress_link,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
-	.help = hardlink_help
+	.help = hardlink_help,
+	.exercises = exercises_link,
 };
 #else
 const stressor_info_t stress_link_info = {
@@ -368,10 +395,26 @@ const stressor_info_t stress_link_info = {
 };
 #endif
 
+static const stress_exercises_t exercises_symlink[] = {
+	STRESS_EX_FEATURE("io-wait"),
+
+	STRESS_EX_SYSCALL("readlink"),
+#if defined(O_DIRECTORY) &&	\
+    defined(HAVE_LIBGEN_H) &&	\
+    defined(HAVE_READLINKAT)
+	STRESS_EX_SYSCALL("readlinkat"),
+#endif
+	STRESS_EX_SYSCALL("symlink"),
+	STRESS_EX_SYSCALL("unlink"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_symlink_info = {
 	.stressor = stress_symlink,
 	.classifier = CLASS_FILESYSTEM | CLASS_OS,
 	.verify = VERIFY_ALWAYS,
 	.opts = opts,
 	.help = symlink_help,
+	.exercises = exercises_symlink,
 };

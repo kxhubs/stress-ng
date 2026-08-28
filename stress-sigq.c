@@ -73,7 +73,8 @@ static int stress_sigq(stress_args_t *args)
 	const pid_t mypid = getpid();
 	const uid_t myuid = getuid();
 #endif
-	int rc = EXIT_SUCCESS, parent_cpu;
+	int rc = EXIT_SUCCESS;
+	int parent_cpu;
 	int val = stress_mwc32();
 
 	if (val == 0)
@@ -89,7 +90,7 @@ static int stress_sigq(stress_args_t *args)
 	sa.sa_flags = SA_SIGINFO;
 
 	if (sigaction(SIGUSR1, &sa, NULL) < 0) {
-		pr_err("%s: cannot install SIGUSR1, errno=%d (%s)\n",
+		pr_err("%s: install SIGUSR1 signal handler failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_FAILURE;
 	}
@@ -97,14 +98,12 @@ static int stress_sigq(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
 		if (UNLIKELY(!stress_continue(args)))
 			goto finish;
-		if (stress_redo_fork(args, errno))
-			goto again;
 		pr_err("%s: fork failed, errno=%d (%s)\n",
 			args->name, errno, strerror(errno));
 		return EXIT_FAILURE;
@@ -225,11 +224,29 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("stack"),
+
+#if defined(__linux__)
+	STRESS_EX_SYSCALL("sigreturn"),
+#endif
+#if defined(__NR_rt_sigqueueinfo)
+	STRESS_EX_SYSCALL("sigqueuinfo"),
+#endif
+	STRESS_EX_SYSCALL("sigprocmask"),
+	STRESS_EX_SYSCALL("sigtimedwait"),
+	STRESS_EX_SYSCALL("sigqueue"),
+	STRESS_EX_SYSCALL("sigwaitinfo"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigq_info = {
 	.stressor = stress_sigq,
 	.classifier = CLASS_SIGNAL | CLASS_OS | CLASS_IPC,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigq_info = {

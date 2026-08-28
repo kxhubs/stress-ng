@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 
 #include <sys/ioctl.h>
@@ -71,12 +72,15 @@ static pid_t fifo_spawn(
 	stress_pid_t **s_pids_head,
 	stress_pid_t *s_pid)
 {
-	s_pid->pid = fork();
-	if (s_pid->pid < 0) {
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0) {
+		s_pid->pid = pid;
 		return -1;
-	} else if (s_pid->pid == 0) {
-		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
+	} else if (pid == 0) {
 		s_pid->pid = getpid();
+		stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 		stress_sync_start_wait_s_pid(s_pid);
 		stress_proc_state_set(args->name, STRESS_STATE_RUN);
 		stress_make_it_fail_set();
@@ -88,9 +92,10 @@ static pid_t fifo_spawn(
 		stress_proc_state_set(args->name, STRESS_STATE_WAIT);
 		_exit(EXIT_SUCCESS);
 	} else {
+		s_pid->pid = pid;
 		stress_sync_start_s_pid_list_add(s_pids_head, s_pid);
 	}
-	return s_pid->pid;
+	return pid;
 }
 
 /*
@@ -103,14 +108,15 @@ static void stress_fifo_reader(
 	const char *fifoname,
 	const size_t fifo_data_size)
 {
-	int fd, count = 0;
+	int fd;
+	int count = 0;
 	uint64_t lastval = 0;
 	uint64_t ALIGN64 buf[MAX_FIFO_DATA_SIZE / sizeof(uint64_t)];
 
 	fd = open(fifoname, O_RDONLY | O_NONBLOCK);
 	if (fd < 0) {
-		pr_fail("%s: fifo read open failed, errno=%d (%s)\n",
-			name, errno, strerror(errno));
+		pr_fail("%s: fifo open '%s' failed, errno=%d (%s)\n",
+			name, fifoname, errno, strerror(errno));
 		return;
 	}
 	while (stress_continue_flag()) {
@@ -171,9 +177,8 @@ redo_select:
 #endif
 #if defined(FIONREAD)
 		if ((count & 0xff) == 0) {
-			int isz = 0;
-
-			VOID_RET(int, ioctl(fd, FIONREAD, &isz));
+			if (stress_ioctl_get_check(fd, FIONREAD, sizeof(int)) < 0)
+				pr_fail("%s: ioctl FIONREAD failed, not getting value reliably\n", args->name);
 		}
 #else
 		UNEXPECTED
@@ -224,13 +229,17 @@ redo_select:
  */
 static int stress_fifo(stress_args_t *args)
 {
-	stress_pid_t *s_pids, *s_pids_head = NULL;
+	stress_pid_t *s_pids;
+	stress_pid_t *s_pids_head = NULL;
 	int fd;
 	char fifoname[PATH_MAX];
 	uint64_t i;
 	uint64_t fifo_readers = DEFAULT_FIFO_READERS;
 	int rc = EXIT_SUCCESS;
-	double t, fifo_duration = 0.0, fifo_count = 0.0, rate;
+	double t;
+	double fifo_duration = 0.0;
+	double fifo_count = 0.0;
+	double rate;
 	size_t fifo_data_size = DEFAULT_FIFO_DATA_SIZE;
 	uint64_t ALIGN64 buf[MAX_FIFO_DATA_SIZE / sizeof(uint64_t)];
 	char msg[64];
@@ -267,8 +276,8 @@ static int stress_fifo(stress_args_t *args)
 
 	if (mkfifo(fifoname, S_IRUSR | S_IWUSR) < 0) {
 		rc = stress_exit_status(errno);
-		pr_fail("%s: mkfifo failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		pr_fail("%s: mkfifo '%s' failed, errno=%d (%s)\n",
+			args->name, fifoname, errno, strerror(errno));
 		goto tidy;
 	}
 
@@ -356,12 +365,34 @@ tidy_pids:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("context-switches"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("ipc"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("memory-stores"),
+	STRESS_EX_FEATURE("system-time"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("mkfifo"),
+	STRESS_EX_SYSCALL("read"),
+#if defined(HAVE_POLL_H) && 	\
+    defined(HAVE_POLL)
+	STRESS_EX_SYSCALL("poll"),
+#elif defined(HAVE_SELECT)
+	STRESS_EX_SYSCALL("select"),
+#endif
+	STRESS_EX_SYSCALL("write"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_fifo_info = {
 	.stressor = stress_fifo,
 	.classifier = CLASS_PIPE_IO | CLASS_OS | CLASS_SCHEDULER | CLASS_IPC,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_fifo_info = {

@@ -26,7 +26,7 @@
 #include "core-pragma.h"
 #include "core-put.h"
 
-#define STRESS_DATA_SIZE	(256 * KB)
+#define STRESS_DATA_SIZE	(256 * STRESS_KB)
 
 /*
  *  stress_stack_check sanity check list
@@ -84,10 +84,11 @@ static bool OPTIMIZE3 stress_stack_alloc(
 	const bool stack_unmap,
 	ssize_t last_size)
 {
+	uint32_t data[STRESS_DATA_SIZE / sizeof(uint32_t)];
+	stress_stack_check_t check;
+	stress_stack_check_t *check_ptr;
 	const size_t page_size = args->page_size;
 	const size_t page_size4 = page_size << 2;
-	uint32_t data[STRESS_DATA_SIZE / sizeof(uint32_t)];
-	stress_stack_check_t check, *check_ptr;
 	bool check_success = true;
 
 	if ((g_opt_flags & OPT_FLAGS_OOM_AVOID) && stress_memory_low_check(STRESS_DATA_SIZE))
@@ -118,7 +119,7 @@ static bool OPTIMIZE3 stress_stack_alloc(
 		if (mlock_sz < 0)
 			mlock_sz = -mlock_sz;
 
-		if (mlock_sz > (last_size + 8 * (ssize_t)MB)) {
+		if (mlock_sz > (last_size + 8 * (ssize_t)STRESS_MB)) {
 			int ret;
 
 			ptr &= ~(page_size - 1);
@@ -151,6 +152,7 @@ static bool OPTIMIZE3 stress_stack_alloc(
 	/* traverse back down the stack to touch 128 pages on the stack */
 	{
 		register int i = 0;
+
 		check.self_addr = &check;
 		check.prev = check_prev;
 
@@ -181,11 +183,11 @@ PRAGMA_UNROLL_N(4)
 static int stress_stack_child(stress_args_t *args, void *context)
 {
 	void *altstack;
+	CLOBBERED int rc = EXIT_SUCCESS;
 	bool stack_fill = false;
 	bool stack_mlock = false;
 	bool stack_pageout = false;
 	bool stack_unmap = false;
-	NOCLOBBER int rc = EXIT_SUCCESS;
 
 	(void)context;
 
@@ -223,7 +225,7 @@ static int stress_stack_child(stress_args_t *args, void *context)
 		PROT_READ | PROT_WRITE,
 		MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (altstack == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte signal stack%s, "
+		pr_inf_skip("%s: mmap %zu byte signal stack failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, (size_t)STRESS_SIGSTKSZ,
 			stress_memory_free_get(), errno, strerror(errno));
@@ -314,12 +316,20 @@ static int stress_stack(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_stack_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_SYSCALL("sigaction"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_stack_info = {
 	.stressor = stress_stack,
 	.classifier = CLASS_VM | CLASS_MEMORY,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 
 #else
@@ -330,7 +340,7 @@ const stressor_info_t stress_stack_info = {
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
 	.help = help,
-	.unimplemented_reason = "built without siglongjmp support"
+	.unimplemented_reason = "built without siglongjmp() support"
 };
 
 #endif

@@ -21,6 +21,7 @@
 #include "core-affinity.h"
 #include "core-builtin.h"
 #include "core-capabilities.h"
+#include "core-ioctl.h"
 #include "core-killpid.h"
 #include "core-net.h"
 #include "core-signal.h"
@@ -109,7 +110,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_AUXDATA)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_AUXDATA, &val, &len);
@@ -119,7 +121,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_ORIGDEV)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_ORIGDEV, &val, &len);
@@ -129,7 +132,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_VNET_HDR)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_VNET_HDR, &val, &len);
@@ -139,7 +143,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_VERSION)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_VERSION, &val, &len);
@@ -158,7 +163,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_RESERVE)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_RESERVE, &val, &len);
@@ -168,7 +174,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_LOSS)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_LOSS, &val, &len);
@@ -178,7 +185,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_TIMESTAMP)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_TIMESTAMP, &val, &len);
@@ -188,7 +196,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_FANOUT)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_FANOUT, &val, &len);
@@ -198,7 +207,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_IGNORE_OUTGOING)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &val, &len);
@@ -216,7 +226,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_TX_HAS_OFF)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_TX_HAS_OFF, &val, &len);
@@ -226,7 +237,8 @@ static void stress_rawpkt_sockopts(const int fd)
 #endif
 #if defined(PACKET_QDISC_BYPASS)
 	{
-		int ret, val;
+		int ret;
+		int val;
 		socklen_t len = sizeof(val);
 
 		ret = getsockopt(fd, SOL_PACKET, PACKET_QDISC_BYPASS, &val, &len);
@@ -248,8 +260,8 @@ static void stress_rawpkt_sockopts(const int fd)
  */
 static void NORETURN OPTIMIZE3 stress_rawpkt_client(
 	stress_args_t *args,
-	struct ifreq *hwaddr,
-	struct ifreq *ifaddr,
+	const struct ifreq *hwaddr,
+	const struct ifreq *ifaddr,
 	const struct ifreq *idx,
 	const int port)
 {
@@ -278,7 +290,7 @@ static void NORETURN OPTIMIZE3 stress_rawpkt_client(
 	ip->tot_len = sizeof(struct iphdr) + sizeof(struct udphdr);
 	ip->ttl = 16;  		/* Not too many hops! */
 	ip->protocol = SOL_UDP;	/* UDP protocol */
-	ip->saddr = inet_addr(inet_ntoa((((struct sockaddr_in *)(void *)&(ifaddr->ifr_addr))->sin_addr)));
+	ip->saddr = inet_addr(inet_ntoa((((const struct sockaddr_in *)(const void *)&(ifaddr->ifr_addr))->sin_addr)));
 	ip->daddr = ip->saddr;
 
 	udp->source = htons(port);
@@ -309,9 +321,9 @@ static void NORETURN OPTIMIZE3 stress_rawpkt_client(
 #if defined(SIOCOUTQ)
 		/* Occasionally exercise SIOCOUTQ */
 		if (UNLIKELY((id & 0xff) == 0)) {
-			int queued;
+			if (stress_ioctl_get_check(fd, SIOCOUTQ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCOUTQ failed, not getting value reliably\n", args->name);
 
-			VOID_RET(int, ioctl(fd, SIOCOUTQ, &queued));
 		}
 #endif
 	} while (stress_continue(args));
@@ -330,7 +342,7 @@ err:
  */
 static int OPTIMIZE3 stress_rawpkt_server(
 	stress_args_t *args,
-	struct ifreq *ifaddr,
+	const struct ifreq *ifaddr,
 	const int port,
 	const int blocknr)
 {
@@ -342,10 +354,13 @@ static int OPTIMIZE3 stress_rawpkt_server(
 	const struct udphdr *udp = (struct udphdr *)((uintptr_t)buf + sizeof(struct ethhdr) + sizeof(struct iphdr));
 	struct sockaddr saddr;
 	int saddr_len = sizeof(saddr);
-	const in_addr_t addr = inet_addr(inet_ntoa((((struct sockaddr_in *)(void *)&(ifaddr->ifr_addr))->sin_addr)));
+	const in_addr_t addr = inet_addr(inet_ntoa((((const struct sockaddr_in *)(const void *)&(ifaddr->ifr_addr))->sin_addr)));
 	uint64_t all_pkts = 0;
 	const ssize_t min_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr);
-	double t_start, duration, bytes = 0.0, rate;
+	double t_start;
+	double duration;
+	double bytes = 0.0;
+	double rate;
 
 	if (stress_signal_stop_stressing(args->name, SIGALRM) < 0) {
 		rc = EXIT_FAILURE;
@@ -404,9 +419,8 @@ static int OPTIMIZE3 stress_rawpkt_server(
 #if defined(SIOCINQ)
 		/* Exercise SIOCINQ */
 		if (UNLIKELY((all_pkts & 0xff) == 0)) {
-			int queued;
-
-			VOID_RET(int, ioctl(fd, SIOCINQ, &queued));
+			if (stress_ioctl_get_check(fd, SIOCINQ, sizeof(int)) < 0)
+				pr_fail("%s: ioctl SIOCINQ failed, not getting value reliably\n", args->name);
 		}
 #endif
 	} while (stress_continue(args));
@@ -414,7 +428,7 @@ static int OPTIMIZE3 stress_rawpkt_server(
 	duration = stress_time_now() - t_start;
 	rate = (duration > 0.0) ? bytes / duration : 0.0;
 	stress_metrics_set(args, "MB recv'd per sec",
-		rate / (double)MB, STRESS_METRIC_HARMONIC_MEAN);
+		rate / (double)STRESS_MB, STRESS_METRIC_HARMONIC_MEAN);
 	stress_metrics_set(args, "packets sent",
 		(double)stress_bogo_get(args), STRESS_METRIC_TOTAL);
 	stress_metrics_set(args, "packets received",
@@ -438,9 +452,14 @@ die:
 static int stress_rawpkt(stress_args_t *args)
 {
 	pid_t pid;
-	int reserved_port, rawpkt_port = DEFAULT_RAWPKT_PORT;
-	int fd, rc = EXIT_FAILURE, parent_cpu;
-	struct ifreq hwaddr, ifaddr, idx;
+	int reserved_port;
+	int rawpkt_port = DEFAULT_RAWPKT_PORT;
+	int fd;
+	int rc = EXIT_FAILURE;
+	int parent_cpu;
+	struct ifreq hwaddr;
+	struct ifreq ifaddr;
+	struct ifreq idx;
 	int rawpkt_rxring = 0;
 
 	if (stress_signal_sigchld_handler(args) < 0)
@@ -511,12 +530,10 @@ static int stress_rawpkt(stress_args_t *args)
 	stress_proc_state_set(args->name, STRESS_STATE_SYNC_WAIT);
 	stress_sync_start_wait(args);
 	stress_proc_state_set(args->name, STRESS_STATE_RUN);
-again:
+
 	parent_cpu = stress_cpu_get();
-	pid = fork();
+	pid = stress_retry_fork(args, 0);
 	if (pid < 0) {
-		if (stress_redo_fork(args, errno))
-			goto again;
 		if (UNLIKELY(!stress_continue(args))) {
 			rc = EXIT_SUCCESS;
 			goto finish;
@@ -539,13 +556,25 @@ finish:
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_SYSCALL("close"),
+	STRESS_EX_SYSCALL("getsockopt"),
+	STRESS_EX_SYSCALL("ioctl"),
+	STRESS_EX_SYSCALL("recvfrom"),
+	STRESS_EX_SYSCALL("sendto"),
+	STRESS_EX_SYSCALL("setsockopt"),
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_rawpkt_info = {
 	.stressor = stress_rawpkt,
 	.classifier = CLASS_NETWORK | CLASS_OS,
 	.opts = opts,
 	.supported = stress_rawpkt_supported,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_rawpkt_info = {

@@ -95,7 +95,7 @@ typedef struct {
  *  stress_sigfpe_errstr()
  *	convert sigfpe error code to string
  */
-static char *stress_sigfpe_errstr(const int err)
+static const char *stress_sigfpe_errstr(const int err)
 {
 	switch (err) {
 #if defined(FPE_INTDIV)
@@ -140,7 +140,7 @@ static char *stress_sigfpe_errstr(const int err)
  *  stress_sigill_errstr()
  *	convert sigill error code to string
  */
-static char *stress_sigill_errstr(const int err)
+static const char *stress_sigill_errstr(const int err)
 {
 	switch (err) {
 #if defined(ILL_ILLOPC)
@@ -210,7 +210,7 @@ static int stress_sigfpe(stress_args_t *args)
 #if defined(STRESS_CHECK_SIGINFO)
 	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
 #endif
-	NOCLOBBER int rc = EXIT_SUCCESS;
+	CLOBBERED int rc = EXIT_SUCCESS;
 
 	typedef struct {
 		unsigned int exception;
@@ -388,11 +388,19 @@ static int stress_sigfpe(stress_args_t *args)
 	return rc;
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("stack"),
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_sigfpe_info = {
 	.stressor = stress_sigfpe,
 	.classifier = CLASS_SIGNAL | CLASS_OS,
 	.verify = VERIFY_OPTIONAL,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_sigfpe_info = {

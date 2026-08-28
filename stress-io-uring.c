@@ -52,6 +52,7 @@ static const stress_opt_t opts[] = {
 
 #if defined(HAVE_LINUX_IO_URING_H) &&	\
     defined(HAVE_SYSCALL) &&		\
+    defined(HAVE_IOVEC) &&		\
     defined(__NR_io_uring_enter) &&	\
     defined(__NR_io_uring_setup) &&	\
     defined(IORING_OFF_SQ_RING) &&	\
@@ -262,7 +263,7 @@ static int stress_setup_io_uring(
 		PROT_READ | PROT_WRITE, MAP_SHARED ,
 		submit->io_uring_fd, IORING_OFF_SQ_RING);
 	if (submit->sq_mmap == MAP_FAILED) {
-		pr_inf_skip("%s: could not mmap submission queue buffer%s, "
+		pr_inf_skip("%s: mmap submission queue buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -276,7 +277,7 @@ static int stress_setup_io_uring(
 				PROT_READ | PROT_WRITE,
 				MAP_SHARED, submit->io_uring_fd, IORING_OFF_CQ_RING);
 		if (submit->cq_mmap == MAP_FAILED) {
-			pr_inf_skip("%s: could not mmap completion queue buffer%s, "
+			pr_inf_skip("%s: mmap completion queue buffer failed%s, "
 				"errno=%d (%s), skipping stressor\n",
 				args->name, stress_memory_free_get(),
 				errno, strerror(errno));
@@ -298,7 +299,7 @@ static int stress_setup_io_uring(
 			PROT_READ | PROT_WRITE, MAP_SHARED,
 			submit->io_uring_fd, IORING_OFF_SQES);
 	if (submit->sqes_mmap == MAP_FAILED) {
-		pr_inf_skip("%s: count not mmap submission queue buffer%s, "
+		pr_inf_skip("%s: mmap submission queue buffer failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, stress_memory_free_get(),
 			errno, strerror(errno));
@@ -434,7 +435,9 @@ static int stress_io_uring_submit(
 	const void *extra_data)
 {
 	stress_uring_io_sq_ring_t *sring = &submit->sq_ring;
-	unsigned int idx = 0, tail = 0, next_tail = 0;
+	unsigned int idx = 0;
+	unsigned int tail = 0;
+	unsigned int next_tail = 0;
 	struct io_uring_sqe *sqe;
 	int ret;
 
@@ -961,10 +964,12 @@ static const char *stress_io_uring_opcode_name(const uint8_t opcode)
  */
 static int stress_io_uring_child(stress_args_t *args, void *context)
 {
-	int ret, rc;
+	int ret;
+	int rc;
 	char filename[PATH_MAX];
 	stress_io_uring_file_t io_uring_file;
-	size_t i, j;
+	size_t i;
+	size_t j;
 	const size_t blocks = 4;
 	const size_t block_size = 512;
 	off_t file_size = (off_t)blocks * block_size;
@@ -1011,8 +1016,9 @@ static int stress_io_uring_child(stress_args_t *args, void *context)
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (io_uring_file.iovecs == MAP_FAILED) {
 		io_uring_file.iovecs = NULL;
-		pr_inf_skip("%s: cannot mmap iovecs, errno=%d (%s), "
+		pr_inf_skip("%s: mmap iovecs failed%s, errno=%d (%s), "
 				"skipping stressor\n", args->name,
+				stress_memory_free_get(),
 				errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -1027,7 +1033,7 @@ static int stress_io_uring_child(stress_args_t *args, void *context)
 				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 		if (io_uring_file.iovecs[i].iov_base == MAP_FAILED) {
 			io_uring_file.iovecs[i].iov_base = NULL;
-			pr_inf_skip("%s: cannot mmap allocate iovec iov_base%s, errno=%d (%s), "
+			pr_inf_skip("%s: mmap allocate iovec iov_base failed%s, errno=%d (%s), "
 				"skipping stressor\n", args->name,
 				stress_memory_free_get(),
 				errno, strerror(errno));
@@ -1074,7 +1080,7 @@ static int stress_io_uring_child(stress_args_t *args, void *context)
 	do {
 		if ((io_uring_file.fd = open(filename, flags, S_IRUSR | S_IWUSR)) < 0) {
 			rc = stress_exit_status(errno);
-			pr_fail("%s: open on %s failed, errno=%d (%s)\n",
+			pr_fail("%s: open '%s' failed, errno=%d (%s)\n",
 				args->name, filename, errno, strerror(errno));
 			goto clean;
 		}
@@ -1131,12 +1137,22 @@ static int stress_io_uring(stress_args_t *args)
 	return stress_oomable_child(args, NULL, stress_io_uring_child, STRESS_OOMABLE_NORMAL);
 }
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("io-write"),
+	STRESS_EX_FEATURE("writeback-dirty-inode"),
+
+	STRESS_EX_SYSCALL("io_uring_setup"),
+	STRESS_EX_SYSCALL("io_uring_enter"),
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_io_uring_info = {
 	.stressor = stress_io_uring,
 	.classifier = CLASS_IO | CLASS_OS,
 	.opts = opts,
 	.verify = VERIFY_ALWAYS,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };
 #else
 const stressor_info_t stress_io_uring_info = {

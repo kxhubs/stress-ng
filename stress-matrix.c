@@ -1042,10 +1042,24 @@ static const char *stress_matrix_method(const size_t i)
 }
 
 static const stress_opt_t opts[] = {
-	{ OPT_matrix_method, "matrix-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_matrix_method },
+	{ OPT_matrix_method, "matrix-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_matrix_method },
 	{ OPT_matrix_size,   "matrix-size",   TYPE_ID_SIZE_T, MIN_MATRIX_SIZE, MAX_MATRIX_SIZE, NULL },
 	{ OPT_matrix_yx,     "matrix-yx",     TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,
+};
+
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("bogo-ops-stable"),
+	STRESS_EX_FEATURE("d-cache"),
+	STRESS_EX_FEATURE("d-tlb-read-miss"),
+	STRESS_EX_FEATURE("fp"),
+	STRESS_EX_FEATURE("fp-ops"),
+	STRESS_EX_FEATURE("hot-package"),
+	STRESS_EX_FEATURE("power-core"),
+	STRESS_EX_FEATURE("power-package"),
+	STRESS_EX_FEATURE("user-time"),
+
+	STRESS_EX_END,
 };
 
 const stressor_info_t stress_matrix_info = {
@@ -1054,13 +1068,14 @@ const stressor_info_t stress_matrix_info = {
 	.opts = opts,
 	.verify = VERIFY_OPTIONAL,
 	.help = help,
-	.max_metrics_items = SIZEOF_ARRAY(matrix_methods)
+	.max_metrics_items = SIZEOF_ARRAY(matrix_methods),
+	.exercises = exercises,
 };
 
 #else
 
 static const stress_opt_t opts[] = {
-	{ OPT_matrix_method, "matrix-method", TYPE_ID_SIZE_T_METHOD, 0, 0, (void *)stress_unimplemented_method },
+	{ OPT_matrix_method, "matrix-method", TYPE_ID_SIZE_T_METHOD, 0, 0, stress_unimplemented_method },
 	{ OPT_matrix_size,   "matrix-size",   TYPE_ID_SIZE_T, MIN_MATRIX_SIZE, MAX_MATRIX_SIZE, NULL },
 	{ OPT_matrix_yx,     "matrix-yx",     TYPE_ID_BOOL, 0, 1, NULL },
 	END_OPT,

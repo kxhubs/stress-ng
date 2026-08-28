@@ -23,15 +23,15 @@
 #include "core-out-of-memory.h"
 #include "core-resources.h"
 
-#define MIN_MEM_FREE		((size_t)(16 * MB))
+#define MIN_MEM_FREE		((size_t)(16 * STRESS_MB))
 
-#define DEFAULT_FORKHEAVY_PROCS		(4096)
+#define DEFAULT_FORKHEAVY_PROCS		(4 * STRESS_KB)
 #define MIN_FORKHEAVY_PROCS		(1)
-#define MAX_FORKHEAVY_PROCS		(65536)
+#define MAX_FORKHEAVY_PROCS		(64 * STRESS_KB)
 
-#define DEFAULT_FORKHEAVY_ALLOCS	(16384)
+#define DEFAULT_FORKHEAVY_ALLOCS	(16 * STRESS_KB)
 #define MIN_FORKHEAVY_ALLOCS		(1)
-#define MAX_FORKHEAVY_ALLOCS		(1024 * 1024)
+#define MAX_FORKHEAVY_ALLOCS		(1 * STRESS_MB)
 
 typedef struct stress_forkheavy_args {
 	stress_args_t *args;
@@ -146,15 +146,17 @@ static void stress_forkheavy_free(void)
 
 static int stress_forkheavy_child(stress_args_t *args, void *context)
 {
+	stress_memory_info_t info;
 	const stress_forkheavy_args_t *forkheavy_args = (stress_forkheavy_args_t *)context;
 	stress_metrics_t *metrics = forkheavy_args->metrics;
 	uint32_t forkheavy_allocs = DEFAULT_FORKHEAVY_ALLOCS;
 	uint32_t forkheavy_procs = DEFAULT_FORKHEAVY_PROCS;
 	bool forkheavy_mlock = false;
-	size_t num_resources, shmall, freemem, totalmem, freeswap, totalswap, min_mem_free;
+	size_t num_resources;
+	size_t min_mem_free;
 
-	stress_memory_limits_get(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
-	min_mem_free = (freemem / 100) * 2;
+	stress_memory_info_get(&info);
+	min_mem_free = (info.freemem / 100) * 2;
 	if (min_mem_free < MIN_MEM_FREE)
 		min_mem_free = MIN_MEM_FREE;
 
@@ -260,7 +262,7 @@ static int stress_forkheavy(stress_args_t *args)
 	(void)shim_memset(&forkheavy_args, 0, sizeof(forkheavy_args));
 	forkheavy_args.pipe_size = stress_fs_max_pipe_size_get();
 	forkheavy_args.num_resources = DEFAULT_FORKHEAVY_ALLOCS;
-	forkheavy_args.resources = (stress_resources_t *)malloc(forkheavy_args.num_resources * sizeof(*forkheavy_args.resources));
+	forkheavy_args.resources = (stress_resources_t *)calloc(forkheavy_args.num_resources, sizeof(*forkheavy_args.resources));
 	if (!forkheavy_args.resources) {
 		pr_inf_skip("%s: cannot allocate %zu resource structures, skipping stressor\n",
 			args->name, forkheavy_args.num_resources);
@@ -303,9 +305,108 @@ static const stress_opt_t opts[] = {
 	END_OPT,
 };
 
+static const stress_exercises_t exercises[] = {
+	STRESS_EX_FEATURE("chaotic-load"),
+	STRESS_EX_FEATURE("d-cache-miss"),
+	STRESS_EX_FEATURE("load-average"),
+	STRESS_EX_FEATURE("lock-contention"),
+	STRESS_EX_FEATURE("oom"),
+	STRESS_EX_FEATURE("system-time"),
+
+	STRESS_EX_SYSCALL("close"),
+#if defined(HAVE_EVENTFD)
+	STRESS_EX_SYSCALL("eventfd"),
+#endif
+	STRESS_EX_SYSCALL("fcntl"),
+	STRESS_EX_SYSCALL("fork"),
+	STRESS_EX_SYSCALL("ftruncate"),
+#if defined(HAVE_SYS_INOTIFY_H)
+	STRESS_EX_SYSCALL("inotify_init"),
+	STRESS_EX_SYSCALL("inotify_add_watch"),
+	STRESS_EX_SYSCALL("inotify_rm_watch"),
+#endif
+	STRESS_EX_SYSCALL("kill"),
+	STRESS_EX_SYSCALL("madvise"),
+#if defined(HAVE_MEMFD_CREATE)
+	STRESS_EX_SYSCALL("memfd_create"),
+#endif
+#if defined(__NR_memfd_secret)
+	STRESS_EX_SYSCALL("memfd_secret"),
+#endif
+	STRESS_EX_SYSCALL("mlock"),
+	STRESS_EX_SYSCALL("mmap"),
+#if defined(HAVE_MQ_SYSV) &&	\
+    defined(HAVE_SYS_IPC_H) &&	\
+    defined(HAVE_SYS_MSG_H)
+	STRESS_EX_SYSCALL("msgctl"),
+	STRESS_EX_SYSCALL("msgget"),
+#endif
+#if defined(HAVE_LIB_PTHREAD) &&	\
+    defined(HAVE_THREADS_H) &&		\
+    defined(HAVE_MTX_T) && 		\
+    defined(HAVE_MTX_DESTROY) &&	\
+    defined(HAVE_MTX_INIT)
+	STRESS_EX_SYSCALL("mtx_destroy"),
+	STRESS_EX_SYSCALL("mtx_init"),
+#endif
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_MQ_POSIX) &&	\
+    defined(HAVE_MQUEUE_H)
+	STRESS_EX_SYSCALL("mq_destroy"),
+	STRESS_EX_SYSCALL("mq_open"),
+#endif
+	STRESS_EX_SYSCALL("munlock"),
+	STRESS_EX_SYSCALL("munmap"),
+	STRESS_EX_SYSCALL("open"),
+#if defined(HAVE_PIDFD_OPEN)
+	STRESS_EX_SYSCALL("pidfd_open"),
+#endif
+#if defined(HAVE_PIDFD_GETFD)
+	STRESS_EX_SYSCALL("pidfd_get"),
+#endif
+	STRESS_EX_SYSCALL("pipe"),
+#if defined(HAVE_PKEY_ALLOC) && \
+    defined(HAVE_PKEY_FREE)
+	STRESS_EX_SYSCALL("pkey_alloc"),
+	STRESS_EX_SYSCALL("pkey_free"),
+#endif
+	STRESS_EX_SYSCALL("sbrk"),
+#if defined(HAVE_LIB_PTHREAD) &&	\
+    defined(HAVE_SEM_POSIX)
+	STRESS_EX_SYSCALL("sem_destroy>"),
+	STRESS_EX_SYSCALL("sem_init"),
+#endif
+#if defined(HAVE_SEM_SYSV) &&	\
+    defined(HAVE_KEY_T)
+	STRESS_EX_SYSCALL("semctl"),
+	STRESS_EX_SYSCALL("semget"),
+#endif
+	STRESS_EX_SYSCALL("socket"),
+	STRESS_EX_SYSCALL("sockpair"),
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_TIMER_CREATE)
+	STRESS_EX_SYSCALL("timer_create"),
+#endif
+#if defined(HAVE_LIB_RT) &&	\
+    defined(HAVE_TIMER_DELETE)
+	STRESS_EX_SYSCALL("timer_delete"),
+#endif
+#if defined(HAVE_SYS_TIMERFD_H) &&	\
+    defined(HAVE_TIMERFD_CREATE) &&	\
+    defined(CLOCK_REALTIME)
+	STRESS_EX_SYSCALL("timerfd_create"),
+#endif
+#if defined(HAVE_USERFAULTFD)
+	STRESS_EX_SYSCALL("userfaultfd"),
+#endif
+
+	STRESS_EX_END,
+};
+
 const stressor_info_t stress_forkheavy_info = {
 	.stressor = stress_forkheavy,
 	.classifier = CLASS_SCHEDULER | CLASS_OS,
 	.opts = opts,
-	.help = help
+	.help = help,
+	.exercises = exercises,
 };

@@ -31,24 +31,24 @@ jobs:
           UPSTREAM_URL="https://github.com/ColinIanKing/stress-ng.git"
           TAG_PATTERN='^V[0-9]+(\.[0-9]+)+([.-][A-Za-z0-9]+)?$'
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "kxhubs"
+          git config user.email "20880604+kxhubs@users.noreply.github.com"
 
           git remote set-url upstream "${UPSTREAM_URL}" 2>/dev/null || git remote add upstream "${UPSTREAM_URL}"
 
-          git fetch origin "${DEFAULT_BRANCH}" --tags --prune
+          git fetch origin --tags --prune "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
           git tag -l 'V*' | { grep -E "${TAG_PATTERN}" || true; } | sort > origin-tags.txt
 
-          git fetch upstream --tags --prune
+          git fetch upstream --tags --prune '+refs/heads/*:refs/remotes/upstream/*'
 
           UPSTREAM_BRANCH="master"
-          if ! git rev-parse --verify --quiet "upstream/${UPSTREAM_BRANCH}" >/dev/null; then
+          if ! git rev-parse --verify --quiet "refs/remotes/upstream/${UPSTREAM_BRANCH}" >/dev/null; then
             UPSTREAM_BRANCH="main"
           fi
 
-          git checkout "${DEFAULT_BRANCH}"
-          git merge --ff-only "upstream/${UPSTREAM_BRANCH}"
-          git push origin "HEAD:${DEFAULT_BRANCH}"
+          git checkout -B "${DEFAULT_BRANCH}" "refs/remotes/origin/${DEFAULT_BRANCH}"
+          git merge --no-edit "refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          git push origin "HEAD:refs/heads/${DEFAULT_BRANCH}"
 
           git tag -l 'V*' | { grep -E "${TAG_PATTERN}" || true; } | sort > all-tags.txt
           comm -13 origin-tags.txt all-tags.txt > new-tags.txt

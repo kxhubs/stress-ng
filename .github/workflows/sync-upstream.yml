@@ -10,22 +10,71 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
-      - name: Checkout master branch
+      - name: Checkout default branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
-          ref: master   # 或 main，根据你的默认分支
+          fetch-tags: true
+          token: ${{ secrets.PAT_TOKEN || github.token }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Sync upstream
+        id: sync
+        shell: bash
         run: |
-          git remote add upstream https://github.com/ColinIanKing/stress-ng.git || true
+          set -euo pipefail
+
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          UPSTREAM_URL="https://github.com/ColinIanKing/stress-ng.git"
+          TAG_PATTERN='^V[0-9]+(\.[0-9]+)+([.-][A-Za-z0-9]+)?$'
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote set-url upstream "${UPSTREAM_URL}" 2>/dev/null || git remote add upstream "${UPSTREAM_URL}"
+
+          git fetch origin "${DEFAULT_BRANCH}" --tags --prune
+          git tag -l 'V*' | { grep -E "${TAG_PATTERN}" || true; } | sort > origin-tags.txt
+
           git fetch upstream --tags --prune
-          
-          git checkout master || git checkout main
-          git merge upstream/master --ff-only || git merge upstream/main --ff-only || true
-          
-          git push origin HEAD
-          git push --tags
+
+          UPSTREAM_BRANCH="master"
+          if ! git rev-parse --verify --quiet "upstream/${UPSTREAM_BRANCH}" >/dev/null; then
+            UPSTREAM_BRANCH="main"
+          fi
+
+          git checkout "${DEFAULT_BRANCH}"
+          git merge --ff-only "upstream/${UPSTREAM_BRANCH}"
+          git push origin "HEAD:${DEFAULT_BRANCH}"
+
+          git tag -l 'V*' | { grep -E "${TAG_PATTERN}" || true; } | sort > all-tags.txt
+          comm -13 origin-tags.txt all-tags.txt > new-tags.txt
+
+          if [ -s new-tags.txt ]; then
+            while IFS= read -r tag; do
+              git push origin "refs/tags/${tag}:refs/tags/${tag}"
+            done < new-tags.txt
+          fi
+
+          if [ -s new-tags.txt ]; then
+            echo "has_new_tags=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has_new_tags=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build new upstream tags
+        if: ${{ steps.sync.outputs.has_new_tags == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r tag; do
+            gh workflow run build-arm64-release.yml \
+              --ref "${{ github.event.repository.default_branch }}" \
+              -f tag="${tag}"
+          done < new-tags.txt

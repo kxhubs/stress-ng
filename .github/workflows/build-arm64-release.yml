@@ -5,6 +5,11 @@ on:
     tags:
       - 'V*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build, for example V0.22.00"
+        required: true
+        type: string
 
 jobs:
   build-and-release:
@@ -13,45 +18,80 @@ jobs:
       contents: write
 
     steps:
+      - name: Resolve tag and asset name
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "${TAG}" =~ ^V[0-9]+(\.[0-9]+)+([.-][A-Za-z0-9]+)?$ ]]; then
+            echo "::error::Unsupported tag format: ${TAG}"
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "asset=stress-ng-${TAG}-linux-aarch64-static" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
-          ref: ${{ github.ref }}
+          fetch-tags: true
+          token: ${{ secrets.PAT_TOKEN || github.token }}
+          ref: refs/tags/${{ steps.release.outputs.tag }}
 
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu make
+          sudo apt-get install -y binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu make
 
       - name: Build static aarch64
+        shell: bash
         run: |
+          set -euo pipefail
+
           make clean
           STATIC=1 \
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
           CFLAGS="-march=armv8-a -O2" \
-          make -j2
+          CXXFLAGS="-march=armv8-a -O2" \
+          make -j"$(nproc)"
 
-      - name: Get version
-        id: version
+      - name: Package artifact
+        shell: bash
         run: |
-          VERSION=$(./stress-ng --version | head -n1 | awk '{print $2}' || echo ${{ github.ref_name }})
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          set -euo pipefail
+
+          aarch64-linux-gnu-readelf -h stress-ng | grep 'Machine:.*AArch64'
+          cp stress-ng "${{ steps.release.outputs.asset }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stress-ng-${{ steps.version.outputs.version }}-aarch64-static
-          path: stress-ng
+          name: ${{ steps.release.outputs.asset }}
+          path: ${{ steps.release.outputs.asset }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: stress-ng ${{ steps.version.outputs.version }} (ARM64 static)
-          body: |
-            Automated ARMv8 (aarch64) static build for tag **${{ github.ref_name }}**
-            Built with GitHub Actions.
-          files: stress-ng
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.release.outputs.tag }}"
+          ASSET="${{ steps.release.outputs.asset }}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ASSET}" --clobber
+          else
+            gh release create "${TAG}" "${ASSET}" \
+              --title "stress-ng ${TAG} (ARM64 static)" \
+              --notes "Automated ARMv8 (aarch64) static build for upstream tag ${TAG}."
+          fi

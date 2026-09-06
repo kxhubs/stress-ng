@@ -218,6 +218,33 @@ static const stress_hugepage_size_t hugepage_sizes[] = {
 };
 
 /*
+ *  stress_hugepage_sysfs_read()
+ *	exercise reading of hugepages sysfs files
+ */
+static void stress_hugepage_sysfs_read(void)
+{
+	char sysfs_hugepages[] = "/sys/kernel/mm/hugepages";
+
+	DIR *dp;
+	struct dirent *de;
+
+	dp = opendir(sysfs_hugepages);
+	if (!dp)
+		return;
+
+	while ((de = readdir(dp)) != NULL) {
+		char path[sizeof(sysfs_hugepages) + 256 + 1];
+
+		if (stress_fs_filename_dotty(de->d_name))
+			continue;
+
+		(void)snprintf(path, sizeof(path), "%s/%s", sysfs_hugepages, de->d_name);
+		stress_fs_dir_files_read(path);
+	}
+	(void)closedir(dp);
+}
+
+/*
  *  stress_hugepage_pthread()
  *	thread that attempts to break up huge pages into
  *	smaller pages, races against main stressor instance process
@@ -312,6 +339,7 @@ static int stress_hugepage(stress_args_t *args)
 	stress_hugepage_info_t hugepage_info;
 	int ret;
 	int rc = EXIT_SUCCESS;
+	int counter = 0;
 	size_t hugepage_num = DEFAULT_HUGEPAGE_NUM;
 	size_t hugepage_method = 1;	/* random */
 	char numstr1[32];
@@ -401,6 +429,8 @@ static int stress_hugepage(stress_args_t *args)
 		madv_count += (madvise((void *)hugepage_info.addr64, hugepage_info.size, MADV_WILLNEED) == 0);
 #endif
 		hugepage_info.main_madv_count += madv_count;
+		if ((counter++ & 0xfff) == 0)
+			stress_hugepage_sysfs_read();
 		stress_bogo_inc(args);
 	} while (stress_continue(args));
 

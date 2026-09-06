@@ -1388,15 +1388,13 @@ static const stress_opt_t opts[] = {
  *  stress_zlib_err()
  *	turn a zlib error to something human readable
  */
-static const char *stress_zlib_err(const int zlib_err)
+static const char *stress_zlib_err(const int zlib_err, char *buf, const size_t buf_len)
 {
-	static char buf[1024];
-
 	switch (zlib_err) {
 	case Z_OK:
 		return "no error";
 	case Z_ERRNO:
-		(void)snprintf(buf, sizeof(buf), "system error, errno=%d (%s)\n",
+		(void)snprintf(buf, buf_len, "system error, errno=%d (%s)\n",
 			errno, strerror(errno));
 		return buf;
 	case Z_STREAM_ERROR:
@@ -1408,7 +1406,7 @@ static const char *stress_zlib_err(const int zlib_err)
 	case Z_VERSION_ERROR:
 		return "zlib version mismatch (Z_VERSION_ERROR)";
 	default:
-		(void)snprintf(buf, sizeof(buf), "unknown zlib error %d\n", zlib_err);
+		(void)snprintf(buf, buf_len, "unknown zlib error %d\n", zlib_err);
 		return buf;
 	}
 }
@@ -1456,8 +1454,9 @@ static int stress_zlib_inflate(
 	ssize_t sz;
 	int ret;
 	z_stream stream_inf;
-	static unsigned char ALIGN64 in[DATA_SIZE];
-	static unsigned char ALIGN64 out[DATA_SIZE];
+	unsigned char ALIGN64 in[DATA_SIZE];
+	unsigned char ALIGN64 out[DATA_SIZE];
+	char err_buf[1024];
 	stress_zlib_args_t zlib_args;
 
 	(void)stress_zlib_get_args(&zlib_args);
@@ -1484,7 +1483,7 @@ static int stress_zlib_inflate(
 		ret = inflateInit2(&stream_inf, zlib_args.window_bits);
 		if (UNLIKELY(ret != Z_OK)) {
 			pr_fail("%s: zlib inflateInit error, %s\n",
-				args->name, stress_zlib_err(ret));
+				args->name, stress_zlib_err(ret, err_buf, sizeof(err_buf)));
 			zlib_checksum->error = true;
 			goto zlib_checksum_error;
 		}
@@ -1545,7 +1544,7 @@ static int stress_zlib_inflate(
 				case Z_DATA_ERROR:
 				case Z_MEM_ERROR:
 					pr_fail("%s: zlib inflate error, %s\n",
-						args->name, stress_zlib_err(ret));
+						args->name, stress_zlib_err(ret, err_buf, sizeof(err_buf)));
 					(void)inflateEnd(&stream_inf);
 					goto zlib_checksum_error;
 				default:
@@ -1596,6 +1595,7 @@ static int stress_zlib_deflate(
 	stress_zlib_args_t zlib_args;
 	double t1, duration, rate, ratio;
 	const stress_zlib_method_t *method;
+	char err_buf[1024];
 
 	(void)stress_zlib_get_args(&zlib_args);
 	method = &zlib_rand_data_methods[zlib_args.method];
@@ -1628,7 +1628,7 @@ static int stress_zlib_deflate(
 				zlib_args.mem_level, zlib_args.strategy);
 		if (UNLIKELY(ret != Z_OK)) {
 			pr_fail("%s: zlib deflateInit error, %s\n",
-				args->name, stress_zlib_err(ret));
+				args->name, stress_zlib_err(ret, err_buf, sizeof(err_buf)));
 			zlib_checksum->error = true;
 			(void)deflateEnd(&stream_def);
 			stream_def.zalloc = Z_NULL;
@@ -1640,7 +1640,7 @@ static int stress_zlib_deflate(
 
 		stream_bytes_out = 0;
 		do {
-			static uint64_t ALIGN64 in[DATA_SIZE / sizeof(uint64_t)];
+			uint64_t ALIGN64 in[DATA_SIZE / sizeof(uint64_t)];
 			uint64_t *in_end = (uint64_t *)((uintptr_t)&in + sizeof(in));
 			const unsigned char *zlib_checksum_in = (unsigned char *)in;
 			const uint64_t diff = zlib_args.stream_bytes - stream_bytes_out;
@@ -1673,7 +1673,7 @@ static int stress_zlib_deflate(
 
 			bytes_in += DATA_SIZE;
 			do {
-				static unsigned char ALIGN64 out[DATA_SIZE];
+				unsigned char ALIGN64 out[DATA_SIZE];
 				ssize_t sz;
 				int def_size;
 
@@ -1683,7 +1683,7 @@ static int stress_zlib_deflate(
 				ret = deflate(&stream_def, flush);
 				if (UNLIKELY(ret == Z_STREAM_ERROR)) {
 					pr_fail("%s: zlib deflate error, %s\n",
-						args->name, stress_zlib_err(ret));
+						args->name, stress_zlib_err(ret, err_buf, sizeof(err_buf)));
 					(void)deflateEnd(&stream_def);
 					ret = EXIT_FAILURE;
 					goto zlib_checksum_error;
@@ -1787,11 +1787,11 @@ static int stress_zlib(stress_args_t *args)
 			PROT_READ | PROT_WRITE,
 			MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (shared_checksums == MAP_FAILED) {
-		pr_inf("%s: mmap %zu bytes failed%s, "
+		pr_inf_skip("%s: mmap %zu bytes failed%s, "
 			"errno=%d (%s), skipping stressor\n",
 			args->name, sizeof(*shared_checksums),
 			stress_memory_free_get(), errno, strerror(errno));
-		return EXIT_FAILURE;
+		return EXIT_NO_RESOURCE;
 	}
 	stress_memory_anon_name_set(shared_checksums, sizeof(*shared_checksums), "zlib-checksums");
 	if (pipe(fds) < 0) {

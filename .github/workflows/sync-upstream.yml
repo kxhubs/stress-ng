@@ -68,23 +68,29 @@ jobs:
       - name: Run CI builds after sync
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail
 
           gh workflow run ci-builds.yml \
-            --ref "${{ github.event.repository.default_branch }}"
+            --repo "${TARGET_REPOSITORY}" \
+            --ref "refs/heads/${DEFAULT_BRANCH}"
 
       - name: Build new upstream tags
         if: ${{ steps.sync.outputs.has_new_tags == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail
 
           while IFS= read -r tag; do
             gh workflow run build-arm64-release.yml \
-              --ref "${{ github.event.repository.default_branch }}" \
+              --repo "${TARGET_REPOSITORY}" \
+              --ref "refs/heads/${DEFAULT_BRANCH}" \
               -f tag="${tag}"
           done < new-tags.txt

@@ -39,7 +39,7 @@ jobs:
           echo "asset=stress-ng-${TAG}-linux-aarch64-static" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -73,7 +73,7 @@ jobs:
           cp stress-ng "${{ steps.release.outputs.asset }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.release.outputs.asset }}
           path: ${{ steps.release.outputs.asset }}

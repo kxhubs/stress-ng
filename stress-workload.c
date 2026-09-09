@@ -541,7 +541,6 @@ static int stress_workload(stress_args_t *args)
 	size_t workload_sched = 0;		/* undefined */
 	size_t workload_dist_idx = 0;
 	size_t workload_method_idx = 0;
-	size_t threads_sz;
 	int workload_dist;
 	int workload_method;
 	stress_workload_t *workload;
@@ -554,8 +553,9 @@ static int stress_workload(stress_args_t *args)
 	char mq_name[64];
 	mqd_t mq = (mqd_t)-1;
 	uint32_t i;
+	size_t threads_sz = 0;
+	stress_workload_thread_t *threads = NULL;
 #endif
-	stress_workload_thread_t *threads;
 
 	(void)stress_setting_get("workload-dist", &workload_dist_idx);
 	(void)stress_setting_get("workload-load", &workload_load);
@@ -596,28 +596,28 @@ static int stress_workload(stress_args_t *args)
 	(void)stress_madvise_nohugepage(mapped_buffer, mapped_buffer_len);
 	stress_memory_anon_name_set(mapped_buffer, mapped_buffer_len, "workload-buffer");
 
-	threads_sz = (size_t)workload_threads * sizeof(*threads);
-	threads = (stress_workload_thread_t *)
-			stress_mmap_populate(NULL, threads_sz,
-				PROT_READ | PROT_WRITE,
-				MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	if (threads == MAP_FAILED) {
-		pr_inf_skip("%s: failed to mmap %zu byte threads array%s, "
-			"errno=%d (%s), skipping stressor\n",
-			args->name, mapped_buffer_len,
-			stress_memory_free_get(), errno, strerror(errno));
-		rc = EXIT_NO_RESOURCE;
-		goto exit_unmap_buffer;
-	}
-
-	for (i = 0; i < workload_threads; i++)
-		threads[i].ret = -1;
-
 	if (workload_threads > 0) {
 #if defined(WORKLOAD_THREADED)
 		struct mq_attr attr;
 		static stress_workload_info_t info;
 		uint32_t threads_started = 0;
+
+		threads_sz = (size_t)workload_threads * sizeof(*threads);
+		threads = (stress_workload_thread_t *)
+				stress_mmap_populate(NULL, threads_sz,
+					PROT_READ | PROT_WRITE,
+					MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+		if (threads == MAP_FAILED) {
+			pr_inf_skip("%s: failed to mmap %zu byte threads array%s, "
+				"errno=%d (%s), skipping stressor\n",
+				args->name, mapped_buffer_len,
+				stress_memory_free_get(), errno, strerror(errno));
+			rc = EXIT_NO_RESOURCE;
+			goto exit_unmap_buffer;
+		}
+
+		for (i = 0; i < workload_threads; i++)
+			threads[i].ret = -1;
 
 		(void)snprintf(mq_name, sizeof(mq_name), "/%s-%" PRIdMAX "-%" PRIu32,
 			args->name, (intmax_t)args->pid, args->instance);
@@ -674,7 +674,7 @@ static int stress_workload(stress_args_t *args)
 #if defined(WORKLOAD_THREADED)
 		goto exit_cancel_threads;
 #else
-		goto exit_unnap_buffer;
+		goto exit_unmap_buffer;
 #endif
 	}
 
@@ -742,10 +742,11 @@ exit_cancel_threads:
 		(void)mq_close(mq);
 		(void)mq_unlink(mq_name);
 	}
-#endif
 exit_unmap_threads:
-	(void)munmap((void *)threads, threads_sz);
+	if (threads != NULL)
+		(void)munmap((void *)threads, threads_sz);
 
+#endif
 exit_unmap_buffer:
 	(void)munmap((void *)mapped_buffer, mapped_buffer_len);
 	return rc;

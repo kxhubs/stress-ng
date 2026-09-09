@@ -112,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and Run (QEMU)
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@v1.5.5
         with:
           usesh: true # use 'sh' instead of 'tcsh'
           prepare: |  # does not work with BSD make
@@ -152,7 +152,7 @@ jobs:
     if: ${{ contains(github.event.inputs.platforms, 'cygwin') }}
     runs-on: windows-latest
     steps:
-      - uses: cygwin/cygwin-install-action@master
+      - uses: cygwin/cygwin-install-action@v6.1
         with:
           platform: x86_64
           packages: gcc-g++ git make ${{ github.event.inputs.libs-cygwin }}
